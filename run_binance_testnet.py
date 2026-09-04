@@ -30,6 +30,8 @@ import random
 from real_alpha_engine import Candle, RealAlphaEngine
 from consensus_engine import AgentRegistry, ConsensusEngine, Proposal, Vote, VoteStance, ConsensusDecision
 from groktopus_swarm import heuristic_brain
+from barrier_planner import BarrierConfig, BarrierTouch, CostModel, TripleBarrier
+from position_sizer import KellyStats, PositionSizer
 
 BASE_URL = "https://testnet.binancefuture.com"
 
@@ -258,13 +260,31 @@ def update_web_dashboard(
     proposal: Optional[Proposal] = None,
     votes: Optional[list[Vote]] = None,
     c_res: Optional[ConsensusResult] = None,
+    position_view: Optional[dict[str, Any]] = None,
+    advisory: bool = False,
+    sizing: Optional[dict[str, Any]] = None,
 ):
-    """Sync live Binance Testnet state to the Octopus Web Dashboard."""
+    """Sync live Binance Testnet state to the Octopus Web Dashboard.
+
+    Every number rendered here has to be one the system actually produced. An
+    earlier version filled the six analyst cards with `stance="HOLD",
+    confidence=0.5` whenever `votes` was not supplied, and defaulted the
+    consensus score to 50.0 for the same reason. Those are not neutral
+    placeholders - they are indistinguishable on screen from six agents that
+    deliberated and split evenly, which is why an operator watching a live
+    position saw "HOLD 50%" across the board and could not tell that no
+    deliberation had run at all. When there is no vote, this function now says
+    so in the field the UI reads, rather than inventing a plausible one.
+
+    `advisory=True` marks a tally that scored real votes without minting an
+    AuthToken. While a position is open the six analysts still deliberate - on
+    whether to close - but that deliberation must never produce execution
+    authority, because only MARIN closes and only VESKA opens.
+    """
     if not web_hub:
         return
 
     agent_states = []
-    # 6 analysts
     if votes:
         for v in votes:
             spec = registry.agents[v.agent]
@@ -274,16 +294,18 @@ def update_web_dashboard(
                 "role": spec.role_vi or spec.role,
                 "weight": round(spec.weight, 4),
                 "hue": spec.tentacle_hue,
-                "status": "VETO" if v.veto else "VOTED",
+                "status": "VETO" if v.veto else ("ADVISING" if advisory else "VOTED"),
                 "stance": v.stance.value,
                 "confidence": round(v.confidence, 4),
                 "rationale": v.rationale,
+                "advisory": advisory,
                 "calls": cycle_count,
                 "errors": 0,
                 "mean_latency_ms": 15.0,
                 "last_active_at": time.time(),
             })
     else:
+        # No deliberation ran this cycle. Say that; do not draw a 50% HOLD.
         for spec in registry.analysts():
             agent_states.append({
                 "name": spec.name,
@@ -291,47 +313,77 @@ def update_web_dashboard(
                 "role": spec.role_vi or spec.role,
                 "weight": round(spec.weight, 4),
                 "hue": spec.tentacle_hue,
-                "status": "ACTING" if positions else "IDLE",
-                "stance": "HOLD",
-                "confidence": 0.5,
-                "rationale": f"Dang theo doi {len(positions)} vi the tren san",
+                "status": "NO_VOTE",
+                "stance": "NONE",
+                "confidence": None,
+                "rationale": "Chu ky nay khong co phien bieu quyet - khong co so lieu de hien thi",
+                "advisory": advisory,
                 "calls": cycle_count,
                 "errors": 0,
                 "mean_latency_ms": 15.0,
                 "last_active_at": time.time(),
             })
 
-    # VESKA
+    # VESKA - the only agent that may open, and only against a live token.
     veska_spec = registry.agents["VESKA"]
     is_acting = bool(c_res and c_res.authorised)
+    if positions:
+        veska_status, veska_stance, veska_conf = "STANDBY", "HOLD", 0.0
+        veska_reason = "Da co vi the mo - VESKA khong mo them cho den khi MARIN dong"
+    elif is_acting:
+        veska_status, veska_stance, veska_conf = "ACTING", proposal.side.value, 1.0
+        veska_reason = f"Token don hieu hop le - vao lenh {proposal.side.value} {symbol}"
+    else:
+        veska_status, veska_stance, veska_conf = "IDLE", "HOLD", 0.0
+        veska_reason = "Cho dong thuan >= 76.8% va mot AuthToken hop le"
     agent_states.append({
         "name": "VESKA",
         "tier": veska_spec.tier.value,
         "role": veska_spec.role_vi or veska_spec.role,
         "weight": 0.0,
         "hue": veska_spec.tentacle_hue,
-        "status": "ACTING" if is_acting else "IDLE",
-        "stance": proposal.side.value if (proposal and is_acting) else "HOLD",
-        "confidence": 1.0 if is_acting else 0.0,
-        "rationale": "Chap hanh lenh khi dong thuan >= 76.8%",
+        "status": veska_status,
+        "stance": veska_stance,
+        "confidence": veska_conf,
+        "rationale": veska_reason,
         "calls": total_executed,
         "errors": 0,
         "mean_latency_ms": 25.0,
         "last_active_at": time.time(),
     })
 
-    # MARIN
+    # MARIN - reports the barrier it is actually watching, not a generic HOLD.
     marin_spec = registry.agents["MARIN"]
+    if position_view:
+        pv = position_view
+        marin_stance = pv.get("exit_side") if pv.get("action") != "HOLD" else "HOLD"
+        marin_conf = round(float(pv.get("barrier_progress", 0.0)), 4)
+        marin_reason = (
+            f"{pv['side']} {pv['qty']:.6f} @ {pv['entry_price_cents'] / 100:,.2f} | "
+            f"PnL {pv['roe_pct']:+.3f}% | TP +{pv['tp_pct']:.3f}% | SL -{pv['sl_pct']:.3f}% | "
+            f"gan nhat: {pv['nearest_barrier']} ({pv['distance_pct']:.3f}%) | "
+            f"giu {pv['bars_held']}/{pv['max_bars']} chu ky"
+            + (" | BE da khoa" if pv.get("break_even_armed") else "")
+        )
+        marin_status = "EXITING" if pv.get("action") != "HOLD" else "MONITORING"
+    elif positions:
+        marin_stance, marin_conf = "HOLD", 0.0
+        marin_status = "MONITORING"
+        marin_reason = f"Giam sat {len(positions)} vi the - chua co so lieu rao chan cho chu ky nay"
+    else:
+        marin_stance, marin_conf = "HOLD", 0.0
+        marin_status = "IDLE"
+        marin_reason = "Khong co vi the mo - khong co gi de giam sat"
     agent_states.append({
         "name": "MARIN",
         "tier": marin_spec.tier.value,
         "role": marin_spec.role_vi or marin_spec.role,
         "weight": 0.0,
         "hue": marin_spec.tentacle_hue,
-        "status": "ACTING" if positions else "IDLE",
-        "stance": "HOLD",
-        "confidence": 1.0 if positions else 0.5,
-        "rationale": f"Giam sat {len(positions)} vi the & Stop-Loss tren san",
+        "status": marin_status,
+        "stance": marin_stance,
+        "confidence": marin_conf,
+        "rationale": marin_reason,
         "calls": cycle_count,
         "errors": 0,
         "mean_latency_ms": 10.0,
@@ -343,21 +395,28 @@ def update_web_dashboard(
     if len(equity_history) > 200:
         del equity_history[:-200]
 
-    score_pct = float(c_res.score_pct) if c_res else 50.0
-    decision_str = c_res.decision.value if c_res else "IDLE"
+    # No consensus this cycle means no score - not a 50% score.
+    score_pct = float(c_res.score_pct) if c_res else 0.0
+    if c_res is None:
+        decision_str = "NO_QUORUM"
+    elif advisory:
+        decision_str = f"ADVISORY_{c_res.decision.value}"
+    else:
+        decision_str = c_res.decision.value
 
     recent_cycle_entry = {
         "cycle": cycle_count,
         "proposal": {
             "symbol": symbol,
-            "side": proposal.side.value if proposal else "SELL",
-            "qty": proposal.qty if proposal else 2,
+            "side": proposal.side.value if proposal else "NONE",
+            "qty": proposal.qty if proposal else 0,
             "price_cents": int(spot * 100),
-            "notional_cents": proposal.notional_cents if proposal else int(spot * 2),
-        },
+            "notional_cents": proposal.notional_cents if proposal else 0,
+        } if proposal else None,
         "decision": decision_str,
         "score_pct": round(score_pct, 2),
-        "filled": bool(c_res and c_res.authorised),
+        "advisory": advisory,
+        "filled": bool(c_res and c_res.authorised and not advisory),
         "reject_reason": c_res.reason if (c_res and not c_res.authorised) else None,
     }
 
@@ -377,9 +436,10 @@ def update_web_dashboard(
             "last_score_pct": round(score_pct, 2),
             "decision": decision_str,
             "last_decision": decision_str,
-            "direction": proposal.side.value if proposal else "HOLD",
-            "reason": c_res.reason if c_res else "",
-            "authorised": bool(c_res and c_res.authorised),
+            "advisory": advisory,
+            "direction": proposal.side.value if proposal else "NONE",
+            "reason": c_res.reason if c_res else "Khong co phien bieu quyet trong chu ky nay",
+            "authorised": bool(c_res and c_res.authorised and not advisory),
             "veto_source": c_res.veto_source if c_res else None,
             "stats": {
                 "evaluated": cycle_count,
@@ -406,16 +466,20 @@ def update_web_dashboard(
             "equity_curve": equity_history,
             "open_positions": len(positions),
             "closed_trades": total_executed,
-            "win_rate": 1.0 if total_executed > 0 else 0.0,
-            "return_pct": round((unrealized_pnl / max(1.0, wallet_bal)) * 100.0, 2),
+            "win_rate": None,
+            "return_pct": round(
+                (equity_cents - 500_000) / 500_000 * 100.0, 4),
+            "unrealised_pnl_cents": int(unrealized_pnl * 100),
             "fees_paid_cents": 0,
-            "realised_pnl_cents": int(unrealized_pnl * 100),
+            "realised_pnl_cents": equity_cents - 500_000 - int(unrealized_pnl * 100),
             "recent_trades": executed_trades,
             "rejections": {},
             "step": cycle_count,
             "halted": False,
             "spot_price_cents": int(spot * 100),
             "symbol": symbol,
+            "position": position_view,
+            "sizing": sizing,
         },
         "hardware": {
             "vram_used_gb": 0.0,
@@ -459,6 +523,7 @@ def run_autonomous_swarm(
     web_hub = start_web_ui_if_needed(port=8765)
 
     holding_bars = 0
+    live_barrier: Optional[TripleBarrier] = None
 
     while True:
         cycle_count += 1
@@ -511,47 +576,104 @@ def run_autonomous_swarm(
             notional = abs(amt) * entry_px
             roe_pct = (pnl / notional * 100.0) if notional > 0 else 0.0
 
-            # Dynamic ATR Take Profit (0.20% - 0.60% for responsive micro-scalping)
-            target_tp = max(0.20, min(0.60, snap.atr_volatility_pct * 1.5))
+            # Dynamic Triple Barrier Initialization
+            if live_barrier is None or live_barrier.entry_cents != int(entry_px * 100):
+                atr_cents = max(1, int(round(entry_px * 100 * (snap.atr_volatility_pct / 100.0))))
+                live_barrier = TripleBarrier.from_atr(
+                    side="LONG" if amt > 0 else "SHORT",
+                    entry_cents=int(entry_px * 100),
+                    atr_cents=atr_cents,
+                    entry_bar=cycle_count,
+                    config=BarrierConfig(k_tp=4.0, k_sl=1.0, max_holding_bars=15, break_even_at=0.40),
+                )
+
+            # Check barrier conditions
+            touch = live_barrier.check(int(spot * 100), cycle_count)
+            tp_pct = abs(live_barrier.tp_cents - live_barrier.entry_cents) / live_barrier.entry_cents * 100.0
+            sl_pct = abs(live_barrier.sl_cents - live_barrier.entry_cents) / live_barrier.entry_cents * 100.0
+
+            nearest = "TP"
+            tp_dist = abs(live_barrier.tp_cents / 100.0 - spot) / spot * 100.0
+            sl_dist = abs(live_barrier.sl_cents / 100.0 - spot) / spot * 100.0
+            nearest_dist = tp_dist
+            if sl_dist < tp_dist:
+                nearest = "BE" if live_barrier.break_even_armed else "SL"
+                nearest_dist = sl_dist
+
+            position_view = {
+                "side": "LONG" if amt > 0 else "SHORT",
+                "qty": abs(amt),
+                "entry_price_cents": int(entry_px * 100),
+                "roe_pct": round(roe_pct, 3),
+                "tp_pct": round(tp_pct, 3),
+                "sl_pct": round(sl_pct, 3),
+                "nearest_barrier": nearest,
+                "distance_pct": round(nearest_dist, 3),
+                "bars_held": holding_bars,
+                "max_bars": live_barrier.max_holding_bars,
+                "break_even_armed": live_barrier.break_even_armed,
+                "barrier_progress": round(live_barrier.progress_to_tp(int(spot * 100)), 4),
+                "action": "EXIT" if touch != BarrierTouch.NONE else "HOLD",
+                "exit_side": ("SELL" if amt > 0 else "BUY") if touch != BarrierTouch.NONE else "HOLD",
+            }
 
             print(f"  📍 VỊ THẾ ĐANG MỞ: {p['symbol']} | {pos_side} | KL: {abs(amt)} BTC | Giá vào: ${entry_px:,.2f}")
-            print(f"     Lãi/Lỗ hiện tại: ${pnl:+,.2f} USDT ({roe_pct:+,.2f}%) | Mục tiêu TP: +{target_tp:.2f}% | Đã giữ: {holding_bars} chu kỳ")
+            print(f"     Lãi/Lỗ hiện tại: ${pnl:+,.2f} USDT ({roe_pct:+,.2f}%) | TP: +{tp_pct:.2f}% | SL: -{sl_pct:.2f}% | Đã giữ: {holding_bars}/{live_barrier.max_holding_bars} chu kỳ")
+            if live_barrier.break_even_armed:
+                print(f"     🔒 Break-Even đã khóa bảo vệ vốn tại ${live_barrier.break_even_cents / 100:,.2f}!")
             print(f"  🛡️ MARIN: Đang giám sát vị thế & Lệnh Stop-Loss bảo vệ đang treo trên sàn.")
 
-            # Barrier 1: Dynamic ATR Take Profit
-            if roe_pct >= target_tp:
-                print(f"\n  🎯 [MARIN CHỐT LỜI THÀNH CÔNG] Đạt mục tiêu +{roe_pct:.2f}% (>= {target_tp:.2f}%)!")
+            # Barrier execution
+            if touch == BarrierTouch.TAKE_PROFIT or roe_pct >= tp_pct:
+                print(f"\n  🎯 [MARIN CHỐT LỜI THÀNH CÔNG] Đạt mục tiêu Take-Profit +{roe_pct:.2f}% (>= {tp_pct:.2f}%)!")
                 print(f"     Tiến hành đóng vị thế và hủy lệnh Stop-Loss trên sàn...")
                 flatten_all()
                 holding_bars = 0
-            # Barrier 2: Hard Stop Loss
-            elif roe_pct <= -(stop_loss_pct * 1.5):
-                print(f"\n  ⚠️ [MARIN CẮT LỖ KHẨN CẤP] Vị thế vi phạm ngưỡng an toàn ({roe_pct:.2f}%)! Đang đóng vị thế...")
+                live_barrier = None
+            elif touch in (BarrierTouch.STOP_LOSS, BarrierTouch.BREAK_EVEN) or roe_pct <= -(sl_pct * 1.2):
+                be_tag = "HÒA VỐN (BREAK-EVEN)" if live_barrier.break_even_armed else "CẮT LỖ KHẨN CẤP"
+                print(f"\n  ⚠️ [MARIN {be_tag}] Vị thế chạm ngưỡng an toàn ({roe_pct:.2f}%)! Đang đóng vị thế...")
                 flatten_all()
                 holding_bars = 0
-            # Barrier 3: Time-Decay Exit (Triple Barrier vertical barrier after 12 bars if profit positive)
-            elif holding_bars >= 12 and roe_pct >= 0.05:
-                print(f"\n  ⏱️ [MARIN TIME-DECAY EXIT] Vị thế đi ngang {holding_bars} chu kỳ, chốt lời bảo vệ vốn +{roe_pct:.2f}%!")
+                live_barrier = None
+            elif touch == BarrierTouch.TIME or (holding_bars >= live_barrier.max_holding_bars and roe_pct >= 0.05):
+                print(f"\n  ⏱️ [MARIN TIME-DECAY EXIT] Vị thế đạt trần thời gian {holding_bars} chu kỳ, chốt lời bảo vệ vốn +{roe_pct:.2f}%!")
                 flatten_all()
                 holding_bars = 0
+                live_barrier = None
             else:
-                print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{target_tp:.2f}%) hoặc Stop-Loss (-{stop_loss_pct}%).")
+                print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{tp_pct:.2f}%) hoặc Stop-Loss (-{sl_pct:.2f}%).")
 
-            # Active In-Position Telemetry so Web UI is NEVER frozen at 50% HOLD
-            in_pos_proposal = Proposal(
-                proposal_id=f"POS_{int(time.time())}",
+            # Active In-Position Advisory Deliberation across 6 analysts
+            adv_side = VoteStance.SELL if amt > 0 else VoteStance.BUY
+            adv_ctx = snap.to_swarm_context(side_stance=adv_side.value)
+            adv_ctx.update({
+                "side": adv_side,
+                "qty": int(abs(amt) * 1000),
+                "price_cents": int(spot * 100),
+                "notional_cents": int(abs(amt) * entry_px * 100),
+                "equity_cents": int(wallet_bal * 100),
+                "step": cycle_count,
+            })
+            adv_prop = Proposal(
+                proposal_id=f"POS_{int(time.time()*1000)}",
                 symbol=symbol,
-                side=VoteStance.SELL if amt > 0 else VoteStance.BUY,
-                qty=int(abs(amt) * 1000),
-                price_cents=int(spot * 100),
+                side=adv_side,
+                qty=adv_ctx["qty"],
+                price_cents=adv_ctx["price_cents"],
             )
-            c_res_pos = ConsensusResult(
-                authorised=True,
-                decision=ConsensusDecision.EXECUTE,
-                score_pct=85.0,
-                token=None,
-                reason=f"MARIN MONITORING: {pos_side} PnL {roe_pct:+.2f}% / TP +{target_tp:.2f}%",
-            )
+            adv_votes: list[Vote] = []
+            for spec in registry.analysts():
+                res = heuristic_brain(spec, "", adv_ctx, rng)
+                adv_votes.append(Vote(
+                    agent=spec.name,
+                    stance=VoteStance(res["stance"]),
+                    confidence=res["confidence"],
+                    rationale=res["rationale"],
+                    veto=res.get("veto", False),
+                ))
+            adv_c_res = engine.evaluate(adv_prop, adv_votes)
+
             update_web_dashboard(
                 web_hub=web_hub,
                 registry=registry,
@@ -566,20 +688,43 @@ def run_autonomous_swarm(
                 start_time=start_time,
                 equity_history=equity_history,
                 executed_trades=executed_trades,
-                proposal=in_pos_proposal,
-                c_res=c_res_pos,
+                proposal=adv_prop,
+                votes=adv_votes,
+                c_res=adv_c_res,
+                position_view=position_view,
+                advisory=True,
             )
         else:
             holding_bars = 0
+            live_barrier = None
             print("  📍 VỊ THẾ HIỆN TẠI: Chưa có vị thế mở (Flat). Hội đồng 6 AI đang rà quét tín hiệu...")
-            
-            # Formulate proposed stance based on trend/momentum
+
+            # Fractional Kelly Sizing from closed trade ledger
+            trade_rets = []
+            for t in executed_trades:
+                c = (t.get("entry_price_cents", 0) / 100.0) * t.get("qty", 0)
+                if c > 0:
+                    trade_rets.append((t.get("net_pnl_cents", 0) / 100.0) / c * 10_000.0)
+            st = KellyStats.from_trades(trade_rets) if trade_rets else None
+            sizer = PositionSizer(lam=0.25, max_fraction=0.15, min_trades=10, warmup_fraction=0.01)
+            size_dec = sizer.size(
+                equity_cents=int(wallet_bal * 100),
+                price_cents=int(spot * 100),
+                stats=st,
+            )
+
+            # Determine order qty (min 0.001 BTC on Binance Futures)
+            if size_dec.quantity_units > 0:
+                proposed_qty = max(0.001, round(size_dec.quantity_units / 1_000_000, 3))
+            else:
+                proposed_qty = default_qty
+
             proposed_side = VoteStance.BUY if snap.momentum_sigma > 0 else VoteStance.SELL
-            notional_cents = int(default_qty * spot * 100)
-            
+            notional_cents = int(proposed_qty * spot * 100)
+
             context = snap.to_swarm_context(side_stance=proposed_side.value)
             context["side"] = proposed_side
-            context["qty"] = int(default_qty * 1000)
+            context["qty"] = int(proposed_qty * 1000)
             context["price_cents"] = int(spot * 100)
             context["notional_cents"] = notional_cents
             context["equity_cents"] = int(wallet_bal * 100)
@@ -614,22 +759,31 @@ def run_autonomous_swarm(
             print("-" * 78)
             c_res = engine.evaluate(proposal, votes)
             if c_res.authorised:
+                # Tilt Kelly sizing with consensus score
+                final_dec = sizer.size(
+                    equity_cents=int(wallet_bal * 100),
+                    price_cents=int(spot * 100),
+                    stats=st,
+                    consensus_score=c_res.score_pct,
+                )
+                final_qty = max(0.001, round(final_dec.quantity_units / 1_000_000, 3)) if final_dec.quantity_units > 0 else proposed_qty
                 print(f"  🚀 ĐỒNG THUẬN: {c_res.score_pct:.1f}% >= 76.8%  ==>  [EXECUTE] ĐẠT CHUẨN SIÊU ĐA SỐ!")
+                print(f"  📐 KELLY SIZING: {final_qty:.3f} BTC ({final_dec.reason})")
                 print(f"  🔑 ConsensusEngine đã cấp mã Token: {c_res.token.token[:20]}... (Chữ ký bảo mật đơn hiệu)")
                 print(f"  ⚡ VESKA kích hoạt vào lệnh thật trên Binance Futures Testnet...")
                 try:
-                    place_test_order(symbol=symbol, side=proposed_side.value, qty=default_qty, stop_loss_pct=stop_loss_pct)
+                    place_test_order(symbol=symbol, side=proposed_side.value, qty=final_qty, stop_loss_pct=stop_loss_pct)
                     total_executed += 1
                     executed_trades.insert(0, {
                         "symbol": symbol,
                         "side": "LONG" if proposed_side.value == "BUY" else "SHORT",
-                        "qty": default_qty,
+                        "qty": final_qty,
                         "entry_price_cents": int(spot * 100),
                         "exit_price_cents": int(spot * 100),
                         "net_pnl_cents": 0,
                         "entry_step": cycle_count,
                         "exit_step": cycle_count,
-                        "reason": f"Consensus {c_res.score_pct:.1f}%",
+                        "reason": f"Consensus {c_res.score_pct:.1f}% | Kelly {final_dec.fraction*100:.1f}%",
                         "consensus_pct": c_res.score_pct,
                     })
                 except Exception as e:
@@ -657,6 +811,9 @@ def run_autonomous_swarm(
                 proposal=proposal,
                 votes=votes,
                 c_res=c_res,
+                position_view=None,
+                advisory=False,
+                sizing=size_dec.as_dict(),
             )
 
         print("-" * 78)

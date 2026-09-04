@@ -75,6 +75,7 @@ if __package__ in (None, ""):
         Vote,
         VoteStance,
     )
+    from barrier_planner import BarrierConfig, BarrierTouch, TripleBarrier  # type: ignore
     from market_feed import FeedError, MarketFeed  # type: ignore
     from risk_guard import KillSwitchTripped, OverdraftError, RiskGuard  # type: ignore
 else:  # pragma: no cover
@@ -87,6 +88,7 @@ else:  # pragma: no cover
         Vote,
         VoteStance,
     )
+    from ..core.barrier_planner import BarrierConfig, BarrierTouch, TripleBarrier
     from ..core.market_feed import FeedError, MarketFeed
     from ..core.risk_guard import KillSwitchTripped, OverdraftError, RiskGuard
 
@@ -394,6 +396,12 @@ class Position:
     horizon_steps: int
     proposal_id: str
     consensus_pct: float
+    #: Optional Triple Barrier. When present it replaces the flat stop/target
+    #: pair: barriers scale with the ATR observed at entry, and a vertical time
+    #: barrier closes the position whatever the price. Absent, the original
+    #: fixed-bps behaviour applies unchanged - which is what keeps every existing
+    #: test meaningful rather than quietly re-specified.
+    barrier: Optional[Any] = None
 
     @property
     def locked_cents(self) -> int:
@@ -424,6 +432,7 @@ class Position:
             "locked_cents": self.locked_cents,
             "proposal_id": self.proposal_id,
             "consensus_pct": round(self.consensus_pct, 2),
+            "barrier": self.barrier.as_dict() if self.barrier is not None else None,
         }
         if mark_cents is not None:
             d["mark_cents"] = mark_cents
@@ -809,6 +818,8 @@ class GrokMarket:
         target_bps: float = 250.0,
         horizon_steps: int = 4,
         consensus_pct: float = 0.0,
+        atr_cents: Optional[int] = None,
+        barrier_config: Optional[Any] = None,
     ) -> Position:
         """Open a position. VESKA's only capability, and it needs a token.
 
@@ -896,6 +907,19 @@ class GrokMarket:
             proposal_id=proposal.proposal_id,
             consensus_pct=float(consensus_pct),
         )
+        if atr_cents and atr_cents > 0:
+            pos.barrier = TripleBarrier.from_atr(
+                side=side.value,
+                entry_cents=entry_price,
+                atr_cents=int(atr_cents),
+                entry_bar=self.step,
+                config=barrier_config or BarrierConfig(),
+            )
+            # Keep the flat fields consistent with the barrier so every reader -
+            # telemetry, the dashboard, the trade log - sees one set of numbers.
+            pos.stop_cents = pos.barrier.sl_cents
+            pos.target_cents = pos.barrier.tp_cents
+            pos.horizon_steps = pos.barrier.max_holding_bars
         self.positions[pos_id] = pos
         self.fills.append(Fill(proposal.symbol, side, proposal.qty, gross, fee, b.mid_cents, self.step, touched))
         self._assert_invariants()
@@ -971,6 +995,20 @@ class GrokMarket:
             if loss >= _round_half_up(pos.entry_gross_cents * self.config.liquidation_ratio):
                 out.append(self.close(pos_id, CloseReason.STOP_LOSS))
                 continue
+
+            if pos.barrier is not None:
+                touch = pos.barrier.check(mark, self.step)
+                if touch is BarrierTouch.TAKE_PROFIT:
+                    out.append(self.close(pos_id, CloseReason.TAKE_PROFIT))
+                elif touch in (BarrierTouch.STOP_LOSS, BarrierTouch.BREAK_EVEN):
+                    out.append(self.close(pos_id, CloseReason.STOP_LOSS))
+                elif touch is BarrierTouch.TIME:
+                    # The vertical barrier. A position that has reached neither
+                    # exit in `max_holding_bars` is capital doing nothing, and the
+                    # whole point of the third barrier is that it leaves anyway.
+                    out.append(self.close(pos_id, CloseReason.HORIZON))
+                continue
+
             hit_stop = mark <= pos.stop_cents if pos.side is Side.LONG else mark >= pos.stop_cents
             hit_target = mark >= pos.target_cents if pos.side is Side.LONG else mark <= pos.target_cents
             if hit_stop:

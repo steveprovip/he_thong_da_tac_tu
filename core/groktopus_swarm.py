@@ -91,6 +91,7 @@ from groktopus_market import (  # noqa: E402
     UnauthorisedOrder,
 )
 from local_llm_client import LLMError, LocalLLMClient  # noqa: E402
+from barrier_planner import BarrierConfig, CostModel, minimum_viable_k_tp  # noqa: E402
 from real_alpha_engine import Candle, RealAlphaEngine  # noqa: E402
 from memory_governor import (  # noqa: E402
     BudgetError,
@@ -446,6 +447,23 @@ class SwarmConfig:
     #: benchmarks/edge_report.py --adaptive to find out whether turning it on
     #: helps on your data before you turn it on.
     adaptive_gate: bool = False
+    #: Triple Barrier (Lopez de Prado ch.3): ATR-scaled profit and loss barriers
+    #: plus a vertical barrier in time. OFF by default so the flat-bps behaviour
+    #: every existing test describes stays the behaviour those tests describe.
+    triple_barrier: bool = False
+    #: 4.0, not the 1.5 that looks natural on a chart. At a 9.5 bps round trip
+    #: against a 6 bps bar range, k_tp = 1.5 puts the profit barrier INSIDE the
+    #: cost band and needs a 100% win rate to break even; 4.17 is where a coin
+    #: flip breaks even. `core/barrier_planner.py --report` prints the table.
+    k_tp: float = 4.0
+    k_sl: float = 1.0
+    max_holding_bars: int = 15
+    break_even_at: float = 0.40
+    #: Fractional Kelly sizing (Thorp / Kelly 1956). OFF by default so existing
+    #: tests that assert exact fixed-fraction quantities continue to see them.
+    kelly_sizing: bool = False
+    kelly_lam: float = 0.25
+    kelly_min_trades: int = 30
     horizon_steps: int = 36
     risk_fraction: float = 0.16
     max_exposure_pct: float = 45.0
@@ -591,6 +609,7 @@ class GrokSwarm:
         }
         self.deliberation_timings: list[DeliberationTiming] = []
         self.last_gate: Optional[RegimeGate] = None
+        self._last_atr_pct: float = 0.06
         self._last_timing: Optional[DeliberationTiming] = None
 
         self.states: dict[str, AgentState] = {
@@ -644,6 +663,37 @@ class GrokSwarm:
                 self._inflight -= 1
 
     # -- TIDAL's scan ------------------------------------------------------
+
+    def barrier_config(self) -> BarrierConfig:
+        return BarrierConfig(
+            k_tp=self.config.k_tp,
+            k_sl=self.config.k_sl,
+            max_holding_bars=self.config.max_holding_bars,
+            break_even_at=self.config.break_even_at,
+        )
+
+    def barrier_health(self, atr_pct: float) -> dict[str, Any]:
+        """Is the configured barrier placement above its own cost band?
+
+        Surfaced rather than merely checked, because the failure mode is silent:
+        a strategy whose barriers sit inside the cost band still trades, still
+        shows wins, and still loses on every round trip. The number that matters
+        is the break-even win rate, and it belongs on the dashboard.
+        """
+        from barrier_planner import evaluate  # noqa: PLC0415
+
+        costs = CostModel(
+            entry_fee_bps=self.market.config.taker_fee_bps,
+            exit_fee_bps=self.market.config.taker_fee_bps,
+        )
+        econ = evaluate(self.barrier_config(), atr_pct=max(1e-6, atr_pct), costs=costs)
+        return {
+            **econ.as_dict(),
+            "min_viable_k_tp_at_coin_flip": round(minimum_viable_k_tp(
+                atr_pct=max(1e-6, atr_pct), k_sl=self.config.k_sl,
+                cost_bps=costs.round_trip_bps), 3),
+            "configured_k_tp": self.config.k_tp,
+        }
 
     def _build_candles(self, symbol: str, look: int) -> list[Candle]:
         """Aggregate the step series into OHLCV bars ending at the current step.
@@ -758,6 +808,7 @@ class GrokSwarm:
         rsi_14 = RealAlphaEngine.calculate_rsi(closes, 14)
         candles = self._build_candles(symbol, look)
         atr_pct = (RealAlphaEngine.calculate_atr(candles, 14) / max(1.0, closes[-1])) * 100.0
+        self._last_atr_pct = atr_pct
         cvd = RealAlphaEngine.calculate_volume_delta(candles, 20)
         vwap_z = RealAlphaEngine.calculate_vwap_zscore(candles, 40)
         sweep = RealAlphaEngine.detect_liquidity_sweep(candles, 20)
@@ -803,6 +854,7 @@ class GrokSwarm:
             "vwap_zscore": vwap_z,
             "liquidity_sweep": sweep,
             "spread_bps": spread_bps,
+            "atr_cents": max(1, int(round(scan["price_cents"] * atr_pct / 100.0))),
             "exposure_pct": exposure_pct,
             "exposure_cap_pct": self.config.max_exposure_pct,
             "notional_cents": notional,
@@ -1019,7 +1071,30 @@ class GrokSwarm:
         side = VoteStance.BUY if scan["momentum_sigma"] >= 0 else VoteStance.SELL
         pos_side = Side.from_stance(side)
         symbol = scan["symbol"]
-        want = max(1, int(m.equity_cents() * self.config.risk_fraction) // scan["price_cents"])
+        if self.config.kelly_sizing:
+            from position_sizer import PositionSizer  # noqa: PLC0415
+            sizer, stats = PositionSizer.from_market(
+                m, lam=self.config.kelly_lam, max_fraction=self.config.risk_fraction,
+                min_trades=self.config.kelly_min_trades,
+                warmup_fraction=min(self.config.risk_fraction, 0.02),
+                qty_scale_pow10=0,
+            )
+            decision = sizer.size(
+                equity_cents=m.equity_cents(),
+                price_cents=scan["price_cents"],
+                stats=stats,
+            )
+            want = decision.quantity_units
+            if want < 1:
+                m.advance(1)
+                closed = [t.as_dict() for t in m.settle()]
+                return self._record(CycleReport(
+                    cycle=self.cycles_run, proposal=None, decision="SKIP", score_pct=0.0,
+                    filled=False, reject_reason=f"kelly sizing: {decision.reason}",
+                    closed=closed, equity_cents=m.equity_cents(), step=m.step,
+                ))
+        else:
+            want = max(1, int(m.equity_cents() * self.config.risk_fraction) // scan["price_cents"])
         qty = min(want, m.book(symbol).depth(pos_side), m.max_affordable_qty(symbol, pos_side))
 
         if qty < 1:
@@ -1059,6 +1134,13 @@ class GrokSwarm:
                     target_bps=self.config.target_bps,
                     horizon_steps=self.config.horizon_steps,
                     consensus_pct=result.score_pct,
+                    atr_cents=(
+                        max(1, int(round(scan["price_cents"]
+                                         * float(context.get("atr_volatility_pct", 0.0) or 0.0)
+                                         / 100.0)))
+                        if self.config.triple_barrier else None
+                    ),
+                    barrier_config=self.barrier_config() if self.config.triple_barrier else None,
                 )
                 filled = True
                 veska.calls += 1
@@ -1196,6 +1278,7 @@ class GrokSwarm:
             "points_short": round(max(0.0, bar - score), 2),
             "progress_pct": round(min(100.0, (score / bar) * 100.0), 2) if bar else 0.0,
             "regime": gate.regime.value if gate else "UNKNOWN",
+            "barrier": self.barrier_health(self._last_atr_pct),
             "regime_rationale": gate.rationale if gate else "",
             "size_multiplier": gate.size_multiplier if gate else 1.0,
             "blocked_reason": blocked,

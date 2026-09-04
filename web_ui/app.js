@@ -372,17 +372,50 @@ function renderLiveMode(snap) {
   if (voteRows && agents.length > 0) {
     let html = "";
     for (const a of agents) {
+      const confStr = (a.confidence !== null && a.confidence !== undefined) 
+        ? `${(a.confidence * 100).toFixed(0)}%` 
+        : "-";
+      const stanceStr = a.stance && a.stance !== "NONE" ? a.stance : "-";
+      const stanceClass = a.stance === "BUY" ? "up" : a.stance === "SELL" ? "down" : "";
       html += `
         <tr>
           <td><b>${a.name}</b></td>
           <td>${a.role || "-"}</td>
-          <td><span class="${a.stance === 'BUY' ? 'up' : a.stance === 'SELL' ? 'down' : ''}">${a.stance || 'HOLD'}</span></td>
-          <td>${((a.confidence || 0.8) * 100).toFixed(0)}%</td>
+          <td><span class="${stanceClass}">${stanceStr}</span></td>
+          <td>${confStr}</td>
           <td>${a.weight || 0.125}</td>
         </tr>
       `;
     }
     voteRows.innerHTML = html;
+  }
+
+  const pos = market.position || null;
+  if ($("drawer-pos")) {
+    if (pos) {
+      $("drawer-pos").textContent = `${pos.side} ${pos.qty} BTC (PnL: ${pos.roe_pct >= 0 ? '+' : ''}${pos.roe_pct.toFixed(2)}%)`;
+      $("drawer-pos").className = pos.roe_pct >= 0 ? "green" : "red";
+    } else {
+      $("drawer-pos").textContent = "0 open (Flat)";
+      $("drawer-pos").className = "";
+    }
+  }
+  if ($("drawer-barrier")) {
+    if (pos) {
+      $("drawer-barrier").textContent = `TP +${pos.tp_pct}% / SL -${pos.sl_pct}% | gan nhat: ${pos.nearest_barrier} (${pos.distance_pct}%) | giu ${pos.bars_held}/${pos.max_bars}`;
+      $("drawer-barrier").className = "green";
+    } else {
+      $("drawer-barrier").textContent = "Triple Barrier Active (k_tp=4.0, k_sl=1.0, 15 bars)";
+      $("drawer-barrier").className = "";
+    }
+  }
+  const sz = market.sizing || null;
+  if ($("drawer-kelly")) {
+    if (sz) {
+      $("drawer-kelly").textContent = `${(sz.fraction * 100).toFixed(2)}% (${sz.reason ? sz.reason.slice(0, 32) + '...' : 'Quarter Kelly'})`;
+    } else {
+      $("drawer-kelly").textContent = "Quarter Kelly (f* = 0.25x, warm-up 1.00%)";
+    }
   }
 
   const hw = snap.hardware || {};
