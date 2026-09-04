@@ -19,11 +19,17 @@ import urllib.parse
 import urllib.request
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent if Path(__file__).resolve().parent.name == "scripts" else Path(__file__).resolve().parent
 for p in (ROOT / "core", ROOT / "live", ROOT / "simulation"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
+
+import random
+from real_alpha_engine import Candle, RealAlphaEngine
+from consensus_engine import AgentRegistry, ConsensusEngine, Proposal, Vote, VoteStance, ConsensusDecision
+from groktopus_swarm import heuristic_brain
 
 BASE_URL = "https://testnet.binancefuture.com"
 
@@ -137,41 +143,219 @@ def place_test_order(symbol: str = "BTCUSDT", side: str = "BUY", qty: float = 0.
     return entry_resp, stop_resp
 
 
-def flatten_all():
-    acc = get_account_info()
-    positions = acc["positions"]
-    if not positions:
-        print("  ℹ️ Hiện không có vị thế nào đang mở.")
-        return
-    print(f"  ⚡ Đang đóng khẩn cấp {len(positions)} vị thế...")
-    for p in positions:
-        sym = p["symbol"]
-        amt = float(p["positionAmt"])
-        side = "SELL" if amt > 0 else "BUY"
-        qty = abs(amt)
+def fetch_candles_and_depth(symbol: str = "BTCUSDT", limit: int = 50) -> tuple[list[Candle], list[tuple[float, float]], list[tuple[float, float]]]:
+    """Fetch live 1-minute klines and order book depth from Binance Futures Testnet."""
+    # 1. Klines
+    req_k = urllib.request.Request(
+        f"{BASE_URL}/fapi/v1/klines?symbol={symbol}&interval=1m&limit={limit}",
+        headers={"User-Agent": "GrokTOPUS/1.0"},
+    )
+    with urllib.request.urlopen(req_k, timeout=5) as resp:
+        raw_klines = json.loads(resp.read().decode())
+    candles = [
+        Candle(
+            timestamp=float(k[0]),
+            open=float(k[1]),
+            high=float(k[2]),
+            low=float(k[3]),
+            close=float(k[4]),
+            volume=float(k[5]),
+        )
+        for k in raw_klines
+    ]
+
+    # 2. Depth
+    req_d = urllib.request.Request(
+        f"{BASE_URL}/fapi/v1/depth?symbol={symbol}&limit=20",
+        headers={"User-Agent": "GrokTOPUS/1.0"},
+    )
+    with urllib.request.urlopen(req_d, timeout=5) as resp:
+        raw_depth = json.loads(resp.read().decode())
+    bids = [(float(b[0]), float(b[1])) for b in raw_depth.get("bids", [])]
+    asks = [(float(a[0]), float(a[1])) for a in raw_depth.get("asks", [])]
+    return candles, bids, asks
+
+
+def run_autonomous_swarm(
+    symbol: str = "BTCUSDT",
+    interval_s: int = 10,
+    default_qty: float = 0.002,
+    stop_loss_pct: float = 1.0,
+    take_profit_pct: float = 1.2,
+):
+    """
+    Autonomous trading loop:
+    1. Ingests live klines & order book from Binance Testnet.
+    2. Computes statistical alpha indicators via RealAlphaEngine (no oracle leakage).
+    3. 6 Analyst Agents deliberate (TIDAL, NORO, LUMEN, ZEPHR, OKAPI, RUNE).
+    4. ConsensusEngine tallies weighted votes (Threshold >= 76.8%, RUNE veto).
+    5. If authorised, VESKA places entry order + on-exchange protective stop-loss.
+    6. MARIN monitors position PnL, trailing stops, and takes profit.
+    """
+    registry = AgentRegistry()
+    engine = ConsensusEngine(registry)
+    rng = random.Random()
+    cycle_count = 0
+    total_executed = 0
+
+    while True:
+        cycle_count += 1
+        os.system("cls" if os.name == "nt" else "clear")
+        print("==============================================================================")
+        print("    🐙 GROKTOPUS - BINANCE TESTNET 8-AGENT AUTONOMOUS SWARM")
+        print("==============================================================================")
+
         try:
-            signed_request("POST", "/fapi/v1/order", {
-                "symbol": sym,
-                "side": side,
-                "type": "MARKET",
-                "quantity": str(qty),
-                "reduceOnly": "true",
-            })
-            print(f"    - Đã đóng vị thế {sym} (khối lượng {qty})")
+            acc = get_account_info()
+            wallet_bal = acc["wallet_balance"]
+            avail_bal = acc["available_balance"]
+            unrealized_pnl = acc["unrealized_pnl"]
+            positions = acc["positions"]
         except Exception as e:
-            print(f"    - Lỗi khi đóng {sym}: {e}")
-            
-    # Cancel all open stop orders
-    for p in positions:
+            print(f"  ⚠️ Lỗi đọc tài khoản Binance Testnet: {e}")
+            time.sleep(3)
+            continue
+
         try:
-            signed_request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": p["symbol"]})
-            print(f"    - Đã hủy các lệnh chờ của {p['symbol']}")
-        except Exception:
-            pass
-    print("  ✅ Đã đóng toàn bộ vị thế an toàn!")
+            candles, bids, asks = fetch_candles_and_depth(symbol, limit=50)
+            spot = candles[-1].close if candles else float(get_ticker(symbol)["price"])
+            snap = RealAlphaEngine.evaluate_market(
+                symbol=symbol,
+                candles=candles,
+                bids=bids,
+                asks=asks,
+                current_equity=wallet_bal,
+                allocated_margin=0.0,
+            )
+        except Exception as e:
+            print(f"  ⚠️ Lỗi lấy dữ liệu thị trường: {e}")
+            time.sleep(3)
+            continue
+
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"  • Thời gian: {now_str} | Chu kỳ: #{cycle_count} | Trạng thái: TREO MÁY ĐANG CHẠY 🟢")
+        print(f"  • Sàn: Binance Futures Testnet | Ví: ${wallet_bal:,.2f} USDT | PnL mở: ${unrealized_pnl:+,.2f} USDT")
+        print(f"  • {symbol}: ${spot:,.2f} | RSI(14): {snap.rsi_14:.1f} | OBI: {snap.orderbook_imbalance:+.2f} | ATR%: {snap.atr_volatility_pct:.3f}% | Phí 2 chiều: {snap.cost_bps:.1f} bps")
+        print("-" * 78)
+
+        # MARIN: Monitor existing position
+        if positions:
+            p = positions[0]
+            amt = float(p["positionAmt"])
+            entry_px = float(p["entryPrice"])
+            pnl = float(p["unrealizedProfit"])
+            pos_side = "LONG (BUY)" if amt > 0 else "SHORT (SELL)"
+            notional = abs(amt) * entry_px
+            roe_pct = (pnl / notional * 100.0) if notional > 0 else 0.0
+
+            print(f"  📍 VỊ THẾ ĐANG MỞ: {p['symbol']} | {pos_side} | KL: {abs(amt)} BTC | Giá vào: ${entry_px:,.2f}")
+            print(f"     Lãi/Lỗ hiện tại: ${pnl:+,.2f} USDT ({roe_pct:+,.2f}%)")
+            print(f"  🛡️ MARIN: Đang giám sát vị thế & Lệnh Stop-Loss bảo vệ đang treo trên sàn.")
+
+            # Check Take Profit
+            if roe_pct >= take_profit_pct:
+                print(f"\n  🎯 [MARIN CHỐT LỜI THÀNH CÔNG] Đạt mục tiêu +{roe_pct:.2f}% (>= {take_profit_pct}%)!")
+                print(f"     Tiến hành đóng vị thế và hủy lệnh Stop-Loss trên sàn...")
+                flatten_all()
+            elif roe_pct <= -(stop_loss_pct * 1.5):
+                print(f"\n  ⚠️ [MARIN CẮT LỖ KHẨN CẤP] Vị thế vi phạm ngưỡng an toàn ({roe_pct:.2f}%)! Đang đóng vị thế...")
+                flatten_all()
+            else:
+                print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{take_profit_pct}%) hoặc Stop-Loss (-{stop_loss_pct}%).")
+        else:
+            print("  📍 VỊ THẾ HIỆN TẠI: Chưa có vị thế mở (Flat). Hội đồng 6 AI đang rà quét tín hiệu...")
+            
+            # Formulate proposed stance based on trend/momentum
+            proposed_side = VoteStance.BUY if snap.momentum_sigma > 0 else VoteStance.SELL
+            notional_cents = int(default_qty * spot * 100)
+            
+            context = snap.to_swarm_context(side_stance=proposed_side.value)
+            context["side"] = proposed_side
+            context["qty"] = int(default_qty * 1000)
+            context["price_cents"] = int(spot * 100)
+            context["notional_cents"] = notional_cents
+            context["equity_cents"] = int(wallet_bal * 100)
+            context["mispricing_bps"] = snap.forecast_bps
+            context["step"] = cycle_count
+
+            proposal = Proposal(
+                proposal_id=f"PROP_{int(time.time()*1000)}",
+                symbol=symbol,
+                side=proposed_side,
+                qty=context["qty"],
+                price_cents=context["price_cents"],
+            )
+
+            # Deliberation across 6 analysts
+            print(f"\n  📋 HỘI ĐỒNG 6 AI BIỂU QUYẾT CHO ĐỀ XUẤT [{proposed_side.value} {symbol}]:")
+            votes: list[Vote] = []
+            for spec in registry.analysts():
+                res = heuristic_brain(spec, "", context, rng)
+                vote = Vote(
+                    agent=spec.name,
+                    stance=VoteStance(res["stance"]),
+                    confidence=res["confidence"],
+                    rationale=res["rationale"],
+                    veto=res.get("veto", False),
+                )
+                votes.append(vote)
+                veto_tag = " ⛔ [VETO!]" if vote.veto else ""
+                print(f"    • {spec.name:<6s} ({spec.role_vi or spec.role:<18s}): {vote.stance.value:<4s} | Tin cậy: {vote.confidence*100:5.1f}% | {vote.rationale}{veto_tag}")
+
+            # Consensus tally
+            print("-" * 78)
+            c_res = engine.evaluate(proposal, votes)
+            if c_res.authorised:
+                print(f"  🚀 ĐỒNG THUẬN: {c_res.score_pct:.1f}% >= 76.8%  ==>  [EXECUTE] ĐẠT CHUẨN SIÊU ĐA SỐ!")
+                print(f"  🔑 ConsensusEngine đã cấp mã Token: {c_res.token.token[:20]}... (Chữ ký bảo mật đơn hiệu)")
+                print(f"  ⚡ VESKA kích hoạt vào lệnh thật trên Binance Futures Testnet...")
+                try:
+                    place_test_order(symbol=symbol, side=proposed_side.value, qty=default_qty, stop_loss_pct=stop_loss_pct)
+                    total_executed += 1
+                except Exception as e:
+                    print(f"  ❌ Lỗi khi bắn lệnh: {e}")
+            elif c_res.decision == ConsensusDecision.HOLD:
+                print(f"  ⏸️ ĐỒNG THUẬN: {c_res.score_pct:.1f}% / 76.8%  ==>  [HOLD] CHƯA ĐẠT NGƯỠNG SIÊU ĐA SỐ")
+                print(f"     (Tín hiệu chưa đủ hội tụ cao, 6 AI thống nhất giữ ${wallet_bal:,.2f} USDT an toàn, đợi chu kỳ sau)")
+            elif c_res.decision == ConsensusDecision.VETO:
+                print(f"  🛡️ ĐỒNG THUẬN: [VETO BÁC BỎ] Người gác cổng {c_res.veto_source or 'RUNE'} phủ quyết: {c_res.reason}")
+
+        print("-" * 78)
+        print(f"  ⏳ Đang đếm ngược {interval_s}s sang chu kỳ #{cycle_count + 1}... (Nhấn Ctrl+C để dừng)")
+        try:
+            for s in range(interval_s, 0, -1):
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            print("\n")
+            print("=" * 78)
+            print("    🛑 ĐÃ TẠM DỪNG CHẾ ĐỘ TREO MÁY TỰ ĐỘNG")
+            print("==============================================================================")
+            print(f"  • Tổng chu kỳ đã chạy: {cycle_count}")
+            print(f"  • Số lệnh AI đã khớp:  {total_executed}")
+            print()
+            print("  [1] Tiếp tục treo máy tự động")
+            print("  [2] Đóng khẩn cấp mọi vị thế & Hủy lệnh chờ (Flatten All)")
+            print("  [0] Quay lại menu chính")
+            print("==============================================================================")
+            try:
+                sub_c = input("👉 Nhập lựa chọn của bạn (0-2): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                break
+            if sub_c == "1":
+                continue
+            elif sub_c == "2":
+                flatten_all()
+                input("\nNhấn Enter để quay lại menu...")
+                break
+            else:
+                break
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--auto", "-a"):
+        run_autonomous_swarm()
+        return
+
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         print("==============================================================================")
@@ -199,10 +383,11 @@ def main():
         print("  [2] Bắn 1 lệnh thử nghiệm LONG 0.002 BTC (kèm Stop-Loss trên sàn)")
         print("  [3] Bắn 1 lệnh thử nghiệm SHORT 0.002 BTC (kèm Stop-Loss trên sàn)")
         print("  [4] Đóng toàn bộ vị thế & Hủy lệnh chờ ngay lập tức (Flatten All)")
+        print("  [5] 🤖 BẬT CHẾ ĐỘ TREO MÁY TỰ ĐỘNG (8 AI Swarm Autonomous Live Trading)")
         print("  [0] Thoát (Quay lại)")
         print("==============================================================================")
         try:
-            c = input("👉 Nhập lựa chọn của bạn (0-4): ").strip()
+            c = input("👉 Nhập lựa chọn của bạn (0-5): ").strip()
         except (KeyboardInterrupt, EOFError):
             break
             
@@ -223,6 +408,8 @@ def main():
         elif c == "4":
             flatten_all()
             input("\nNhấn Enter để tiếp tục...")
+        elif c == "5":
+            run_autonomous_swarm()
         elif c == "0":
             break
 
