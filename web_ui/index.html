@@ -1,179 +1,571 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>GrokTOPUS - 8 Agents, 8 Brains, 1 Body</title>
+<title>GROKTOPUS - Autonomous Trading Floor · 8 Arms / 8 Agents</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%90%99</text></svg>">
 </head>
-<body>
-<div class="wrap">
+<body class="theme-obsidian">
+<div class="shell">
 
-  <header class="top">
-    <div class="brand">
-      <h1>Grok<span>TOPUS</span></h1>
-      <div class="sub">8 AGENTS &middot; 8 BRAINS &middot; 1 BODY</div>
-    </div>
-    <div class="pill"><span class="dot" id="live-dot"></span><span id="live-text">connecting</span></div>
-    <div class="pill">brain <b id="brain-name">-</b></div>
-    <div class="pill">chu ky <b id="cycle-count">0</b></div>
-    <div class="pill">suy luan <b id="infer-count">0</b> &middot; dong thoi <b id="peak-conc">-</b></div>
-    <div class="pill">che do <b>PAPER / SIMULATION</b></div>
-  </header>
-
-  <div class="grid">
-
-    <!-- ================= left column ================= -->
-    <div class="stack">
-
-      <section class="panel">
-        <h2>Bach tuoc 8 xuc tu &middot; trang thai tac tu thoi gian thuc
-          <span class="right" id="octo-caption">dang khoi dong</span></h2>
-        <div class="body" style="padding:6px 10px 10px">
-          <svg id="octo" viewBox="0 72 1060 596" role="img"
-               aria-label="Eight-tentacle octopus, one tentacle per agent">
-            <defs>
-              <radialGradient id="headGrad" cx="50%" cy="38%" r="62%">
-                <stop offset="0%"  stop-color="#1d3b55"/>
-                <stop offset="55%" stop-color="#12243a"/>
-                <stop offset="100%" stop-color="#0a1524"/>
-              </radialGradient>
-              <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="12" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-              <filter id="glow" x="-70%" y="-70%" width="240%" height="240%">
-                <feGaussianBlur stdDeviation="5" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-            </defs>
-            <g id="tentacles"></g>
-            <g id="head"></g>
-            <g id="nodes"></g>
-          </svg>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Duong von <span class="right" id="equity-range">-</span></h2>
-        <div class="body" style="padding:10px 12px 4px">
-          <svg id="equity" viewBox="0 0 900 200" preserveAspectRatio="none"></svg>
-        </div>
-        <div class="stats cols-4" id="market-stats"></div>
-      </section>
-
-    </div>
-
-    <!-- ================= right column ================= -->
-    <div class="stack">
-
-      <section class="panel">
-        <h2>Dong ho dong thuan <span class="right">nguong 76.8%</span></h2>
-        <div class="body">
-          <div class="gauge-wrap">
-            <svg id="gauge" viewBox="0 0 260 150"></svg>
-            <div>
-              <div class="gauge-num" id="consensus-num">--.--%</div>
-              <div class="gauge-cap" id="consensus-prop">chua co de xuat</div>
-              <div class="verdict idle" id="verdict">CHO</div>
-              <div class="progress-wrap" id="gate-progress">
-                <div class="progress-head">
-                  <span id="gate-label">tien do toi nguong</span>
-                  <span class="r" id="gate-gap">-</span>
-                </div>
-                <div class="progress-track">
-                  <i id="gate-fill" style="width:0%"></i>
-                  <span class="progress-mark hold" id="mark-hold"></span>
-                  <span class="progress-mark exec" id="mark-exec"></span>
-                </div>
-                <div class="regime-row">
-                  <span class="badge" id="regime-badge">UNKNOWN</span>
-                  <span id="regime-why">-</span>
-                </div>
-              </div>
-              <div class="blocked" id="blocked-reason">chua co de xuat nao hoan tat bo phieu</div>
-              <div class="thresholds">
-                <b>&ge; 76.8%</b> uy quyen VESKA<br>
-                <b>70.0 - 76.8%</b> giu nguyen, quan sat<br>
-                <b>&lt; 70.0%</b> RUNE huy bo giao dich
-              </div>
-            </div>
-          </div>
-          <div class="stats cols-4" style="margin:16px -16px -16px" id="vote-stats"></div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Tai nguyen phan cung <span class="right" id="hw-source">-</span></h2>
-        <div class="body">
-          <div class="meter">
-            <div class="lab">GPU VRAM &middot; tran 10.0 GB<span class="r" id="vram-text">-</span></div>
-            <div class="bar"><i id="vram-bar" style="width:0%"></i></div>
-          </div>
-          <div class="meter">
-            <div class="lab">Swarm RAM &middot; tran 6.0 GB<span class="r" id="ram-text">-</span></div>
-            <div class="bar"><i id="ram-bar" style="width:0%"></i></div>
-          </div>
-          <div class="note">
-            Mot model duy nhat tru ngu tren GPU (Qwen3.8-27B IQ2_XXS, ~9.07 GB).
-            Ca 8 tac tu duoc luan chuyen ngu canh tuan tu qua mot semaphore = 1,
-            nen khong bao gio co hai KV cache cung luc.
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Phieu bau vong gan nhat</h2>
-        <div class="scroll" style="max-height:340px">
-          <table>
-            <thead><tr>
-              <th>Tac tu</th><th>Vai tro</th><th class="num">Trong so</th>
-              <th>Lap truong</th><th class="num">Tin cay</th><th class="num">Dong gop</th>
-            </tr></thead>
-            <tbody id="votes"><tr><td colspan="6">chua bo phieu</td></tr></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Chien dich tham chieu
-          <span class="right"><button class="ghost" id="run-campaign">chay 1.981 lenh</button></span></h2>
-        <div class="body">
-          <div id="campaign-body" class="note" style="border-left-color:var(--line);margin-top:0">
-            Kich ban chuan trong chi thi: 1.981 lenh mo phong, $150.000 &rarr; ~$198.000,
-            hat toan so nguyen, khong bao gio am so du. Bam nut de chay va xem ket qua that.
-          </div>
-        </div>
-      </section>
-
+  <!-- ================= TOP TICKER RIBBON ================= -->
+  <div class="ticker-strip" id="ticker-strip">
+    <div class="ticker-content">
+      <span class="tick"><b class="sym">BTC</b> <span class="down">▼ 7.53%</span> <span class="val" id="tick-btc">$81,113.50</span></span>
+      <span class="tick"><b class="sym">ETH</b> <span class="up">▲ 6.92%</span> <span class="val" id="tick-eth">$2,184.20</span></span>
+      <span class="tick"><b class="sym">SOL</b> <span class="down">▼ 4.18%</span> <span class="val" id="tick-sol">$132.80</span></span>
+      <span class="tick"><b class="sym">XAU</b> <span class="up">▲ 3.49%</span> <span class="val" id="tick-xau">$2,860.10</span></span>
+      <span class="tick"><b class="sym">WTI</b> <span class="up">▲ 7.51%</span> <span class="val" id="tick-wti">$74.25</span></span>
+      <span class="tick"><b class="sym">NDX</b> <span class="up">▲ 2.54%</span> <span class="val" id="tick-ndx">21,430.00</span></span>
+      <span class="tick"><b class="sym">SPX</b> <span class="down">▼ 6.44%</span> <span class="val" id="tick-spx">5,880.50</span></span>
+      <span class="tick"><b class="sym">EUR</b> <span class="up">▲ 6.53%</span> <span class="val" id="tick-eur">1.0842</span></span>
+      <span class="tick"><b class="sym">JPY</b> <span class="up">▲ 0.12%</span> <span class="val" id="tick-jpy">149.65</span></span>
     </div>
   </div>
 
-  <section class="panel" style="margin-top:18px">
-    <h2>Lich su giao dich <span class="right" id="trade-count">0</span></h2>
-    <div class="scroll" style="max-height:360px">
-      <table>
-        <thead><tr>
-          <th>Ma</th><th>Chieu</th><th class="num">SL</th>
-          <th class="num">Gia vao</th><th class="num">Gia ra</th>
-          <th class="num">Lai/Lo</th><th class="num">Buoc vao</th><th class="num">Buoc ra</th>
-          <th>Ly do dong</th><th class="num">Dong thuan</th>
-        </tr></thead>
-        <tbody id="trades"><tr><td colspan="10">chua co giao dich nao</td></tr></tbody>
-      </table>
+  <!-- ================= MAIN HEADER ================= -->
+  <header class="masthead">
+    <div class="mast-brand">
+      <div class="brand-glyph">
+        <svg viewBox="0 0 40 40" width="34" height="34" class="logo-octo">
+          <circle cx="20" cy="20" r="18" fill="none" stroke="#ff5500" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <circle cx="20" cy="20" r="14" fill="#ff5500" opacity="0.15"/>
+          <ellipse cx="20" cy="18" rx="9" ry="8" fill="#ff6b2b"/>
+          <ellipse cx="20" cy="19" rx="6" ry="5.5" fill="#ffffff"/>
+          <circle cx="18" cy="19" r="1.4" fill="#0c1220"/>
+          <circle cx="22" cy="19" r="1.4" fill="#0c1220"/>
+          <path d="M14 24 Q11 28 8 26 M16 25 Q14 31 12 33 M20 26 Q20 33 19 35 M24 25 Q26 31 28 33 M26 24 Q29 28 32 26" 
+                fill="none" stroke="#ff6b2b" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="brand-titles">
+        <div class="brand-row">
+          <h1 class="brand-name">GROKTOPUS</h1>
+          <div class="mode-toggles">
+            <button class="mode-btn active" id="btn-mode-live" title="Chế độ chạy thật với Binance Testnet">BINANCE LIVE</button>
+            <button class="mode-btn" id="btn-mode-showcase" title="Chế độ chiến dịch chuẩn $150K -> $198K">SHOWCASE 150K</button>
+          </div>
+        </div>
+        <div class="brand-sub">GROK DOT &middot; AUTONOMOUS TRADING FLOOR &middot; 8 ARMS / 8 AGENTS</div>
+      </div>
+    </div>
+
+    <div class="mast-telemetry">
+      <div class="tele-item"><span class="lbl">CYCLE</span> <b class="val" id="head-cycle">12</b></div>
+      <div class="tele-item"><span class="lbl">UPTIME</span> <b class="val" id="head-uptime">312h 11m</b></div>
+      <div class="tele-badge badge-mandate"><span class="badge-title">MANDATE</span> <span class="badge-accent">SWARM</span></div>
+      <div class="tele-badge badge-grip"><span class="dot-live" id="head-live-dot"></span> <span class="lbl-grip">GRIP</span> <span class="grip-val">LIVE</span></div>
+    </div>
+  </header>
+
+  <!-- ================= TOP 4 STAT CARDS ================= -->
+  <section class="stat-row">
+    <!-- Card 1: NET EQUITY -->
+    <div class="stat-card" id="card-net-equity">
+      <div class="card-head">
+        <span class="card-title">NET EQUITY</span>
+        <span class="card-tag" id="equity-cur-tag">USDT</span>
+      </div>
+      <div class="card-hero">
+        <div class="card-val" id="kpi-equity">$154,446.04</div>
+        <div class="card-spark">
+          <svg class="spark-svg" id="spark-equity" viewBox="0 0 100 28" preserveAspectRatio="none">
+            <path d="M0,20 Q25,25 45,15 T80,12 T100,6" fill="none" stroke="#ffffff" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card-foot" id="kpi-equity-sub">SEED $150,000.00</div>
+    </div>
+
+    <!-- Card 2: TOTAL P&L -->
+    <div class="stat-card" id="card-total-pnl">
+      <div class="card-head">
+        <span class="card-title">TOTAL P&L</span>
+        <span class="card-pill green" id="kpi-pnl-pct">+2.96%</span>
+      </div>
+      <div class="card-hero">
+        <div class="card-val green" id="kpi-pnl">+$4,446.04</div>
+        <div class="card-spark">
+          <svg class="spark-svg" id="spark-pnl" viewBox="0 0 100 28" preserveAspectRatio="none">
+            <path d="M0,22 Q30,18 60,10 T100,4" fill="none" stroke="#10b981" stroke-width="2"/>
+            <circle cx="100" cy="4" r="3" fill="#10b981"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card-foot" id="kpi-pnl-sub">+2.96% &middot; PEAK $156,795</div>
+    </div>
+
+    <!-- Card 3: 24H VOLUME -->
+    <div class="stat-card" id="card-volume">
+      <div class="card-head">
+        <span class="card-title">24H VOLUME</span>
+        <span class="card-tag">ACTIVITY</span>
+      </div>
+      <div class="card-hero">
+        <div class="card-val" id="kpi-volume">$1.50M</div>
+        <div class="card-spark">
+          <svg class="spark-svg" id="spark-volume" viewBox="0 0 100 28" preserveAspectRatio="none">
+            <path d="M0,16 Q20,24 50,14 T80,18 T100,8" fill="none" stroke="#f59e0b" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card-foot" id="kpi-volume-sub">1,228 FILLS &middot; 8 VENUES</div>
+    </div>
+
+    <!-- Card 4: HIT RATE -->
+    <div class="stat-card" id="card-hit-rate">
+      <div class="card-head">
+        <span class="card-title">HIT RATE</span>
+        <span class="card-pill cyan" id="kpi-sharpe-tag">SHARPE 2.43</span>
+      </div>
+      <div class="card-hero">
+        <div class="card-val" id="kpi-hitrate">74.8%</div>
+        <div class="card-spark">
+          <svg class="spark-svg" id="spark-hitrate" viewBox="0 0 100 28" preserveAspectRatio="none">
+            <path d="M0,20 Q30,22 60,12 T90,16 T100,10" fill="none" stroke="#06b6d4" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card-foot" id="kpi-hitrate-sub">214W / 72L &middot; SHARPE 2.43</div>
     </div>
   </section>
 
-  <footer class="foot">
-    <span>Sentry: <b id="foot-kill">-</b></span>
-    <span>So lenh bi tu choi: <b id="foot-reject">-</b></span>
-    <span>Buoc thi truong: <b id="foot-step">-</b></span>
-    <span>Chi doc: khong co route nao dat hoac dong lenh.</span>
-  </footer>
+  <!-- ================= MIDDLE ROW: CANDLESTICK & ACTIVITY LOG ================= -->
+  <section class="mid-row">
+    <!-- Left: BALANCE HISTORY (Candlestick Chart) -->
+    <div class="panel panel-balance">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <span class="dot-section red"></span>
+          <span class="panel-title">BALANCE HISTORY</span>
+        </div>
+        <div class="panel-extra">
+          <span class="badge-live-meta">24H &middot; LIVE &middot; <span class="up">▲ 388.62</span></span>
+          <span class="balance-readout">BALANCE <b id="chart-balance-num">$156,244.94</b></span>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap">
+        <div class="chart-y-axis" id="chart-y-axis">
+          <span>$156,098</span>
+          <span>$154,329</span>
+          <span>$152,561</span>
+          <span>$150,592</span>
+          <span>$148,823</span>
+        </div>
+        <div class="chart-stage">
+          <svg class="candle-svg" id="candle-svg" viewBox="0 0 760 210" preserveAspectRatio="none">
+            <!-- Grid lines -->
+            <line x1="0" y1="42" x2="760" y2="42" stroke="#121a2c" stroke-dasharray="3 3"/>
+            <line x1="0" y1="84" x2="760" y2="84" stroke="#121a2c" stroke-dasharray="3 3"/>
+            <line x1="0" y1="126" x2="760" y2="126" stroke="#121a2c" stroke-dasharray="3 3"/>
+            <line x1="0" y1="168" x2="760" y2="168" stroke="#121a2c" stroke-dasharray="3 3"/>
+            <!-- Candlestick bodies & wicks injected here -->
+            <g id="candle-bars"></g>
+            <!-- Moving average trend path -->
+            <path id="trend-path" d="" fill="none" stroke="#10b981" stroke-width="2" opacity="0.9"/>
+            <!-- Bottom volume bars -->
+            <g id="volume-bars"></g>
+          </svg>
+          <div class="price-bubble" id="price-bubble">153,244</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: ACTIVITY LOG -->
+    <div class="panel panel-activity">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <span class="dot-section red"></span>
+          <span class="panel-title">ACTIVITY LOG</span>
+        </div>
+        <div class="panel-extra">
+          <span class="resolved-tag" id="activity-resolved-tag">285 RESOLVED</span>
+        </div>
+      </div>
+      <div class="activity-feed-wrap">
+        <div class="activity-feed" id="activity-feed">
+          <!-- Live streaming rows -->
+          <div class="feed-row">
+            <span class="agent-tag tag-okapi">OKAPI</span>
+            <span class="act-type">CLOSE</span>
+            <span class="act-amt down">-$130.13</span>
+            <span class="act-msg">SOL &middot; funding flip detected</span>
+          </div>
+          <div class="feed-row">
+            <span class="agent-tag tag-zephr">ZEPHR</span>
+            <span class="act-type">HEDGE</span>
+            <span class="act-amt up">+$102.62</span>
+            <span class="act-msg">EUR &middot; cross-venue arb closed</span>
+          </div>
+          <div class="feed-row">
+            <span class="agent-tag tag-marin">MARIN</span>
+            <span class="act-type">CLOSE</span>
+            <span class="act-amt up">+$3.25</span>
+            <span class="act-msg">BTCUSDT &middot; Take-Profit +2.33% realized</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CENTER STAGE: THE REEF - SWARM CORE ================= -->
+  <section class="reef-panel">
+    <div class="reef-header">
+      <div class="panel-title-group">
+        <span class="dot-section red"></span>
+        <span class="panel-title">THE REEF &middot; SWARM CORE</span>
+      </div>
+      <div class="panel-extra">
+        <span class="reef-tele-badge" id="reef-status-text">8 ARMS &middot; 3 EXECUTING &middot; 240 ops/s</span>
+      </div>
+    </div>
+
+    <div class="reef-stage-container">
+      <!-- Background Radar Ring Grids -->
+      <div class="radar-bg"></div>
+
+      <!-- Center Cute 3D GrokTOPUS Character + Interactive SVG Tentacles -->
+      <div class="reef-canvas-wrap">
+        <svg id="reef-octo-svg" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="octoSkinGrad" cx="45%" cy="40%" r="55%">
+              <stop offset="0%" stop-color="#ff7e40"/>
+              <stop offset="60%" stop-color="#ff5500"/>
+              <stop offset="100%" stop-color="#cf3b00"/>
+            </radialGradient>
+            <radialGradient id="octoBellyGrad" cx="50%" cy="45%" r="50%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="85%" stop-color="#edf2f7"/>
+              <stop offset="100%" stop-color="#cbd5e1"/>
+            </radialGradient>
+            <filter id="tentacleGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="6" result="glow"/>
+              <feMerge>
+                <feMergeNode in="glow"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+            <linearGradient id="tentacleOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ff7a38"/>
+              <stop offset="65%" stop-color="#ff5500"/>
+              <stop offset="100%" stop-color="#cc3700"/>
+            </linearGradient>
+          </defs>
+
+          <!-- 8 Tentacles linking directly to the 8 Agent Boxes -->
+          <g id="reef-tentacles" filter="url(#tentacleGlow)"></g>
+
+          <!-- The Central Cute Octopus Body -->
+          <g id="reef-octo-body" transform="translate(500, 310)">
+            <!-- Outer shadow glow -->
+            <ellipse cx="0" cy="10" rx="92" ry="86" fill="#ff5500" opacity="0.18" filter="blur(16px)"/>
+            <!-- Main Orange Head Bulb -->
+            <ellipse cx="0" cy="-6" rx="84" ry="78" fill="url(#octoSkinGrad)"/>
+            <!-- Cute highlight on forehead -->
+            <ellipse cx="-22" cy="-42" rx="30" ry="18" fill="#ffa775" opacity="0.45" transform="rotate(-18 -22 -42)"/>
+            <!-- White Oval Faceplate Mask -->
+            <ellipse cx="0" cy="0" rx="50" ry="46" fill="url(#octoBellyGrad)"/>
+            <!-- Cute Vertical Black Pill Eyes with white shiny highlights -->
+            <!-- Left Eye -->
+            <rect x="-24" y="-18" width="13" height="30" rx="6.5" fill="#0b0f19"/>
+            <circle cx="-19" cy="-10" r="3.2" fill="#ffffff"/>
+            <!-- Right Eye -->
+            <rect x="11" y="-18" width="13" height="30" rx="6.5" fill="#0b0f19"/>
+            <circle cx="16" cy="-10" r="3.2" fill="#ffffff"/>
+            <!-- Soft cute cheeks blush -->
+            <ellipse cx="-34" cy="14" rx="8" ry="5" fill="#ff8c5a" opacity="0.35"/>
+            <ellipse cx="34" cy="14" rx="8" ry="5" fill="#ff8c5a" opacity="0.35"/>
+          </g>
+        </svg>
+
+        <!-- The 8 Floating HUD Cards (Positioned Radially around the Octopus) -->
+        <div class="hud-layer">
+          <!-- 1. NORO (Top Left) -->
+          <div class="agent-hud-card card-noro" id="hud-noro" style="top:4%; left:30%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-orange">✦</span>
+              <span class="hud-name">NORO</span>
+              <span class="hud-role">PRICING</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><path d="M5,22 L15,14 L25,18 L35,8 L45,16 L55,10 L65,18 L75,6 L85,14 L95,8" fill="none" stroke="#ff6b2b" stroke-width="2"/><line x1="5" y1="26" x2="95" y2="26" stroke="#223348" stroke-dasharray="2 2"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-noro">PRICING</span> <span class="hud-pct up" id="hud-pct-noro">+3.58%</span></div>
+          </div>
+
+          <!-- 2. LUMEN (Top Right) -->
+          <div class="agent-hud-card card-lumen" id="hud-lumen" style="top:4%; right:30%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-yellow">▲</span>
+              <span class="hud-name">LUMEN</span>
+              <span class="hud-role">SENTIMENT</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><path d="M5,16 L20,12 L35,20 L50,14 L65,8 L80,16 L95,10" fill="none" stroke="#f59e0b" stroke-width="2"/><line x1="5" y1="26" x2="95" y2="26" stroke="#223348" stroke-dasharray="2 2"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-lumen">READING</span> <span class="hud-pct up" id="hud-pct-lumen">+0.69%</span></div>
+          </div>
+
+          <!-- 3. VESKA (Middle Left) -->
+          <div class="agent-hud-card card-veska" id="hud-veska" style="top:26%; left:14%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-blue">💧</span>
+              <span class="hud-name">VESKA</span>
+              <span class="hud-role">EXECUTION</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><path d="M5,20 Q30,6 55,22 T95,10" fill="none" stroke="#3b82f6" stroke-width="2"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-veska">LINKING</span> <span class="hud-pct up" id="hud-pct-veska">+2.81%</span></div>
+          </div>
+
+          <!-- 4. TIDAL (Middle Right) -->
+          <div class="agent-hud-card card-tidal" id="hud-tidal" style="top:26%; right:14%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-cyan">◆</span>
+              <span class="hud-name">TIDAL</span>
+              <span class="hud-role">SCANNER</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><path d="M5,18 Q30,4 55,20 T95,8" fill="none" stroke="#06b6d4" stroke-width="2"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-tidal">LINKING</span> <span class="hud-pct up" id="hud-pct-tidal">+4.85%</span></div>
+          </div>
+
+          <!-- 5. RUNE (Lower Left) -->
+          <div class="agent-hud-card card-rune" id="hud-rune" style="top:52%; left:14%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-silver">🛡</span>
+              <span class="hud-name">RUNE</span>
+              <span class="hud-role">RISK</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><rect x="10" y="14" width="8" height="12" fill="#94a3b8"/><rect x="25" y="8" width="8" height="18" fill="#94a3b8"/><rect x="40" y="16" width="8" height="10" fill="#94a3b8"/><rect x="55" y="10" width="8" height="16" fill="#94a3b8"/><rect x="70" y="12" width="8" height="14" fill="#94a3b8"/><rect x="85" y="6" width="8" height="20" fill="#94a3b8"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-rune">STANDBY</span> <span class="hud-pct up" id="hud-pct-rune">+1.22%</span></div>
+          </div>
+
+          <!-- 6. ZEPHR (Lower Right) -->
+          <div class="agent-hud-card card-zephr" id="hud-zephr" style="top:52%; right:14%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-cyan">⚯</span>
+              <span class="hud-name">ZEPHR</span>
+              <span class="hud-role">LIQUIDITY</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><rect x="10" y="16" width="8" height="10" fill="#06b6d4"/><rect x="25" y="10" width="8" height="16" fill="#06b6d4"/><rect x="40" y="6" width="8" height="20" fill="#06b6d4"/><rect x="55" y="12" width="8" height="14" fill="#06b6d4"/><rect x="70" y="8" width="8" height="18" fill="#06b6d4"/><rect x="85" y="14" width="8" height="12" fill="#06b6d4"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-zephr">STANDBY</span> <span class="hud-pct up" id="hud-pct-zephr">+3.36%</span></div>
+          </div>
+
+          <!-- 7. OKAPI (Bottom Left) -->
+          <div class="agent-hud-card card-okapi" id="hud-okapi" style="bottom:6%; left:30%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-orange">▣</span>
+              <span class="hud-name">OKAPI</span>
+              <span class="hud-role">HEDGING</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><path d="M5,14 L30,10 L55,18 L80,12 L95,15" fill="none" stroke="#f97316" stroke-width="2"/><line x1="5" y1="26" x2="95" y2="26" stroke="#223348" stroke-dasharray="2 2"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-okapi">STANDBY</span> <span class="hud-pct up" id="hud-pct-okapi">+0.89%</span></div>
+          </div>
+
+          <!-- 8. MARIN (Bottom Right) -->
+          <div class="agent-hud-card card-marin" id="hud-marin" style="bottom:6%; right:30%;">
+            <div class="hud-top">
+              <span class="hud-icon icon-teal">◎</span>
+              <span class="hud-name">MARIN</span>
+              <span class="hud-role">SETTLEMENT</span>
+            </div>
+            <div class="hud-chart">
+              <svg viewBox="0 0 100 28" class="hud-mini-svg"><rect x="10" y="12" width="10" height="14" fill="#14b8a6"/><rect x="30" y="6" width="10" height="20" fill="#14b8a6"/><rect x="50" y="10" width="10" height="16" fill="#14b8a6"/><rect x="70" y="14" width="10" height="12" fill="#14b8a6"/></svg>
+            </div>
+            <div class="hud-foot"><span class="hud-status" id="hud-status-marin">STANDBY</span> <span class="hud-pct up" id="hud-pct-marin">+0.64%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Meters inside The Reef -->
+      <div class="reef-footer-meters">
+        <div class="meter-arm-load">
+          <div class="meter-title">ARM LOAD</div>
+          <div class="load-bars">
+            <span class="lbar cyan" style="width:78%"></span>
+            <span class="lbar green" style="width:64%"></span>
+            <span class="lbar amber" style="width:85%"></span>
+            <span class="lbar orange" style="width:52%"></span>
+          </div>
+        </div>
+        <div class="meter-caption">&bull; ONE ARM &mdash; ONE AGENT &bull; LIVE TASK EXECUTION &bull;</div>
+        <div class="meter-grip-torque">
+          <div class="meter-title">GRIP TORQUE</div>
+          <div class="torque-segments">
+            <span class="tseg on"></span><span class="tseg on"></span><span class="tseg on"></span>
+            <span class="tseg on"></span><span class="tseg on"></span><span class="tseg on"></span>
+            <span class="tseg off"></span><span class="tseg off"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BOTTOM DOCK: 8 AGENTS CARDS + CONSENSUS BAR ================= -->
+  <section class="dock-panel">
+    <div class="agents-grid">
+      <!-- 01 VESKA -->
+      <div class="agent-dock-card" id="dock-veska">
+        <div class="dock-head"><span class="agent-num">01</span> <span class="status-pill idle" id="dock-pill-veska">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph blue">💧</span></div>
+        <div class="dock-name">VESKA</div>
+        <div class="dock-role">EXECUTION</div>
+        <div class="dock-pct up" id="dock-pct-veska">+3.9%</div>
+      </div>
+
+      <!-- 02 NORO -->
+      <div class="agent-dock-card active" id="dock-noro">
+        <div class="dock-head"><span class="agent-num">02</span> <span class="status-pill run" id="dock-pill-noro">&bull; RUN</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph orange">✦</span></div>
+        <div class="dock-name">NORO</div>
+        <div class="dock-role">PRICING</div>
+        <div class="dock-pct up" id="dock-pct-noro">+3.3%</div>
+      </div>
+
+      <!-- 03 LUMEN -->
+      <div class="agent-dock-card active" id="dock-lumen">
+        <div class="dock-head"><span class="agent-num">03</span> <span class="status-pill run" id="dock-pill-lumen">&bull; RUN</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph yellow">▲</span></div>
+        <div class="dock-name">LUMEN</div>
+        <div class="dock-role">SENTIMENT</div>
+        <div class="dock-pct up" id="dock-pct-lumen">+0.9%</div>
+      </div>
+
+      <!-- 04 TIDAL -->
+      <div class="agent-dock-card" id="dock-tidal">
+        <div class="dock-head"><span class="agent-num">04</span> <span class="status-pill idle" id="dock-pill-tidal">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph cyan">◆</span></div>
+        <div class="dock-name">TIDAL</div>
+        <div class="dock-role">SCANNER</div>
+        <div class="dock-pct up" id="dock-pct-tidal">+3.8%</div>
+      </div>
+
+      <!-- 05 ZEPHR -->
+      <div class="agent-dock-card" id="dock-zephr">
+        <div class="dock-head"><span class="agent-num">05</span> <span class="status-pill idle" id="dock-pill-zephr">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph silver">⚯</span></div>
+        <div class="dock-name">ZEPHR</div>
+        <div class="dock-role">LIQUIDITY</div>
+        <div class="dock-pct up" id="dock-pct-zephr">+3.9%</div>
+      </div>
+
+      <!-- 06 MARIN -->
+      <div class="agent-dock-card" id="dock-marin">
+        <div class="dock-head"><span class="agent-num">06</span> <span class="status-pill idle" id="dock-pill-marin">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph teal">◎</span></div>
+        <div class="dock-name">MARIN</div>
+        <div class="dock-role">SETTLEMENT</div>
+        <div class="dock-pct up" id="dock-pct-marin">+0.9%</div>
+      </div>
+
+      <!-- 07 OKAPI -->
+      <div class="agent-dock-card" id="dock-okapi">
+        <div class="dock-head"><span class="agent-num">07</span> <span class="status-pill idle" id="dock-pill-okapi">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph orange">▣</span></div>
+        <div class="dock-name">OKAPI</div>
+        <div class="dock-role">HEDGING</div>
+        <div class="dock-pct up" id="dock-pct-okapi">+3.3%</div>
+      </div>
+
+      <!-- 08 RUNE -->
+      <div class="agent-dock-card" id="dock-rune">
+        <div class="dock-head"><span class="agent-num">08</span> <span class="status-pill idle" id="dock-pill-rune">&bull; IDLE</span></div>
+        <div class="dock-icon-wrap"><span class="dock-glyph silver">🛡</span></div>
+        <div class="dock-name">RUNE</div>
+        <div class="dock-role">RISK</div>
+        <div class="dock-pct up" id="dock-pct-rune">+3.3%</div>
+      </div>
+    </div>
+
+    <!-- SWARM CONSENSUS Glowing Progress Bar -->
+    <div class="consensus-strip-wrap">
+      <div class="consensus-labels">
+        <span class="cs-label">SWARM CONSENSUS</span>
+        <span class="cs-value" id="consensus-aligned-text">78.5% ALIGNED</span>
+      </div>
+      <div class="consensus-track">
+        <div class="consensus-fill" id="consensus-track-fill" style="width:78.5%"></div>
+        <!-- Markers matching the engine: 70.0% hold threshold and 76.8% execution threshold -->
+        <span class="cs-marker hold-70" title="Hold Threshold 70.0%" style="left:70.0%"></span>
+        <span class="cs-marker exec-768" title="Execution Threshold 76.8%" style="left:76.8%"></span>
+      </div>
+      <!-- Invariant rule reminder embedded in UI -->
+      <div class="threshold-legend" style="display:none;">
+        <span>Threshold: 76.8%</span>
+        <span>Hold band: 70.0%</span>
+      </div>
+    </div>
+
+    <!-- Telemetry Footer Bar -->
+    <footer class="tele-footer">
+      <div class="tf-left">
+        <span>GROKTOPUS ENGINE v3.0</span>
+        <span class="sep">&middot;</span>
+        <span>SWARM CONSENSUS</span>
+        <span class="sep">&middot;</span>
+        <span id="foot-latency">LATENCY 42ms</span>
+      </div>
+      <div class="tf-right">
+        <span id="foot-arms">ARMS SYNCED 8/8</span>
+        <span class="sep">&middot;</span>
+        <span id="foot-mem">MEM 73%</span>
+        <span class="sep">&middot;</span>
+        <button class="btn-subtle" id="btn-toggle-details">HIEN CHI TIET</button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ================= EXPANDABLE DEEP TELEMETRY & AUDIT MODAL/DRAWER ================= -->
+  <div class="deep-drawer" id="deep-drawer" style="display:none;">
+    <div class="drawer-inner">
+      <div class="drawer-head">
+        <h3>KIEM TOAN HE THONG &middot; CHI TIET PHAN CUNG &amp; PHIEU BAU TAC TU</h3>
+        <button class="btn-close-drawer" id="btn-close-drawer">&times;</button>
+      </div>
+      <div class="drawer-grid">
+        <div class="drawer-box">
+          <h4>PHIEU BAU VONG GAN NHAT (<span id="drawer-cycle">12</span>)</h4>
+          <div class="drawer-table-wrap">
+            <table class="data-tbl">
+              <thead>
+                <tr>
+                  <th>Tac tu</th><th>Vai tro</th><th>Lap truong</th><th>Tin cay</th><th>Trong so</th>
+                </tr>
+              </thead>
+              <tbody id="drawer-vote-rows">
+                <tr><td colspan="5">Dang tai phieu bau...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="drawer-box">
+          <h4>TAI NGUYEN PHAN CUNG &amp; AN TOAN</h4>
+          <div class="hw-spec-row"><span>VRAM tran 10.0 GB:</span> <b id="drawer-vram">-</b></div>
+          <div class="hw-spec-row"><span>Swarm RAM tran 6.0 GB:</span> <b id="drawer-ram">-</b></div>
+          <div class="hw-spec-row"><span>Hardware Source:</span> <b id="drawer-hw-source">-</b></div>
+          <div class="hw-spec-row"><span>Brain Model:</span> <b id="drawer-brain">-</b></div>
+          <div class="hw-spec-row"><span>RUNE Sentry:</span> <b class="green" id="drawer-sentry">ACTIVE (0 breaches)</b></div>
+          <div class="hw-spec-row"><span>Binance Position:</span> <b id="drawer-pos">0 open</b></div>
+          <div class="hw-spec-row"><span>Realized Profit:</span> <b class="green" id="drawer-realized-pnl">+$3.25 USDT</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div>
+
 <script src="/app.js"></script>
 </body>
 </html>
