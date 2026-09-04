@@ -539,6 +539,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--seed", type=int, default=20260904)
     ap.add_argument("--trials", type=int, default=1,
                     help="how many configurations you have tried; raises the bar")
+    ap.add_argument("--adaptive", action="store_true",
+                    help="turn the regime-adaptive consensus gate ON for this measurement")
     ap.add_argument("--write", action="store_true", help=f"write {REPORT_PATH}")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -550,10 +552,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def progress(done: int, total: int) -> None:
         print(f"  fold {done}/{total} complete", file=sys.stderr)
 
+    cfg = SwarmConfig(adaptive_gate=args.adaptive) if args.adaptive else None
     report = measure_edge(
         folds=args.folds, cycles_per_fold=args.cycles, base_seed=args.seed,
-        n_steps=args.steps, trials=args.trials, progress=progress,
+        n_steps=args.steps, trials=args.trials, progress=progress, config=cfg,
     )
+    if args.adaptive:
+        report.notes.append("Regime-adaptive consensus gate was ENABLED for this run.")
 
     if args.write:
         print(f"written: {write_report(report)}", file=sys.stderr)

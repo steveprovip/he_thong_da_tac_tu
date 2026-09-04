@@ -263,6 +263,47 @@ function buildGauge() {
   el("circle", { cx: cx, cy: cy, r: 7, fill: "#0c1220", stroke: "#2a4664", "stroke-width": 2 }, g);
 }
 
+/* Why has nothing fired? The question the dashboard exists to answer. */
+function paintGateProgress(data) {
+  const con = data.consensus || {};
+  const bar = con.required_pct || 76.8;
+  const now = con.score_pct || 0;
+  const fill = $("gate-fill");
+  if (fill) {
+    fill.style.width = Math.max(0, Math.min(100, (now / bar) * 100)).toFixed(1) + "%";
+    fill.style.background = bandColor(now, data);
+  }
+  // The marks live on a scale where the execute bar sits at 100%, so the hold
+  // line lands proportionally below it whatever the active regime moved it to.
+  const holdAt = con.hold_threshold_pct === undefined ? 70.0 : con.hold_threshold_pct;
+  const mh = $("mark-hold"), me = $("mark-exec");
+  if (mh) mh.style.left = Math.min(100, (holdAt / bar) * 100).toFixed(1) + "%";
+  if (me) me.style.left = "100%";
+
+  txt($("gate-label"), `dong thuan ${now.toFixed(2)}% / nguong ${bar.toFixed(1)}%`);
+  const short = con.points_short || 0;
+  const gap = $("gate-gap");
+  txt(gap, short > 0 ? `con thieu ${short.toFixed(2)} diem` : "du dieu kien");
+  if (gap) gap.style.color = short > 0 ? "#fbbf24" : "#34d399";
+
+  const badge = $("regime-badge");
+  if (badge) {
+    const reg = con.regime || "UNKNOWN";
+    badge.className = "badge " + reg.toLowerCase();
+    txt(badge, reg);
+  }
+  txt($("regime-why"), con.regime_rationale || "");
+
+  const box = $("blocked-reason");
+  if (box) {
+    const counts = con.decision_counts || {};
+    const tally = ["EXECUTE", "HOLD", "VETO", "SKIP"]
+      .map((k) => `${k} ${counts[k] || 0}`).join("  \u00b7  ");
+    box.innerHTML = `<b>Vi sao chua vao lenh:</b> ${esc(con.blocked_reason || "-")}<br>` +
+                    `<span style="color:var(--ink-faint)">${tally}</span>`;
+  }
+}
+
 function paintGauge(data) {
   const score = (data.consensus && data.consensus.last_score_pct) || 0;
   const decision = (data.consensus && data.consensus.last_decision) || "IDLE";
@@ -293,6 +334,8 @@ function paintGauge(data) {
     txt(v, label);
   }
 
+  paintGateProgress(data);
+
   const st = data.consensus && data.consensus.stats;
   if (st) {
     setStats("vote-stats", [
@@ -313,8 +356,9 @@ function paintGauge(data) {
         const contrib = (a.stance === "HOLD" || !a.stance) ? 0
           : (a.weight * a.confidence * 100 * (a.stance === "BUY" ? 1 : -1));
         const cls = contrib > 0 ? "pos" : contrib < 0 ? "neg" : "";
+        const drag = (data.consensus || {}).biggest_drag === a.name;
         return `<tr>
-          <td style="color:${hue(a.hue)}">${a.name}</td>
+          <td style="color:${hue(a.hue)}">${a.name}${drag ? ' <span class="tag sell">KEO TUT</span>' : ""}</td>
           <td>${esc(a.role)}</td>
           <td class="num">${(a.weight * 100).toFixed(0)}%</td>
           <td><span class="tag ${stanceClass(a.stance)}">${a.stance || "-"}</span>${a.status === "VETO" ? ' <span class="tag sell">VETO</span>' : ""}</td>

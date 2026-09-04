@@ -69,8 +69,11 @@ if _SIM not in sys.path:
     sys.path.insert(0, _SIM)
 
 from consensus_engine import (  # noqa: E402
+    AdaptiveGateConfig,
     AgentRegistry,
     AgentSpec,
+    MarketRegime,
+    RegimeGate,
     ConsensusDecision,
     ConsensusEngine,
     ConsensusResult,
@@ -310,12 +313,22 @@ def heuristic_brain(
         # push into RSI 82 is a different proposition from the same push into
         # RSI 55, and the scanner is the right place to notice that.
         rsi = float(context.get("rsi_14", 50.0) or 50.0)
+        sweep = float(context.get("liquidity_sweep", 0.0) or 0.0)
         stretch = 1.0 - min(1.0, abs(rsi - 50.0) / 50.0) * 0.5
-        stance, conf = directional(momentum_sigma * stretch)
-        why = f"momentum {momentum_sigma:+.2f} sigma, RSI {rsi:.0f}"
+        # A confirmed sweep argues for the reversal, against the momentum that
+        # produced it. That is the point of the pattern, so it is added rather
+        # than used to damp: when the two disagree the scanner should say so and
+        # let the weighted vote settle it.
+        stance, conf = directional(momentum_sigma * stretch + sweep * 0.55)
+        why = f"momentum {momentum_sigma:+.2f} sigma, RSI {rsi:.0f}, sweep {sweep:+.2f}"
     elif name == "NORO":
-        stance, conf = directional(forecast_bps / 40.0)
-        why = f"drift model puts fair value {forecast_bps:+.1f} bps from spot"
+        # Drift forecast, corrected toward VWAP. A positive z-score means spot is
+        # expensive against the volume-weighted consensus, so it pulls the
+        # fair-value read down - the sign flip lives here rather than inside
+        # `calculate_vwap_zscore`, so both call sites stay readable.
+        vwap_z = float(context.get("vwap_zscore", 0.0) or 0.0)
+        stance, conf = directional(forecast_bps / 40.0 - vwap_z * 0.30)
+        why = f"drift {forecast_bps:+.1f} bps, VWAP z {vwap_z:+.2f}"
     elif name == "LUMEN":
         # No newsfeed is attached in simulation, so LUMEN's sentiment proxy is
         # order-flow pressure plus deliberate noise: order-book imbalance is the
@@ -323,9 +336,11 @@ def heuristic_brain(
         # term stays because a sentiment read that is really a microstructure
         # read should not masquerade as an independent opinion.
         obi = float(context.get("orderbook_imbalance", 0.0) or 0.0)
-        tone = math.tanh(momentum_sigma / 2.0) * 0.35 + obi * 0.45 + rng.uniform(-0.35, 0.35)
+        cvd = float(context.get("cvd_proxy", 0.0) or 0.0)
+        tone = (math.tanh(momentum_sigma / 2.0) * 0.25 + obi * 0.35 + cvd * 0.40
+                + rng.uniform(-0.30, 0.30))
         stance, conf = directional(tone)
-        why = f"flow tone {tone:+.2f} (OBI {obi:+.2f}) on thin coverage"
+        why = f"flow tone {tone:+.2f} (OBI {obi:+.2f}, CVD {cvd:+.2f})"
     elif name == "ZEPHR":
         stance, conf = suitability((edge_bps - cost_bps) / max(1.0, edge_bps + cost_bps))
         why = f"round trip costs {cost_bps:.1f} bps against {edge_bps:.1f} bps of edge"
@@ -423,6 +438,14 @@ class SwarmConfig:
     #: NORO's fitting window. Deliberately several times `scan_window` - see the
     #: comment in `GrokSwarm.scan` for why the two must not share a horizon.
     drift_window: int = 120
+    #: Steps per OHLCV bar. Indicators that need highs, lows and volume read
+    #: bars, not raw steps; one step has no range at all.
+    bar_steps: int = 4
+    #: Regime-adaptive consensus thresholds. OFF by default - see the docstring
+    #: on AdaptiveGateConfig for why the default matters, and run
+    #: benchmarks/edge_report.py --adaptive to find out whether turning it on
+    #: helps on your data before you turn it on.
+    adaptive_gate: bool = False
     horizon_steps: int = 36
     risk_fraction: float = 0.16
     max_exposure_pct: float = 45.0
@@ -508,7 +531,9 @@ class GrokSwarm:
     ) -> None:
         self.config = config or SwarmConfig()
         self.registry = registry or AgentRegistry()
-        self.engine = engine or ConsensusEngine(self.registry)
+        self.engine = engine or ConsensusEngine(
+            self.registry, adaptive=AdaptiveGateConfig(enabled=self.config.adaptive_gate)
+        )
         if market is None:
             market = GrokMarket(
                 GrokMarketConfig(seed=self.config.seed, guard=guard), authoriser=self.engine
@@ -565,6 +590,7 @@ class GrokSwarm:
             for i, name in enumerate(self.registry.analyst_names())
         }
         self.deliberation_timings: list[DeliberationTiming] = []
+        self.last_gate: Optional[RegimeGate] = None
         self._last_timing: Optional[DeliberationTiming] = None
 
         self.states: dict[str, AgentState] = {
@@ -618,6 +644,42 @@ class GrokSwarm:
                 self._inflight -= 1
 
     # -- TIDAL's scan ------------------------------------------------------
+
+    def _build_candles(self, symbol: str, look: int) -> list[Candle]:
+        """Aggregate the step series into OHLCV bars ending at the current step.
+
+        Every indicator added in this pass needs highs, lows and volume, and the
+        market's price series is a sequence of single points. Grouping
+        `bar_steps` points into a bar recovers the wick structure that liquidity
+        sweep detection reads and the volume that CVD and VWAP weight by.
+
+        The last bar ends at `m.step` and is complete: no partially-formed bar is
+        handed to an indicator, because a live bar's high and low keep moving and
+        a signal computed on one is a signal that changes its own past.
+        """
+        m = self.market
+        bar = max(1, self.config.bar_steps)
+        n_bars = max(2, look // bar)
+        out: list[Candle] = []
+        for b in range(n_bars):
+            end = m.step - (n_bars - 1 - b) * bar
+            start = end - bar + 1
+            if start < 0:
+                continue
+            prices = [m.price_at(symbol, t) for t in range(start, end + 1)]
+            try:
+                vol = float(sum(m.volume_at(symbol, t) for t in range(start, end + 1)))
+            except Exception:  # noqa: BLE001 - a market with no volume series still charts
+                vol = 1.0
+            out.append(Candle(
+                timestamp=float(end),
+                open=float(prices[0]),
+                high=float(max(prices)),
+                low=float(min(prices)),
+                close=float(prices[-1]),
+                volume=vol,
+            ))
+        return out
 
     def scan(self, exclude: Optional[set[str]] = None) -> Optional[dict[str, Any]]:
         """Pick the symbol moving most abnormally and describe the trade it implies.
@@ -694,13 +756,13 @@ class GrokSwarm:
         look = min(self.config.drift_window, m.step)
         closes = [m.price_at(symbol, m.step - i) for i in range(look, -1, -1)]
         rsi_14 = RealAlphaEngine.calculate_rsi(closes, 14)
-        candles = [
-            Candle(timestamp=float(i), open=float(c), high=float(c), low=float(c),
-                   close=float(c), volume=1.0)
-            for i, c in enumerate(closes)
-        ]
+        candles = self._build_candles(symbol, look)
         atr_pct = (RealAlphaEngine.calculate_atr(candles, 14) / max(1.0, closes[-1])) * 100.0
+        cvd = RealAlphaEngine.calculate_volume_delta(candles, 20)
+        vwap_z = RealAlphaEngine.calculate_vwap_zscore(candles, 40)
+        sweep = RealAlphaEngine.detect_liquidity_sweep(candles, 20)
         book = m.book(symbol)
+        spread_bps = (book.spread_cents / max(1, book.mid_cents)) * 10_000.0
         obi = RealAlphaEngine.calculate_orderbook_imbalance(
             [(float(l.price_cents), float(l.qty)) for l in book.bids],
             [(float(l.price_cents), float(l.qty)) for l in book.asks],
@@ -737,6 +799,10 @@ class GrokSwarm:
             "rsi_14": rsi_14,
             "orderbook_imbalance": obi,
             "atr_volatility_pct": atr_pct,
+            "cvd_proxy": cvd,
+            "vwap_zscore": vwap_z,
+            "liquidity_sweep": sweep,
+            "spread_bps": spread_bps,
             "exposure_pct": exposure_pct,
             "exposure_cap_pct": self.config.max_exposure_pct,
             "notional_cents": notional,
@@ -854,6 +920,12 @@ class GrokSwarm:
         """
         prompt = self.render_prompt(context)
         analysts = self.registry.analysts()
+        gate = self.engine.adaptive.classify(
+            atr_pct=float(context.get("atr_volatility_pct", 0.0) or 0.0),
+            momentum_sigma=float(context.get("momentum_sigma", 0.0) or 0.0),
+            spread_bps=float(context.get("spread_bps", 0.0) or 0.0),
+        )
+        self.last_gate = gate
         t0 = time.perf_counter()
 
         if self.config.deliberation_mode == "batched":
@@ -893,7 +965,7 @@ class GrokSwarm:
         self.deliberation_timings.append(timing)
         del self.deliberation_timings[:-200]
         self._last_timing = timing
-        return self.engine.evaluate(proposal, votes)
+        return self.engine.evaluate(proposal, votes, gate=gate)
 
     # -- one full round ----------------------------------------------------
 
@@ -1059,6 +1131,79 @@ class GrokSwarm:
 
     # -- telemetry ---------------------------------------------------------
 
+    def blocking_report(self) -> dict[str, Any]:
+        """Why no order fired. The question the dashboard exists to answer.
+
+        A swarm that sits at CHO with a still octopus and no explanation looks
+        broken even when it is working exactly as designed - and "working as
+        designed" is the common case here, because the gate refusing a
+        negative-expectancy trade is the gate doing its job. So the dashboard
+        gets the arithmetic: the score, the bar it was measured against, the gap
+        between them, and which agents are responsible for the gap.
+        """
+        recent = [c for c in self.history if c.get("decision") in ("EXECUTE", "HOLD", "VETO")]
+        last = recent[-1] if recent else None
+        gate = self.last_gate
+        bar = gate.execute_pct if gate else self.engine.execute_threshold_pct
+        score = float((last or {}).get("score_pct", 0.0))
+
+        dissent: list[dict[str, Any]] = []
+        for name in self.registry.analyst_names():
+            st = self.states[name]
+            if st.stance is None:
+                continue
+            weight = self.registry.agents[name].weight
+            contribution = (
+                0.0 if st.stance == "HOLD"
+                else weight * st.confidence * 100.0 * (1.0 if st.stance == "BUY" else -1.0)
+            )
+            dissent.append({
+                "name": name,
+                "stance": st.stance,
+                "confidence": round(st.confidence, 4),
+                "contribution_pct": round(contribution, 2),
+                "rationale": st.rationale,
+                "vetoed": st.status == "VETO",
+            })
+        # Whoever withheld or opposed the most is the reason the bar was missed.
+        holders = sorted(dissent, key=lambda d: d["contribution_pct"])
+
+        counts = {"EXECUTE": 0, "HOLD": 0, "VETO": 0, "SKIP": 0, "WARMUP": 0}
+        for c in self.history:
+            d = c.get("decision")
+            if d in counts:
+                counts[d] += 1
+
+        blocked = None
+        if last is None:
+            blocked = "no proposal has completed a vote yet"
+        elif last.get("decision") == "EXECUTE" and not last.get("filled"):
+            blocked = f"consensus passed but the order was refused: {last.get('reject_reason')}"
+        elif last.get("decision") != "EXECUTE":
+            short = max(0.0, bar - score)
+            lead = (
+                f"consensus {score:.2f}% is {short:.2f} points below the "
+                f"{bar:.1f}% bar"
+            )
+            if holders and holders[0]["contribution_pct"] <= 0:
+                h = holders[0]
+                lead += f"; {h['name']} is the largest drag ({h['contribution_pct']:+.2f} pts)"
+            blocked = lead
+
+        return {
+            "score_pct": round(score, 2),
+            "required_pct": round(bar, 2),
+            "points_short": round(max(0.0, bar - score), 2),
+            "progress_pct": round(min(100.0, (score / bar) * 100.0), 2) if bar else 0.0,
+            "regime": gate.regime.value if gate else "UNKNOWN",
+            "regime_rationale": gate.rationale if gate else "",
+            "size_multiplier": gate.size_multiplier if gate else 1.0,
+            "blocked_reason": blocked,
+            "decision_counts": counts,
+            "agent_breakdown": dissent,
+            "biggest_drag": holders[0]["name"] if holders else None,
+        }
+
     def deliberation_report(self) -> dict[str, Any]:
         """Latency against the deliberation budget, as a distribution not a mean.
 
@@ -1115,6 +1260,7 @@ class GrokSwarm:
                 **self.engine.status(),
                 "last_score_pct": (last or {}).get("score_pct", 0.0),
                 "last_decision": (last or {}).get("decision", "IDLE"),
+                **self.blocking_report(),
             },
             "market": self.market.telemetry(),
             "hardware": {

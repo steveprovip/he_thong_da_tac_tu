@@ -574,18 +574,33 @@ class GrokMarket:
         being long a market that was always going up.
         """
         paths: dict[str, list[int]] = {}
+        self.volumes: dict[str, list[int]] = {}
         for spec in self.config.symbols:
             sigma = spec.vol_bps / 10_000.0
             price = spec.start_price_cents
             series = [price]
+            vols = [spec.level_qty * 10]
             for _ in range(self.config.n_steps):
+                shock = self._rng.gauss(0.0, sigma)
                 price = max(
                     spec.tick_cents,
-                    _round_half_up(price * math.exp(self._rng.gauss(0.0, sigma)) / spec.tick_cents)
+                    _round_half_up(price * math.exp(shock) / spec.tick_cents)
                     * spec.tick_cents,
                 )
                 series.append(price)
+                # Volume is CONTEMPORANEOUS with the move that produced it, never
+                # ahead of it. The volume-volatility correlation is one of the
+                # oldest stylised facts in market microstructure, and modelling it
+                # is what lets CVD and a VWAP z-score be measured in backtest at
+                # all. Reading `shock` here is reading this step's own return,
+                # which the price series already contains - so this adds no
+                # information a strategy could not have at decision time, and
+                # tests/test_no_lookahead.py still holds.
+                intensity = 1.0 + 3.0 * min(3.0, abs(shock) / max(sigma, 1e-9))
+                noise = math.exp(self._rng.gauss(0.0, 0.35))
+                vols.append(max(1, int(spec.level_qty * intensity * noise)))
             paths[spec.symbol] = series
+            self.volumes[spec.symbol] = vols
         return paths
 
     def price_at(self, symbol: str, step: int) -> int:
@@ -599,6 +614,21 @@ class GrokMarket:
             raise LiveModeError(
                 f"{symbol} is on a live feed; there is no price for step {step}, which "
                 f"has not happened yet. Only the synthetic path has a future."
+            )
+        return series[step]
+
+    def volume_at(self, symbol: str, step: int) -> int:
+        """Traded volume for one step. Guarded against future reads like `price_at`."""
+        try:
+            series = self.volumes[symbol]
+        except (AttributeError, KeyError) as exc:
+            raise MarketError(f"no volume series for {symbol!r}") from exc
+        if not 0 <= step < len(series):
+            raise MarketError(f"step {step} outside the volume series")
+        if symbol in self.live_symbols and step > self.step:
+            raise LiveModeError(
+                f"{symbol} is on a live feed; there is no volume for step {step}, "
+                f"which has not happened yet."
             )
         return series[step]
 

@@ -253,3 +253,51 @@ footer.foot {
   flex-wrap: wrap;
   gap: 18px;
 }
+
+
+/* ---------- why no trade ---------- */
+
+.progress-wrap { margin-top: 14px; }
+.progress-head {
+  display: flex; font-family: var(--mono); font-size: 11px;
+  color: var(--ink-dim); margin-bottom: 6px;
+}
+.progress-head .r { margin-left: auto; color: var(--ink); }
+.progress-track {
+  position: relative; height: 10px; border-radius: 5px;
+  background: #0a1020; border: 1px solid var(--line-soft); overflow: visible;
+}
+.progress-track > i {
+  display: block; height: 100%; border-radius: 4px;
+  transition: width .45s ease, background .45s ease;
+}
+.progress-mark {
+  position: absolute; top: -4px; width: 2px; height: 16px; border-radius: 1px;
+  /* Centred on its own position, so the execute mark at 100% straddles the end
+     of the track instead of being clipped by it. */
+  transform: translateX(-50%);
+}
+.progress-mark.hold { background: var(--amber); }
+.progress-mark.exec { background: var(--green); }
+
+.regime-row {
+  display: flex; align-items: center; gap: 9px; margin-top: 9px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
+  line-height: 1.45;
+}
+.badge {
+  flex: none; padding: 2px 8px; border-radius: 999px; font-size: 9.5px;
+  letter-spacing: .1em; border: 1px solid var(--line); color: var(--ink-dim);
+  background: #0a1120;
+}
+.badge.trending { color: var(--green); border-color: rgba(52,211,153,.4); }
+.badge.chop     { color: var(--amber); border-color: rgba(251,191,36,.4); }
+.badge.volatile { color: var(--red);   border-color: rgba(248,113,113,.4); }
+
+.blocked {
+  margin-top: 12px; padding: 9px 11px; border-radius: 7px;
+  border: 1px solid var(--line); background: #0a1020;
+  font-family: var(--mono); font-size: 11px; line-height: 1.55; color: var(--ink-dim);
+}
+.blocked b { color: var(--ink); }
+td.drag { color: var(--red); }

@@ -486,3 +486,110 @@ python benchmarks/edge_report.py --selftest        14/14
 python live/live_execution_router.py --selftest    19/19
 python -m pytest tests/test_no_lookahead.py -v     12/12
 ```
+
+---
+
+# Phase 4 — why it wasn't trading, and whether it should
+
+## The complaint, and what the measurement says about it
+
+The report was: the swarm runs for hours, reaches Cycle #6, and fires nothing.
+PnL $0.00, zero trades. Six agents all voted SELL, the score came to 67.50%, and
+RUNE cancelled it. The proposed fix was to lower the bar in quiet markets.
+
+Given the out-of-sample measurement, **zero trades at $0.00 is the best available
+outcome for this strategy.** The edge report says −8.98 bps per trade net of
+costs. Every additional trade the gate lets through is, in expectation, a further
+loss. The gate is not the bottleneck; it is the only thing between a
+negative-expectancy rule and a live account.
+
+That is a hypothesis and not a verdict, so it was measured rather than argued.
+
+## Measured: does lowering the gate help?
+
+Six folds, 900 cycles each, three trials declared:
+
+| configuration | trades | bps/trade | t | win | PF | max DD |
+|---|---|---|---|---|---|---|
+| baseline (4 Sep) | 575 | −8.03 | −1.82 | 42.3% | 0.849 | 6.46% |
+| + new alpha, fixed 76.8 gate | 567 | **−8.98** | −1.95 | 42.3% | 0.840 | 6.53% |
+| + new alpha, adaptive gate ON | 561 | **−5.27** | −1.13 | 43.5% | 0.904 | 5.61% |
+
+Two things worth saying plainly:
+
+**The new indicators did not help.** CVD, VWAP z-score and sweep detection moved
+the number from −8.03 to −8.98 bps. That is within noise, but it is not an
+improvement, and shipping them as "upgrades" without this table would have been
+the wrong story.
+
+**The adaptive gate's apparent gain is not distinguishable from noise.** Per-trade
+standard deviation is ~105 bps over ~560 trades, so the standard error of the
+mean is 105/√560 ≈ 4.4 bps. The 3.7 bps difference is inside one standard error.
+At four folds the sign even flips (−21.4 → −24.3). Detecting a real 3.7 bps
+improvement at t = 2 would need about **3,200 trades**, not 560.
+
+So the adaptive gate ships **disabled**. A change you cannot measure should not
+be on by default.
+
+What is interesting is *which half* seems to do the work: trade count barely
+moved (567 → 561) while drawdown fell (6.53% → 5.61%). The VOLATILE branch, which
+**raises** the bar to 82% and halves size, is screening out trades where a stop
+is likely to be taken out by noise. The CHOP branch that lowers the bar to 72% is
+the part with no evidence behind it. A mechanism that could only loosen would be
+a loophole with a dial on it; `test_volatile_regime_raises_the_bar` keeps the
+other direction real.
+
+## The dashboard now answers the question
+
+`consensus.blocking_report()` and a new panel:
+
+```
+dong thuan 74.95% / nguong 76.8%              con thieu 1.85 diem
+[=========================================|==]
+UNKNOWN   adaptive gate disabled; the fixed 76.8/70.0 bar applies
+
+Vi sao chua vao lenh: consensus 74.95% is 1.85 points below the 76.8% bar;
+OKAPI is the largest drag (+0.00 pts)
+EXECUTE 18  ·  HOLD 24  ·  VETO 81  ·  SKIP 77
+```
+
+Per-agent contribution in points, the biggest drag flagged in the vote table, and
+a regime badge. A still octopus with no explanation looks broken even when it is
+working exactly as designed, and here that is the common case.
+
+## The probe: one order through the real path
+
+`live/probe_trade.py` sends exactly one order and reports which of seven steps it
+reached:
+
+```
+[ok] 1. build proposal          BUY 2000e-6 BTCUSDT @ 64,125.00
+[ok] 2. synthetic quorum        six analysts at 0.95 (declared override, gate untouched)
+[ok] 3. consensus gate          consensus 95.00% >= 76.8%; VESKA authorised
+[ok] 4. single-use AuthToken    score 95.00% cleared the bar
+[ok] 5. router init             TESTNET -> https://testnet.binancefuture.com
+[ok] 6. entry order             FILLED @ 64,125.00
+[ok] 7. exchange-side stop      stop id 777 @ 63,163.13
+```
+
+It deliberately does **not** take the shortcut of signing a payload and posting
+it — `run_binance_testnet.py` already had one of those, and it tests the HTTP
+call and nothing else. This walks the consensus gate, the token, the kill switch
+and the bracket stop, because those are the parts whose failure would be
+expensive. A refused vote stops the probe and sends nothing.
+
+## Latency
+
+Bottleneck 2 was 10-second REST polling. `live/ws_market_feed.py` exists and
+carries `aggTrade` / `depth20`. It is worth wiring, but it is a slippage
+improvement, not an edge: a faster feed makes a −8.98 bps strategy into a
+slightly-less-negative one. Latency work pays off after the sign flips.
+
+## Verification
+
+```
+python -m pytest tests/ -q                      835 passed, 3 skipped
+python live/probe_trade.py --selftest                9/9
+python core/consensus_engine.py --selftest          19/19
+python -m pytest tests/test_no_lookahead.py -v      12/12   (still holds with the new signals)
+```

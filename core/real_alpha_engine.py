@@ -41,6 +41,9 @@ class MarketAlphaSnapshot:
     rsi_14: float
     orderbook_imbalance: float
     atr_volatility_pct: float
+    cvd_proxy: float = 0.0
+    vwap_zscore: float = 0.0
+    liquidity_sweep: float = 0.0
     breaches: list[str] = field(default_factory=list)
     true_bias: Optional[float] = None  # ALWAYS None in real-world trading
 
@@ -59,6 +62,9 @@ class MarketAlphaSnapshot:
             "rsi_14": self.rsi_14,
             "orderbook_imbalance": self.orderbook_imbalance,
             "atr_volatility_pct": self.atr_volatility_pct,
+            "cvd_proxy": self.cvd_proxy,
+            "vwap_zscore": self.vwap_zscore,
+            "liquidity_sweep": self.liquidity_sweep,
             "breaches": self.breaches,
             "true_bias": None,  # Strictly None
         }
@@ -126,6 +132,130 @@ class RealAlphaEngine:
         if denom <= 1e-9:
             return 0.0
         return (bid_vol - ask_vol) / denom
+
+    @staticmethod
+    def calculate_volume_delta(candles: Sequence[Candle], period: int = 20) -> float:
+        """Cumulative Volume Delta over `period` bars, normalised to [-1, 1].
+
+        True CVD needs the trade tape: every print tagged by whether the
+        aggressor was the buyer or the seller. That tape exists on the
+        WebSocket `aggTrade` stream and does NOT exist in candle data, so what
+        this computes is the standard candle proxy - where the close sits inside
+        the bar's range, weighted by that bar's volume:
+
+            delta_i = volume_i * (2 * (close - low) / (high - low) - 1)
+
+        A bar that closes on its high is read as buyer-dominated, one that closes
+        on its low as seller-dominated. It is a proxy and it is wrong on doji
+        bars and on bars with a single violent wick, which is exactly why it is
+        named `_proxy` in the snapshot and why `feed_trades()` exists to replace
+        it with the real thing when a tape is available.
+
+        Normalising by total volume keeps the output comparable across symbols
+        and across quiet and busy periods; the raw cumulative figure is not,
+        which is how CVD charts end up being read as trends when they are really
+        showing that Tuesday was busier than Sunday.
+        """
+        if not candles:
+            return 0.0
+        window = list(candles)[-period:]
+        signed = 0.0
+        total = 0.0
+        for c in window:
+            span = c.high - c.low
+            if span <= 0 or c.volume <= 0:
+                continue
+            position = (c.close - c.low) / span          # 0 at the low, 1 at the high
+            signed += c.volume * (2.0 * position - 1.0)
+            total += c.volume
+        if total <= 0:
+            return 0.0
+        return max(-1.0, min(1.0, signed / total))
+
+    @staticmethod
+    def calculate_vwap(candles: Sequence[Candle]) -> float:
+        """Volume-weighted average price over the supplied window."""
+        num = 0.0
+        den = 0.0
+        for c in candles:
+            typical = (c.high + c.low + c.close) / 3.0
+            num += typical * max(0.0, c.volume)
+            den += max(0.0, c.volume)
+        if den <= 0:
+            return candles[-1].close if candles else 0.0
+        return num / den
+
+    @classmethod
+    def calculate_vwap_zscore(cls, candles: Sequence[Candle], period: int = 40) -> float:
+        """How far spot sits from VWAP, in standard deviations of that distance.
+
+        The z-score matters more than the raw gap: 30 bps above VWAP is a long
+        way in EUR-USD and nothing in SOL-USD, and a mean-reversion signal that
+        does not normalise is really a signal about which symbol it is looking at.
+
+        Positive means spot is above VWAP - expensive against the volume-weighted
+        consensus, so a mean-reversion reading is bearish. NORO uses it that way;
+        the sign flip lives at the call site rather than here, because a function
+        that silently negates its own output is impossible to read.
+        """
+        window = list(candles)[-period:]
+        if len(window) < 8:
+            return 0.0
+        vwap = cls.calculate_vwap(window)
+        if vwap <= 0:
+            return 0.0
+        gaps = [(c.close - vwap) / vwap for c in window]
+        mean = sum(gaps) / len(gaps)
+        var = sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1)
+        sd = math.sqrt(var)
+        if sd <= 0:
+            return 0.0
+        return max(-6.0, min(6.0, ((window[-1].close - vwap) / vwap - mean) / sd))
+
+    @staticmethod
+    def detect_liquidity_sweep(
+        candles: Sequence[Candle], lookback: int = 20, wick_ratio: float = 1.8
+    ) -> float:
+        """Did the last bar run stops and reverse? Returns a signed strength.
+
+        The pattern: price pushes through the recent extreme - where resting
+        stop orders sit - and then closes back inside the range, leaving a long
+        wick. The reading is that the move through the level was liquidity being
+        taken rather than a genuine breakout, so the reversal is the signal.
+
+        Returns +1-ish when a LOW was swept and price closed back up (bullish),
+        -1-ish when a HIGH was swept and price closed back down (bearish), 0
+        when neither happened. Magnitude scales with how far beyond the extreme
+        the wick reached.
+
+        This is a pattern detector, not a prophecy. Sweeps fail constantly, and
+        `benchmarks/edge_report.py` is the only thing that can say whether this
+        one pays for its own transaction costs on a given market.
+        """
+        window = list(candles)[-(lookback + 1):]
+        if len(window) < 6:
+            return 0.0
+        last = window[-1]
+        prior = window[:-1]
+        span = last.high - last.low
+        if span <= 0:
+            return 0.0
+
+        prior_low = min(c.low for c in prior)
+        prior_high = max(c.high for c in prior)
+        upper_wick = last.high - max(last.open, last.close)
+        lower_wick = min(last.open, last.close) - last.low
+        body = max(1e-12, abs(last.close - last.open))
+
+        # Bullish: took out the low, closed back above it, on a long lower wick.
+        if last.low < prior_low <= last.close and lower_wick > body * wick_ratio:
+            depth = (prior_low - last.low) / max(1e-12, prior_low)
+            return min(1.0, 0.4 + depth * 400.0)
+        # Bearish: took out the high, closed back below it, on a long upper wick.
+        if last.high > prior_high >= last.close and upper_wick > body * wick_ratio:
+            depth = (last.high - prior_high) / max(1e-12, prior_high)
+            return -min(1.0, 0.4 + depth * 400.0)
+        return 0.0
 
     @staticmethod
     def calculate_atr(candles: Sequence[Candle], period: int = 14) -> float:
@@ -242,6 +372,9 @@ class RealAlphaEngine:
             rsi_14=round(rsi, 2),
             orderbook_imbalance=round(obi, 3),
             atr_volatility_pct=round(atr_pct, 3),
+            cvd_proxy=round(cls.calculate_volume_delta(candles), 4),
+            vwap_zscore=round(cls.calculate_vwap_zscore(candles), 4),
+            liquidity_sweep=round(cls.detect_liquidity_sweep(candles), 4),
             breaches=breaches,
             true_bias=None,  # Zero oracle lookahead
         )

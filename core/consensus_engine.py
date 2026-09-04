@@ -94,6 +94,9 @@ __all__ = [
     "TokenError",
     "EXECUTE_THRESHOLD_PCT",
     "HOLD_THRESHOLD_PCT",
+    "MarketRegime",
+    "RegimeGate",
+    "AdaptiveGateConfig",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -104,6 +107,148 @@ DEFAULT_AGENT_CONFIG = REPO_ROOT / "config" / "groktopus_agents.json"
 #: is meant to be checking.
 EXECUTE_THRESHOLD_PCT = 76.8
 HOLD_THRESHOLD_PCT = 70.0
+
+
+class MarketRegime(str, Enum):
+    """What kind of market the proposal is being judged in."""
+
+    TRENDING = "TRENDING"
+    CHOP = "CHOP"
+    VOLATILE = "VOLATILE"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class RegimeGate:
+    """The bar a proposal is actually held to, and why."""
+
+    regime: MarketRegime
+    execute_pct: float
+    hold_pct: float
+    size_multiplier: float = 1.0
+    rationale: str = ""
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.hold_pct <= self.execute_pct <= 100.0:
+            raise ConsensusError(
+                f"{self.regime.value}: need 0 <= hold ({self.hold_pct}) <= "
+                f"execute ({self.execute_pct}) <= 100"
+            )
+        if not 0.0 < self.size_multiplier <= 1.0:
+            raise ConsensusError("size_multiplier must lie in (0, 1]")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "regime": self.regime.value,
+            "execute_pct": self.execute_pct,
+            "hold_pct": self.hold_pct,
+            "size_multiplier": self.size_multiplier,
+            "rationale": self.rationale,
+        }
+
+
+@dataclass
+class AdaptiveGateConfig:
+    """Per-regime thresholds. **Disabled by default, and that default is load-bearing.**
+
+    The motivating complaint is that the swarm sits at 67.5% and never fires, so
+    the obvious move is to lower the bar until it does. That reasoning has the
+    causality backwards: the gate is not what makes a strategy profitable, it is
+    what stops an unprofitable one from trading. As of the last measurement this
+    strategy's out-of-sample edge is **-8.03 bps per trade** with t = -1.82, so
+    every additional trade the gate lets through is, in expectation, a further
+    loss. Lowering it does not unblock profit; it unblocks volume.
+
+    That is a hypothesis, though, not a verdict - so this exists, it is
+    configurable, and `benchmarks/edge_report.py` can run with it on and off and
+    say which is better. Measure before shipping it, and note that measuring both
+    counts as two trials in `--trials`, which raises the significance bar.
+
+    Note the asymmetry in the shipped values: VOLATILE *raises* the bar to 82%.
+    A mechanism that only ever loosens is not adaptive, it is a loophole with a
+    dial on it.
+    """
+
+    enabled: bool = False
+    trending_execute_pct: float = 76.8
+    trending_hold_pct: float = 70.0
+    chop_execute_pct: float = 72.0
+    chop_hold_pct: float = 66.0
+    chop_size_multiplier: float = 0.5
+    volatile_execute_pct: float = 82.0
+    volatile_hold_pct: float = 75.0
+    volatile_size_multiplier: float = 0.5
+    #: ATR as a percentage of spot. Below `chop_atr_max_pct` the market is quiet.
+    chop_atr_max_pct: float = 0.08
+    volatile_atr_min_pct: float = 0.60
+    trend_momentum_sigma: float = 1.0
+    #: A wide book means the cost of being wrong is higher, so a chop regime with
+    #: a wide spread is not granted the loosened bar.
+    chop_max_spread_bps: float = 12.0
+
+    def __post_init__(self) -> None:
+        for name in ("trending", "chop", "volatile"):
+            ex = getattr(self, f"{name}_execute_pct")
+            ho = getattr(self, f"{name}_hold_pct")
+            if not 0.0 <= ho <= ex <= 100.0:
+                raise ConsensusError(f"{name}: need 0 <= hold <= execute <= 100")
+        if self.chop_atr_max_pct >= self.volatile_atr_min_pct:
+            raise ConsensusError("chop_atr_max_pct must be below volatile_atr_min_pct")
+
+    def classify(
+        self,
+        *,
+        atr_pct: float,
+        momentum_sigma: float,
+        spread_bps: float = 0.0,
+    ) -> RegimeGate:
+        """Pick the regime and the bar that goes with it.
+
+        Order matters: volatility is checked first, because a market that is both
+        fast and trending is still a market where a stop is more likely to be
+        taken out by noise, and the stricter reading should win.
+        """
+        if not self.enabled:
+            return RegimeGate(
+                MarketRegime.UNKNOWN, EXECUTE_THRESHOLD_PCT, HOLD_THRESHOLD_PCT, 1.0,
+                "adaptive gate disabled; the fixed 76.8/70.0 bar applies",
+            )
+        if atr_pct >= self.volatile_atr_min_pct:
+            return RegimeGate(
+                MarketRegime.VOLATILE, self.volatile_execute_pct, self.volatile_hold_pct,
+                self.volatile_size_multiplier,
+                f"ATR {atr_pct:.3f}% >= {self.volatile_atr_min_pct:.2f}%: bar RAISED and "
+                f"size halved, because a stop is more easily taken out by noise here",
+            )
+        if abs(momentum_sigma) >= self.trend_momentum_sigma:
+            return RegimeGate(
+                MarketRegime.TRENDING, self.trending_execute_pct, self.trending_hold_pct, 1.0,
+                f"momentum {momentum_sigma:+.2f} sigma: trending, standard bar",
+            )
+        if atr_pct <= self.chop_atr_max_pct and spread_bps <= self.chop_max_spread_bps:
+            return RegimeGate(
+                MarketRegime.CHOP, self.chop_execute_pct, self.chop_hold_pct,
+                self.chop_size_multiplier,
+                f"ATR {atr_pct:.3f}% <= {self.chop_atr_max_pct:.2f}% on a "
+                f"{spread_bps:.1f} bps book: bar LOWERED to "
+                f"{self.chop_execute_pct:.1f}% at half size - unmeasured, see edge_report",
+            )
+        return RegimeGate(
+            MarketRegime.UNKNOWN, EXECUTE_THRESHOLD_PCT, HOLD_THRESHOLD_PCT, 1.0,
+            "no regime matched; the fixed bar applies",
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "trending": [self.trending_execute_pct, self.trending_hold_pct],
+            "chop": [self.chop_execute_pct, self.chop_hold_pct, self.chop_size_multiplier],
+            "volatile": [self.volatile_execute_pct, self.volatile_hold_pct,
+                         self.volatile_size_multiplier],
+            "chop_atr_max_pct": self.chop_atr_max_pct,
+            "volatile_atr_min_pct": self.volatile_atr_min_pct,
+            "trend_momentum_sigma": self.trend_momentum_sigma,
+        }
 
 
 class ConsensusError(RuntimeError):
@@ -500,6 +645,7 @@ class ConsensusResult:
     contributions: Mapping[str, float] = field(default_factory=dict)
     veto_source: Optional[str] = None
     token: Optional[AuthToken] = None
+    gate: Optional[RegimeGate] = None
 
     @property
     def authorised(self) -> bool:
@@ -522,8 +668,17 @@ class ConsensusResult:
             "support_pct": {k: round(v, 4) for k, v in self.support_pct.items()},
             "contributions": {k: round(v, 4) for k, v in self.contributions.items()},
             "token": self.token.as_dict() if self.token else None,
-            "execute_threshold_pct": EXECUTE_THRESHOLD_PCT,
-            "hold_threshold_pct": HOLD_THRESHOLD_PCT,
+            "execute_threshold_pct": (
+                self.gate.execute_pct if self.gate else EXECUTE_THRESHOLD_PCT),
+            "hold_threshold_pct": (
+                self.gate.hold_pct if self.gate else HOLD_THRESHOLD_PCT),
+            "fixed_execute_threshold_pct": EXECUTE_THRESHOLD_PCT,
+            "gate": self.gate.as_dict() if self.gate else None,
+            "points_short": (
+                round(max(0.0, (self.gate.execute_pct if self.gate else EXECUTE_THRESHOLD_PCT)
+                          - self.score_pct), 2)
+                if self.decision is not ConsensusDecision.EXECUTE else 0.0
+            ),
         }
 
 
@@ -553,6 +708,7 @@ class ConsensusEngine:
         token_ttl_s: Optional[float] = None,
         secret: Optional[bytes] = None,
         history_size: int = 256,
+        adaptive: Optional[AdaptiveGateConfig] = None,
     ) -> None:
         self.registry = registry or AgentRegistry()
         cfg = self.registry.consensus_cfg
@@ -584,6 +740,7 @@ class ConsensusEngine:
         self._lock = threading.RLock()
         self._issued: dict[str, AuthToken] = {}
         self._consumed: set[str] = set()
+        self.adaptive = adaptive or AdaptiveGateConfig()
         self._history: list[dict[str, Any]] = []
         self._history_size = int(history_size)
         self.stats: dict[str, int] = {"evaluated": 0, "execute": 0, "hold": 0, "veto": 0}
@@ -646,6 +803,7 @@ class ConsensusEngine:
         votes: Sequence[Vote],
         *,
         now: Optional[float] = None,
+        gate: Optional[RegimeGate] = None,
     ) -> ConsensusResult:
         """Score a proposal against its quorum and decide EXECUTE / HOLD / VETO.
 
@@ -661,6 +819,15 @@ class ConsensusEngine:
                 raise TypeError(f"votes must contain Vote objects, got {type(v).__name__}")
 
         weights = self.registry.normalised_weights()
+        # No gate supplied means the fixed bar, which is also what a disabled
+        # adaptive config produces. The two paths agree on purpose: a caller that
+        # forgets to pass a regime gets the strict threshold, never a loose one.
+        if gate is None:
+            gate = RegimeGate(
+                MarketRegime.UNKNOWN, self.execute_threshold_pct,
+                self.hold_threshold_pct, 1.0, "no regime supplied; fixed bar",
+            )
+        execute_at, hold_at = gate.execute_pct, gate.hold_pct
 
         fault = self._quorum_fault(votes)
         if fault is not None:
@@ -676,6 +843,7 @@ class ConsensusEngine:
                     support_pct={"BUY": 0.0, "SELL": 0.0},
                     contributions={},
                     veto_source="QUORUM",
+                    gate=gate,
                 )
             )
 
@@ -701,10 +869,11 @@ class ConsensusEngine:
                     support_pct=support,
                     contributions=contributions,
                     veto_source=names,
+                    gate=gate,
                 )
             )
 
-        if score >= self.execute_threshold_pct:
+        if score >= execute_at:
             token = self._mint(proposal, score, now=now)
             return self._finish(
                 ConsensusResult(
@@ -713,7 +882,7 @@ class ConsensusEngine:
                     score_pct=score,
                     direction=proposal.side,
                     reason=(
-                        f"consensus {score:.2f}% >= {self.execute_threshold_pct:.1f}%; "
+                        f"consensus {score:.2f}% >= {execute_at:.1f}%; "
                         f"VESKA authorised for {proposal.side.value} {proposal.qty} "
                         f"{proposal.symbol}"
                     ),
@@ -722,10 +891,11 @@ class ConsensusEngine:
                     support_pct=support,
                     contributions=contributions,
                     token=token,
+                    gate=gate,
                 )
             )
 
-        if score >= self.hold_threshold_pct:
+        if score >= hold_at:
             return self._finish(
                 ConsensusResult(
                     proposal_id=proposal.proposal_id,
@@ -734,13 +904,14 @@ class ConsensusEngine:
                     direction=proposal.side,
                     reason=(
                         f"consensus {score:.2f}% is in the hold band "
-                        f"[{self.hold_threshold_pct:.1f}%, {self.execute_threshold_pct:.1f}%); "
+                        f"[{hold_at:.1f}%, {execute_at:.1f}%); "
                         f"keep observing, place nothing"
                     ),
                     votes=votes,
                     weights=weights,
                     support_pct=support,
                     contributions=contributions,
+                    gate=gate,
                 )
             )
 
@@ -756,7 +927,7 @@ class ConsensusEngine:
                 score_pct=score,
                 direction=proposal.side,
                 reason=(
-                    f"consensus {score:.2f}% < {self.hold_threshold_pct:.1f}% "
+                    f"consensus {score:.2f}% < {hold_at:.1f}% "
                     f"({detail}); RUNE cancels the proposal"
                 ),
                 votes=votes,
@@ -764,6 +935,7 @@ class ConsensusEngine:
                 support_pct=support,
                 contributions=contributions,
                 veto_source="RUNE_THRESHOLD",
+                gate=gate,
             )
         )
 
@@ -857,6 +1029,7 @@ class ConsensusEngine:
             outstanding = len(self._issued) - len(self._consumed)
         return {
             "execute_threshold_pct": self.execute_threshold_pct,
+            "adaptive": self.adaptive.as_dict(),
             "hold_threshold_pct": self.hold_threshold_pct,
             "token_ttl_s": self.token_ttl_s,
             "analysts": self.registry.analyst_names(),

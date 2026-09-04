@@ -106,6 +106,24 @@ def run_router_preflight():
                         "--mode", mode, "--preflight"], cwd=str(ROOT))
 
 
+def run_probe_trade():
+    print("\n🎯 Lệnh thăm dò: đi qua ĐÚNG đường thật (bỏ phiếu → token → VESKA → sàn → stop).")
+    print("   Chạy khô trước để xem 5 bước đầu mà không chạm mạng:")
+    subprocess.run([sys.executable, "live/probe_trade.py", "--mode", "SIMULATION", "--dry-run"], cwd=str(ROOT))
+    print("\n   Bắn thật lên Binance Testnet? Cần BINANCE_TESTNET_API_KEY trong .env.local.")
+    if input("   Gõ 'testnet' để bắn 1 lệnh 0.002 BTC: ").strip().lower() == "testnet":
+        subprocess.run([sys.executable, "live/probe_trade.py", "--mode", "TESTNET",
+                        "--symbol", "BTCUSDT", "--qty", "0.002"], cwd=str(ROOT))
+
+
+def run_adaptive_compare():
+    print("\n⚖️  So sánh: hạ ngưỡng đồng thuận giúp hay hại? (đo out-of-sample)")
+    for label, extra in (("ngưỡng cố định 76.8", []), ("ngưỡng thích ứng BẬT", ["--adaptive"])):
+        print(f"\n--- {label} ---")
+        subprocess.run([sys.executable, "benchmarks/edge_report.py", "--folds", "6",
+                        "--cycles", "900", "--steps", "6000", "--trials", "3"] + extra, cwd=str(ROOT))
+
+
 def run_orchestrator_demo():
     print("\n🐝 Đang chạy thử nghiệm Swarm DAG với 5 tác tử...")
     subprocess.run([sys.executable, "core/orchestrator.py", "--demo"], cwd=str(ROOT))
@@ -207,10 +225,12 @@ def main():
         print(" [TRUNG THỰC ĐỊNH LƯỢNG & THI HÀNH LỆNH]")
         print(" 19. 📊  Đo edge out-of-sample (Edge Report - có thể trả lời KHÔNG)")
         print(" 20. 🛫  Preflight router: điều kiện nào đang chặn MAINNET")
+        print(" 21. 🎯  Lệnh thăm dò qua đường thật (Probe Trade - Testnet)")
+        print(" 22. ⚖️   So sánh ngưỡng cố định vs thích ứng (đo, không đoán)")
         print("  0. ❌  Thoát (Exit)")
         print("=" * 76)
 
-        choice = input("👉 Nhập số chức năng muốn chạy (0-20): ").strip()
+        choice = input("👉 Nhập số chức năng muốn chạy (0-22): ").strip()
         if choice == "1":
             run_hardware_check()
         elif choice == "2":
@@ -251,11 +271,15 @@ def main():
             run_edge_report()
         elif choice == "20":
             run_router_preflight()
+        elif choice == "21":
+            run_probe_trade()
+        elif choice == "22":
+            run_adaptive_compare()
         elif choice == "0":
             print("\nĐã thoát. Tạm biệt!")
             break
         else:
-            print("\nLựa chọn không hợp lệ. Vui lòng chọn từ 0 đến 20.")
+            print("\nLựa chọn không hợp lệ. Vui lòng chọn từ 0 đến 22.")
         
         input("\nẤn Enter để quay lại Menu...")
 

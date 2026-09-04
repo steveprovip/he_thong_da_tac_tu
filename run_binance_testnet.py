@@ -143,6 +143,44 @@ def place_test_order(symbol: str = "BTCUSDT", side: str = "BUY", qty: float = 0.
     return entry_resp, stop_resp
 
 
+def flatten_all():
+    """Emergency close all open positions and cancel open protective stop orders."""
+    try:
+        acc = get_account_info()
+        positions = acc["positions"]
+        if not positions:
+            print("  ℹ️ Hiện không có vị thế nào đang mở.")
+            return
+        print(f"  ⚡ Đang đóng khẩn cấp {len(positions)} vị thế...")
+        for p in positions:
+            sym = p["symbol"]
+            amt = float(p["positionAmt"])
+            side = "SELL" if amt > 0 else "BUY"
+            qty = abs(amt)
+            try:
+                signed_request("POST", "/fapi/v1/order", {
+                    "symbol": sym,
+                    "side": side,
+                    "type": "MARKET",
+                    "quantity": str(qty),
+                    "reduceOnly": "true",
+                })
+                print(f"    - Đã đóng vị thế {sym} (khối lượng {qty})")
+            except Exception as e:
+                print(f"    - Lỗi khi đóng {sym}: {e}")
+
+        # Cancel all open stop orders
+        for p in positions:
+            try:
+                signed_request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": p["symbol"]})
+                print(f"    - Đã hủy các lệnh chờ của {p['symbol']}")
+            except Exception:
+                pass
+        print("  ✅ Đã đóng toàn bộ vị thế an toàn!")
+    except Exception as e:
+        print(f"  ❌ Lỗi khi đóng vị thế: {e}")
+
+
 def fetch_candles_and_depth(symbol: str = "BTCUSDT", limit: int = 50) -> tuple[list[Candle], list[tuple[float, float]], list[tuple[float, float]]]:
     """Fetch live 1-minute klines and order book depth from Binance Futures Testnet."""
     # 1. Klines
