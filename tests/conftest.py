@@ -39,7 +39,7 @@ from typing import Any, Iterator
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-for sub in ("core", "simulation", "benchmarks"):
+for sub in ("core", "simulation", "benchmarks", "live"):
     p = str(REPO_ROOT / sub)
     if p not in sys.path:
         sys.path.insert(0, p)

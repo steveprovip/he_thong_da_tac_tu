@@ -88,6 +88,7 @@ from groktopus_market import (  # noqa: E402
     UnauthorisedOrder,
 )
 from local_llm_client import LLMError, LocalLLMClient  # noqa: E402
+from real_alpha_engine import Candle, RealAlphaEngine  # noqa: E402
 from memory_governor import (  # noqa: E402
     BudgetError,
     MemoryBudget,
@@ -289,32 +290,42 @@ def heuristic_brain(
     breaches = context["breaches"]
 
     name = spec.name
-    true_bias = context.get("true_bias")
-    if true_bias is not None and name in ("TIDAL", "NORO", "LUMEN"):
-        base_conf = _clamp01(0.65 + 0.30 * abs(momentum_sigma if name == "TIDAL" else (forecast_bps / 30.0 if name == "NORO" else 0.5)))
-        p_correct = min(1.0, max(0.0, 0.5 + 0.420 * (base_conf - 0.5)))
-        correct_stance = VoteStance.BUY if true_bias > 0 else VoteStance.SELL
-        if rng.random() < p_correct:
-            stance = correct_stance
-        else:
-            stance = VoteStance.SELL if correct_stance is VoteStance.BUY else VoteStance.BUY
-        return {
-            "stance": stance.value,
-            "confidence": round(base_conf, 4),
-            "veto": False,
-            "rationale": f"{name}: quant alpha forecast {stance.value} (conf {base_conf:.2f})",
-        }
 
+    # There was an oracle here, and its removal is the point of this function.
+    #
+    # An earlier revision read `context["true_bias"]`, which was computed in
+    # `build_context` as `sign(price[step + horizon] - price[step])` - the
+    # realised future move - and made TIDAL, NORO and LUMEN vote that direction
+    # about 82% of the time. That is where the "74% win rate" came from. It was
+    # not a strategy result; it was a measurement of the lookahead, and it was
+    # active in every simulation because its only guard was `symbol not in
+    # live_symbols`.
+    #
+    # Nothing below reads any price later than the current step. The proof is
+    # mechanical rather than by inspection: `test_no_lookahead` rewrites the
+    # future of the price path after a decision point and asserts every
+    # proposal, vote and score is byte-identical.
     if name == "TIDAL":
-        stance, conf = directional(momentum_sigma)
-        why = f"momentum {momentum_sigma:+.2f} sigma over the scan window"
+        # Momentum, damped when RSI says the move is already stretched. A 2-sigma
+        # push into RSI 82 is a different proposition from the same push into
+        # RSI 55, and the scanner is the right place to notice that.
+        rsi = float(context.get("rsi_14", 50.0) or 50.0)
+        stretch = 1.0 - min(1.0, abs(rsi - 50.0) / 50.0) * 0.5
+        stance, conf = directional(momentum_sigma * stretch)
+        why = f"momentum {momentum_sigma:+.2f} sigma, RSI {rsi:.0f}"
     elif name == "NORO":
         stance, conf = directional(forecast_bps / 40.0)
         why = f"drift model puts fair value {forecast_bps:+.1f} bps from spot"
     elif name == "LUMEN":
-        tone = math.tanh(momentum_sigma / 2.0) * 0.5 + rng.uniform(-0.45, 0.45)
+        # No newsfeed is attached in simulation, so LUMEN's sentiment proxy is
+        # order-flow pressure plus deliberate noise: order-book imbalance is the
+        # closest observable to "what the crowd is doing right now". The noise
+        # term stays because a sentiment read that is really a microstructure
+        # read should not masquerade as an independent opinion.
+        obi = float(context.get("orderbook_imbalance", 0.0) or 0.0)
+        tone = math.tanh(momentum_sigma / 2.0) * 0.35 + obi * 0.45 + rng.uniform(-0.35, 0.35)
         stance, conf = directional(tone)
-        why = f"headline tone {tone:+.2f} on thin coverage"
+        why = f"flow tone {tone:+.2f} (OBI {obi:+.2f}) on thin coverage"
     elif name == "ZEPHR":
         stance, conf = suitability((edge_bps - cost_bps) / max(1.0, edge_bps + cost_bps))
         why = f"round trip costs {cost_bps:.1f} bps against {edge_bps:.1f} bps of edge"
@@ -676,6 +687,26 @@ class GrokSwarm:
         edge_bps = (spec.vol_bps / 1.0) * math.sqrt(self.config.horizon_steps) * 0.8
         exposure_pct = (m.position_value_cents() + notional) / equity * 100.0
 
+        # Real indicators, over history at or before the current step. `window`
+        # deliberately ends at `m.step`: the slice is inclusive of now and cannot
+        # reach further, which is what makes the no-lookahead property checkable
+        # rather than merely asserted.
+        look = min(self.config.drift_window, m.step)
+        closes = [m.price_at(symbol, m.step - i) for i in range(look, -1, -1)]
+        rsi_14 = RealAlphaEngine.calculate_rsi(closes, 14)
+        candles = [
+            Candle(timestamp=float(i), open=float(c), high=float(c), low=float(c),
+                   close=float(c), volume=1.0)
+            for i, c in enumerate(closes)
+        ]
+        atr_pct = (RealAlphaEngine.calculate_atr(candles, 14) / max(1.0, closes[-1])) * 100.0
+        book = m.book(symbol)
+        obi = RealAlphaEngine.calculate_orderbook_imbalance(
+            [(float(l.price_cents), float(l.qty)) for l in book.bids],
+            [(float(l.price_cents), float(l.qty)) for l in book.asks],
+            depth_levels=10,
+        )
+
         breaches: list[str] = []
         if exposure_pct > self.config.max_exposure_pct:
             breaches.append(
@@ -693,13 +724,6 @@ class GrokSwarm:
             if not hw.allowed:
                 breaches.append(f"hardware: {hw.reason}")
 
-        true_bias = None
-        if hasattr(m, "paths") and symbol in m.paths and symbol not in getattr(m, "live_symbols", set()):
-            h = self.config.horizon_steps
-            if m.step + h < len(m.paths[symbol]):
-                fut_px = m.paths[symbol][m.step + h]
-                true_bias = 1.0 if fut_px > scan["price_cents"] else -1.0
-
         return {
             "symbol": symbol,
             "side": side,
@@ -710,6 +734,9 @@ class GrokSwarm:
             "mispricing_bps": scan["mispricing_bps"],
             "cost_bps": cost_bps,
             "edge_bps": edge_bps,
+            "rsi_14": rsi_14,
+            "orderbook_imbalance": obi,
+            "atr_volatility_pct": atr_pct,
             "exposure_pct": exposure_pct,
             "exposure_cap_pct": self.config.max_exposure_pct,
             "notional_cents": notional,
@@ -717,7 +744,6 @@ class GrokSwarm:
             "breaches": breaches,
             "step": m.step,
             "vote_max_tokens": self.config.vote_max_tokens,
-            "true_bias": true_bias,
         }
 
     @staticmethod
@@ -902,32 +928,23 @@ class GrokSwarm:
             ))
 
         symbol = scan["symbol"]
-        true_bias = None
-        if hasattr(m, "paths") and symbol in m.paths and symbol not in getattr(m, "live_symbols", set()):
-            h = self.config.horizon_steps
-            if m.step + h < len(m.paths[symbol]):
-                fut_px = m.paths[symbol][m.step + h]
-                true_bias = 1.0 if fut_px > scan["price_cents"] else -1.0
 
-        if true_bias is not None:
-            base_conf = self._rng.uniform(0.78, 0.98)
-            p_correct = min(1.0, max(0.0, 0.5 + 0.85 * (base_conf - 0.5)))
-            true_side = VoteStance.BUY if true_bias > 0 else VoteStance.SELL
-            side = true_side if self._rng.random() < p_correct else (
-                VoteStance.SELL if true_side == VoteStance.BUY else VoteStance.BUY
-            )
-        else:
-            # Trend alignment: only propose trades where short-term momentum agrees
-            # with long-term drift forecast, avoiding trading into counter-trend chop.
-            if scan["momentum_sigma"] * scan["forecast_bps"] < 0 or abs(scan["momentum_sigma"]) < 0.6:
-                m.advance(1)
-                closed = [t.as_dict() for t in m.settle()]
-                return self._record(CycleReport(
-                    cycle=self.cycles_run, proposal=None, decision="SKIP", score_pct=0.0,
-                    filled=False, reject_reason="trend filter: momentum opposes drift or low conviction",
-                    closed=closed, equity_cents=m.equity_cents(), step=m.step,
-                ))
-            side = VoteStance.BUY if scan["momentum_sigma"] >= 0 else VoteStance.SELL
+        # Trend alignment: only propose where short-term momentum agrees with the
+        # longer-horizon drift estimate, and only above a conviction floor. Both
+        # inputs are computed from history at or before the current step.
+        #
+        # This filter is the *entire* direction decision now. The branch it
+        # replaced consulted the realised future move and is gone; see the note
+        # in `heuristic_brain`.
+        if scan["momentum_sigma"] * scan["forecast_bps"] < 0 or abs(scan["momentum_sigma"]) < 0.6:
+            m.advance(1)
+            closed = [t.as_dict() for t in m.settle()]
+            return self._record(CycleReport(
+                cycle=self.cycles_run, proposal=None, decision="SKIP", score_pct=0.0,
+                filled=False, reject_reason="trend filter: momentum opposes drift or low conviction",
+                closed=closed, equity_cents=m.equity_cents(), step=m.step,
+            ))
+        side = VoteStance.BUY if scan["momentum_sigma"] >= 0 else VoteStance.SELL
         pos_side = Side.from_stance(side)
         symbol = scan["symbol"]
         want = max(1, int(m.equity_cents() * self.config.risk_fraction) // scan["price_cents"])

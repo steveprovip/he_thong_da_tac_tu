@@ -203,9 +203,16 @@ class RealAlphaEngine:
         spread_bps = max(0.5, ((best_ask - best_bid) / max(1.0, spot)) * 10000.0)
         roundtrip_cost_bps = spread_bps + (taker_fee_bps * 2.0)
 
-        # Edge estimate from technical confluence (Momentum + Microstructure OBI + RSI)
+        # Edge estimate from technical confluence (Momentum + Microstructure OBI).
+        #
+        # This used to be `max(roundtrip_cost_bps * 1.8, ...)`, which defined the
+        # edge to be at least 1.8x the cost no matter what the signals said. The
+        # consequence was that ZEPHR's whole job - refusing a trade whose edge is
+        # smaller than the cost of taking it - could never trigger, because the
+        # comparison had been rigged in advance. An edge estimate that depends on
+        # the cost it is about to be compared against is not an estimate.
         rsi = cls.calculate_rsi(closes, 14)
-        edge_bps = max(roundtrip_cost_bps * 1.8, abs(momentum_sigma) * 22.0 + abs(obi) * 16.0)
+        edge_bps = abs(momentum_sigma) * 22.0 + abs(obi) * 16.0
 
         # 4. Volatility (ATR)
         atr = cls.calculate_atr(candles, 14)

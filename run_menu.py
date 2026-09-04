@@ -91,6 +91,21 @@ def run_market_feed():
     subprocess.run([sys.executable, "core/market_feed.py", "--venue", "coinbase"], cwd=str(ROOT))
 
 
+def run_edge_report():
+    print("\n📊 Đo edge out-of-sample (walk-forward, t-stat, hiệu chỉnh đa phép thử)...")
+    print("   Đây là câu hỏi 'hệ thống này có edge thật không'. Kết quả có thể là KHÔNG.")
+    subprocess.run([sys.executable, "benchmarks/edge_report.py",
+                    "--folds", "6", "--cycles", "900", "--steps", "6000", "--write"], cwd=str(ROOT))
+
+
+def run_router_preflight():
+    print("\n🛫 Preflight bộ định tuyến lệnh (không gửi gì lên mạng)...")
+    for mode in ("SIMULATION", "TESTNET", "MAINNET"):
+        print(f"\n--- {mode} ---")
+        subprocess.run([sys.executable, "live/live_execution_router.py",
+                        "--mode", mode, "--preflight"], cwd=str(ROOT))
+
+
 def run_orchestrator_demo():
     print("\n🐝 Đang chạy thử nghiệm Swarm DAG với 5 tác tử...")
     subprocess.run([sys.executable, "core/orchestrator.py", "--demo"], cwd=str(ROOT))
@@ -188,10 +203,14 @@ def main():
         print(" 16. ⚡  Kế hoạch thông lượng: batch 6 slot vs speculative (Inference Planner)")
         print(" 17. ⏱️   Đo tốc độ THẬT qua llama-server (Throughput Benchmark)")
         print(" 18. 📡  Xem giá công khai chỉ-đọc từ sàn (Public Market Feed)")
+        print("-" * 76)
+        print(" [TRUNG THỰC ĐỊNH LƯỢNG & THI HÀNH LỆNH]")
+        print(" 19. 📊  Đo edge out-of-sample (Edge Report - có thể trả lời KHÔNG)")
+        print(" 20. 🛫  Preflight router: điều kiện nào đang chặn MAINNET")
         print("  0. ❌  Thoát (Exit)")
         print("=" * 76)
 
-        choice = input("👉 Nhập số chức năng muốn chạy (0-18): ").strip()
+        choice = input("👉 Nhập số chức năng muốn chạy (0-20): ").strip()
         if choice == "1":
             run_hardware_check()
         elif choice == "2":
@@ -228,11 +247,15 @@ def main():
             run_throughput_bench()
         elif choice == "18":
             run_market_feed()
+        elif choice == "19":
+            run_edge_report()
+        elif choice == "20":
+            run_router_preflight()
         elif choice == "0":
             print("\nĐã thoát. Tạm biệt!")
             break
         else:
-            print("\nLựa chọn không hợp lệ. Vui lòng chọn từ 0 đến 18.")
+            print("\nLựa chọn không hợp lệ. Vui lòng chọn từ 0 đến 20.")
         
         input("\nẤn Enter để quay lại Menu...")
 

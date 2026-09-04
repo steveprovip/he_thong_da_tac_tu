@@ -373,3 +373,116 @@ This raised the empirical win rate from 56-59% to **72% - 76.3%** and compoundin
 - `[1] CHẠY THỰC TẾ (Live Mode)`
 - `[2] CHẠY GIẢ LẬP (Simulation Mode)` with capital presets (50k VNĐ, 100k VNĐ, $150k USD).
 
+
+---
+
+# Phase 3 — the oracle, and what the system does without it
+
+## The finding
+
+`core/groktopus_swarm.py` contained, at three sites:
+
+```python
+fut_px = m.paths[symbol][m.step + h]                  # the FUTURE price
+true_bias = 1.0 if fut_px > scan["price_cents"] else -1.0
+```
+
+`true_bias` was injected into the evidence pack, `heuristic_brain` used it to make
+TIDAL, NORO and LUMEN vote that direction about 82% of the time, and `cycle()`
+used it to choose the trade's side outright. Its only guard was `symbol not in
+live_symbols`, so it was active in **every simulation and every backtest**.
+
+The commit message on `624e699` reads *"boost profit velocity and win rate to
+74%+"*. That 74% was a measurement of the lookahead. It is not a strategy result,
+and no plan should be built on it.
+
+All three sites are gone. What replaced them is a trend filter over `momentum ×
+drift`, both computed from history at or before the current step.
+
+## What the strategy actually does
+
+| | with the oracle | without it |
+|---|---|---|
+| win rate | ~74% | **40–49%** |
+| mean return | positive by construction | **−1.1%** over 5 seeds |
+
+## The proof, not the promise
+
+`tests/test_no_lookahead.py` does not read the code. It runs two identical
+swarms, **rewrites the price path beyond the last step the run reaches** into
+alternating triples and thirds, and asserts every cycle report is byte-identical.
+Any decision that reads `step + k` makes the two runs diverge.
+
+`test_the_probe_detects_a_planted_oracle` is the control: it plants a lookahead
+on purpose and asserts the probe catches it. A mutation test that always passes
+proves nothing.
+
+## The measurement that decides everything downstream
+
+`benchmarks/edge_report.py` — walk-forward, out-of-sample, six independent folds.
+
+```
+trades                : 575
+mean return / trade   : -8.025 bps   (net of spread, slippage and fees)
+t-statistic           : -1.824       (need >= 2.00)
+win rate              : 42.26%
+profit factor         : 0.849
+5 of 6 folds negative
+
+VERDICT: NO EDGE.   has_edge = false
+```
+
+The report applies a Sidak multiple-testing haircut: declare 20 configurations
+tried and the bar rises from t ≥ 1.96 to t ≥ 3.02, because the best of twenty
+random strategies shows t ≈ 2 by chance.
+
+`has_edge: false` is the expected result for a momentum rule on a driftless path.
+It is not a plumbing failure — the consensus gate, the integer ledger and the
+execution path all work. It means no edge has been demonstrated.
+
+## The execution router, rewritten
+
+Three defects in the previous version, each sufficient to lose money silently:
+
+1. **The exchange-side stop-loss did not exist.** `stop_loss_order_id` was the
+   string `f"STOP_{cid}"`; the transmit path sent one request, the entry. The
+   headline feature — "the stop survives your PC losing power" — was a label with
+   nothing behind it. Now a second `STOP_MARKET closePosition=true` request is
+   sent and checked, and **if it fails the entry is flattened immediately**.
+   An unprotected position is not a state `execute()` returns.
+2. **Failures were recorded as fills.** `except Exception: pass` under the HTTP
+   call, with `status=FILLED` assigned beforehand. A timeout — exactly when the
+   venue may have accepted — produced a ledger saying FILLED. Now: a venue
+   rejection is `REJECTED` (no position); a lost response is `UNKNOWN`, flagged
+   `needs_reconcile`, and `reconcile()` asks the venue what happened.
+3. **MAINNET used the testnet URL and testnet keys.** One constant for both.
+   Now each mode has its own `VenueSpec` with its own URL and its own env vars.
+
+Added: consensus token consumed through `ConsensusEngine` (the old
+`auth_token_signature` field was never read), kill-switch check, per-order
+notional cap, session loss stop, open-position cap, duplicate-order-id refusal,
+server-time sync with `recvWindow`, and integer cents throughout.
+
+## The MAINNET gate
+
+```
+$ python live/live_execution_router.py --mode MAINNET
+MAINNET refused. Unmet requirements:
+  - GROKTOPUS_ALLOW_MAINNET=1 is not set in the environment
+  - BINANCE_MAINNET_API_KEY is not set (testnet keys are never reused here)
+  - BINANCE_MAINNET_SECRET_KEY is not set
+  - the edge report says has_edge=false: NO EDGE: -8.02 bps, net of costs.
+```
+
+The edge condition is not a moral position. It is the same argument as the
+stop-loss: Kelly sizing is a ratio of edge to variance, and a router that cannot
+state its own out-of-sample t-statistic has no basis on which to choose a size.
+
+## Verification
+
+```
+python -m pytest tests/ -q                    783 passed, 3 skipped
+python benchmarks/edge_report.py --selftest        14/14
+python live/live_execution_router.py --selftest    19/19
+python -m pytest tests/test_no_lookahead.py -v     12/12
+```

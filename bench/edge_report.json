@@ -1,0 +1,72 @@
+{
+  "schema": "groktopus.edge_report/1",
+  "generated_at": 1788521623.1806922,
+  "generated_at_iso": "2026-09-04T11:33:43",
+  "out_of_sample": true,
+  "trades": 575,
+  "mean_trade_return_bps": -8.0248,
+  "stdev_trade_return_bps": 105.5237,
+  "t_stat": -1.8236,
+  "p_value": 0.068219,
+  "trials": 1,
+  "required_t": 2.0,
+  "win_rate": 0.4226,
+  "profit_factor": 0.8492,
+  "max_drawdown_pct": 6.4582,
+  "total_return_pct": -1.1263,
+  "has_edge": false,
+  "verdict": "NO EDGE: mean out-of-sample trade return is -8.02 bps, net of costs",
+  "min_trades": 100,
+  "min_t_stat": 2.0,
+  "config_digest": "a545f14583368e024de9a8b6c9e33aa87c5eba2e3ebdcacebca1dd03cdea0b37",
+  "folds": [
+    {
+      "fold": 0,
+      "seed": 20260904,
+      "trades": 100,
+      "return_pct": 2.9423,
+      "mean_trade_return_bps": 18.828
+    },
+    {
+      "fold": 1,
+      "seed": 20261913,
+      "trades": 100,
+      "return_pct": -1.8101,
+      "mean_trade_return_bps": -13.773
+    },
+    {
+      "fold": 2,
+      "seed": 20262922,
+      "trades": 105,
+      "return_pct": -2.2259,
+      "mean_trade_return_bps": -11.446
+    },
+    {
+      "fold": 3,
+      "seed": 20263931,
+      "trades": 82,
+      "return_pct": -1.1963,
+      "mean_trade_return_bps": -10.228
+    },
+    {
+      "fold": 4,
+      "seed": 20264940,
+      "trades": 93,
+      "return_pct": -2.8666,
+      "mean_trade_return_bps": -19.804
+    },
+    {
+      "fold": 5,
+      "seed": 20265949,
+      "trades": 95,
+      "return_pct": -1.6009,
+      "mean_trade_return_bps": -13.027
+    }
+  ],
+  "notes": [
+    "Out-of-sample: each fold uses a fresh seed, price path and swarm.",
+    "Costs (spread, slippage, taker fees) are charged inside every fill.",
+    "No lookahead: tests/test_no_lookahead.py rewrites future prices and asserts decisions are unchanged."
+  ],
+  "costs": "included - spread, slippage and fees are charged on every fill"
+}
