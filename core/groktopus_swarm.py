@@ -1117,12 +1117,19 @@ def build_swarm(
     config: Optional[SwarmConfig] = None,
     mode: Optional[str] = None,
     budget_name: Optional[str] = None,
+    start_equity_cents: Optional[int] = None,
+    symbols: Optional[tuple[Any, ...]] = None,
 ) -> GrokSwarm:
     """Wire a swarm. `live=True` uses llama-server if it answers, else says why not."""
     registry = AgentRegistry()
     engine = ConsensusEngine(registry)
+    m_kwargs: dict[str, Any] = {"seed": seed, "guard": guard, "n_steps": n_steps}
+    if start_equity_cents is not None:
+        m_kwargs["start_equity_cents"] = start_equity_cents
+    if symbols is not None:
+        m_kwargs["symbols"] = symbols
     market = GrokMarket(
-        GrokMarketConfig(seed=seed, guard=guard, n_steps=n_steps), authoriser=engine
+        GrokMarketConfig(**m_kwargs), authoriser=engine
     )
     brain = None
     if live:

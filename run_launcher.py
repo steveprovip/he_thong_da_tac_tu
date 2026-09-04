@@ -95,16 +95,32 @@ def run_simulation_mode():
     print("=" * 76)
     print("      🧪 GROKTOPUS - CHẾ ĐỘ CHẠY GIẢ LẬP (SIMULATION MODE)")
     print("============================================================================")
-    print("  • Đang chạy thử nghiệm chiến dịch Paper Trading 1.981 lệnh...")
-    market_script = ROOT / "simulation" / "groktopus_market.py"
-    subprocess.run([sys.executable, str(market_script), "--demo"], cwd=str(ROOT))
+    print("  Chọn quy mô vốn thử nghiệm:")
+    print("  [1] Vốn vi mô: 50,000 VNĐ  (Sàn Bybit / MEXC / Exness Cent micro-lot)")
+    print("  [2] Vốn vi mô: 100,000 VNĐ (Chuẩn khuyến nghị vài chục nghìn VNĐ)")
+    print("  [3] Vốn thể chế: $150,000 USD (Mô phỏng quỹ định lượng lớn)")
+    print()
+    try:
+        cap_choice = input("👉 Chọn mức vốn (1, 2 hoặc 3 [Enter = 100,000 VNĐ]): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+
+    server_script = ROOT / "core" / "web_ui_server.py"
+    cmd = [sys.executable, str(server_script), "--port", "8765"]
+    if cap_choice == "1":
+        print("\n  • Khởi tạo Swarm với mức vốn: 50,000 VNĐ (Micro-Lots)...")
+        cmd.extend(["--capital-vnd", "50000"])
+    elif cap_choice == "3":
+        print("\n  • Khởi tạo Swarm với mức vốn: $150,000 USD (Institutional)...")
+    else:
+        print("\n  • Khởi tạo Swarm với mức vốn: 100,000 VNĐ (Micro-Lots)...")
+        cmd.extend(["--capital-vnd", "100000"])
 
     print("\n" + "=" * 76)
     print("  • Đang mở Web UI Dashboard mô phỏng tại http://127.0.0.1:8765 ...")
     print("    (Nhấn Ctrl+C trong cửa sổ này để dừng mô phỏng)")
     print("=" * 76)
-    server_script = ROOT / "core" / "web_ui_server.py"
-    subprocess.run([sys.executable, str(server_script), "--port", "8765"], cwd=str(ROOT))
+    subprocess.run(cmd, cwd=str(ROOT))
 
 
 def interactive_menu():

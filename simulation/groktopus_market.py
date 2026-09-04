@@ -111,6 +111,7 @@ __all__ = [
     "CampaignResult",
     "run_paper_campaign",
     "DEFAULT_SYMBOLS",
+    "MICRO_VND_SYMBOLS",
     "START_EQUITY_CENTS",
 ]
 
@@ -242,6 +243,22 @@ DEFAULT_SYMBOLS: tuple[SymbolSpec, ...] = (
     SymbolSpec("NDX-IDX", 2_014_700, vol_bps=19.0, spread_bps=3.0, depth_levels=14, level_qty=20),
     SymbolSpec("OIL-WTI", 7_820, vol_bps=31.0, spread_bps=6.0, depth_levels=12, level_qty=4_800),
 )
+
+
+#: Micro-lot specifications priced in VND integers for micro-capital accounts
+#: (e.g., 50,000 VND - 100,000 VND), equivalent to Bybit/Binance Futures micro contracts
+#: and Exness Cent accounts.
+MICRO_VND_SYMBOLS: tuple[SymbolSpec, ...] = (
+    SymbolSpec("BTC-USD", 16_280, vol_bps=38.0, spread_bps=4.0, depth_levels=12, level_qty=60),
+    SymbolSpec("ETH-USD", 7_930, vol_bps=44.0, spread_bps=5.0, depth_levels=12, level_qty=120),
+    SymbolSpec("SOL-USD", 4_730, vol_bps=58.0, spread_bps=7.0, depth_levels=12, level_qty=180),
+    SymbolSpec("XAU-USD", 6_720, vol_bps=16.0, spread_bps=3.0, depth_levels=14, level_qty=140),
+    SymbolSpec("EUR-USD", 2_750, vol_bps=8.0, spread_bps=1.0, depth_levels=16, level_qty=360),
+    SymbolSpec("SPX-IDX", 3_850, vol_bps=14.0, spread_bps=2.0, depth_levels=14, level_qty=700),
+    SymbolSpec("NDX-IDX", 5_120, vol_bps=19.0, spread_bps=3.0, depth_levels=14, level_qty=200),
+    SymbolSpec("OIL-WTI", 1_980, vol_bps=31.0, spread_bps=6.0, depth_levels=12, level_qty=480),
+)
+
 
 
 @dataclass(frozen=True)
@@ -943,8 +960,10 @@ class GrokMarket:
         wins = [t for t in self.closed if t.won]
         equity = self.equity_cents()
         start = self.config.start_equity_cents
+        is_vnd = bool(self.specs.get("BTC-USD") and self.specs["BTC-USD"].start_price_cents < 100_000)
         return {
             "execution_mode": EXECUTION_MODE,
+            "currency": "VND" if is_vnd else "USD",
             "step": self.step,
             "symbols": list(self.specs),
             "start_equity_cents": start,

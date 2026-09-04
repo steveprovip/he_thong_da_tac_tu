@@ -66,6 +66,7 @@ from groktopus_market import (  # noqa: E402
     CampaignConfig,
     build_default_stack,
     run_paper_campaign,
+    MICRO_VND_SYMBOLS,
 )
 from risk_guard import RiskGuard  # noqa: E402
 
@@ -388,6 +389,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--seed", type=int, default=20260904)
     ap.add_argument("--live", action="store_true", help="use llama-server for the eight brains")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    ap.add_argument("--capital-vnd", type=int, default=None, help="initial equity in VND (e.g. 50000 or 100000) using micro-lots")
+    ap.add_argument("--micro", action="store_true", help="enable micro-capital mode (100,000 VND)")
     ap.add_argument("--allow-public", action="store_true", help="permit a non-loopback bind")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
@@ -399,7 +402,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"static directory missing: {STATIC_DIR}", file=sys.stderr)
         return 2
 
-    swarm = build_swarm(seed=args.seed, live=args.live, n_steps=200_000)
+    start_equity_cents = None
+    symbols = None
+    if args.capital_vnd or args.micro:
+        start_equity_cents = args.capital_vnd if args.capital_vnd else 100_000
+        symbols = MICRO_VND_SYMBOLS
+
+    swarm = build_swarm(
+        seed=args.seed,
+        live=args.live,
+        n_steps=200_000,
+        start_equity_cents=start_equity_cents,
+        symbols=symbols,
+    )
     hub = TelemetryHub(swarm, interval_s=args.interval)
     try:
         httpd = serve(hub, host=args.host, port=args.port, allow_public=args.allow_public)

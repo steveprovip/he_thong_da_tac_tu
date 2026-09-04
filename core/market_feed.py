@@ -147,6 +147,8 @@ class Tick:
         return (time.time() if now is None else now) - self.received_at
 
     def is_fresh(self, max_age_s: float, now: Optional[float] = None) -> bool:
+        if max_age_s <= 0.0:
+            return False
         return self.age_s(now) <= max_age_s
 
     def as_dict(self, now: Optional[float] = None) -> dict[str, Any]:

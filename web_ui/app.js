@@ -44,11 +44,22 @@ function el(tag, attrs, parent) {
   if (parent) parent.appendChild(n);
   return n;
 }
+function isVnd() {
+  return latest && latest.currency === "VND";
+}
 function usd(cents) {
+  if (isVnd()) {
+    return Math.round(cents || 0).toLocaleString("vi-VN") + " ₫";
+  }
   const v = (cents || 0) / 100;
   return v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
 function usdShort(cents) {
+  if (isVnd()) {
+    const v = cents || 0;
+    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + "k ₫";
+    return v + " ₫";
+  }
   const v = (cents || 0) / 100;
   if (Math.abs(v) >= 1000) return "$" + (v / 1000).toFixed(1) + "k";
   return "$" + v.toFixed(0);
