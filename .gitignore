@@ -69,3 +69,7 @@ state/*.db-shm
 # Sensitive config & local overrides
 .env.local
 *.secret
+
+# Local branch directories & reference clones
+he_thong_da_tac_tu-DLinh/
+
