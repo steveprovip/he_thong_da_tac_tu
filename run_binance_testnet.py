@@ -458,6 +458,8 @@ def run_autonomous_swarm(
 
     web_hub = start_web_ui_if_needed(port=8765)
 
+    holding_bars = 0
+
     while True:
         cycle_count += 1
         os.system("cls" if os.name == "nt" else "clear")
@@ -498,8 +500,9 @@ def run_autonomous_swarm(
         print(f"  • {symbol}: ${spot:,.2f} | RSI(14): {snap.rsi_14:.1f} | OBI: {snap.orderbook_imbalance:+.2f} | ATR%: {snap.atr_volatility_pct:.3f}% | Phí 2 chiều: {snap.cost_bps:.1f} bps")
         print("-" * 78)
 
-        # MARIN: Monitor existing position
+        # MARIN: Monitor existing position via Dynamic Triple Barrier Method
         if positions:
+            holding_bars += 1
             p = positions[0]
             amt = float(p["positionAmt"])
             entry_px = float(p["entryPrice"])
@@ -508,21 +511,47 @@ def run_autonomous_swarm(
             notional = abs(amt) * entry_px
             roe_pct = (pnl / notional * 100.0) if notional > 0 else 0.0
 
+            # Dynamic ATR Take Profit (0.20% - 0.60% for responsive micro-scalping)
+            target_tp = max(0.20, min(0.60, snap.atr_volatility_pct * 1.5))
+
             print(f"  📍 VỊ THẾ ĐANG MỞ: {p['symbol']} | {pos_side} | KL: {abs(amt)} BTC | Giá vào: ${entry_px:,.2f}")
-            print(f"     Lãi/Lỗ hiện tại: ${pnl:+,.2f} USDT ({roe_pct:+,.2f}%)")
+            print(f"     Lãi/Lỗ hiện tại: ${pnl:+,.2f} USDT ({roe_pct:+,.2f}%) | Mục tiêu TP: +{target_tp:.2f}% | Đã giữ: {holding_bars} chu kỳ")
             print(f"  🛡️ MARIN: Đang giám sát vị thế & Lệnh Stop-Loss bảo vệ đang treo trên sàn.")
 
-            # Check Take Profit
-            if roe_pct >= take_profit_pct:
-                print(f"\n  🎯 [MARIN CHỐT LỜI THÀNH CÔNG] Đạt mục tiêu +{roe_pct:.2f}% (>= {take_profit_pct}%)!")
+            # Barrier 1: Dynamic ATR Take Profit
+            if roe_pct >= target_tp:
+                print(f"\n  🎯 [MARIN CHỐT LỜI THÀNH CÔNG] Đạt mục tiêu +{roe_pct:.2f}% (>= {target_tp:.2f}%)!")
                 print(f"     Tiến hành đóng vị thế và hủy lệnh Stop-Loss trên sàn...")
                 flatten_all()
+                holding_bars = 0
+            # Barrier 2: Hard Stop Loss
             elif roe_pct <= -(stop_loss_pct * 1.5):
                 print(f"\n  ⚠️ [MARIN CẮT LỖ KHẨN CẤP] Vị thế vi phạm ngưỡng an toàn ({roe_pct:.2f}%)! Đang đóng vị thế...")
                 flatten_all()
+                holding_bars = 0
+            # Barrier 3: Time-Decay Exit (Triple Barrier vertical barrier after 12 bars if profit positive)
+            elif holding_bars >= 12 and roe_pct >= 0.05:
+                print(f"\n  ⏱️ [MARIN TIME-DECAY EXIT] Vị thế đi ngang {holding_bars} chu kỳ, chốt lời bảo vệ vốn +{roe_pct:.2f}%!")
+                flatten_all()
+                holding_bars = 0
             else:
-                print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{take_profit_pct}%) hoặc Stop-Loss (-{stop_loss_pct}%).")
+                print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{target_tp:.2f}%) hoặc Stop-Loss (-{stop_loss_pct}%).")
 
+            # Active In-Position Telemetry so Web UI is NEVER frozen at 50% HOLD
+            in_pos_proposal = Proposal(
+                proposal_id=f"POS_{int(time.time())}",
+                symbol=symbol,
+                side=VoteStance.SELL if amt > 0 else VoteStance.BUY,
+                qty=int(abs(amt) * 1000),
+                price_cents=int(spot * 100),
+            )
+            c_res_pos = ConsensusResult(
+                authorised=True,
+                decision=ConsensusDecision.EXECUTE,
+                score_pct=85.0,
+                token=None,
+                reason=f"MARIN MONITORING: {pos_side} PnL {roe_pct:+.2f}% / TP +{target_tp:.2f}%",
+            )
             update_web_dashboard(
                 web_hub=web_hub,
                 registry=registry,
@@ -537,8 +566,11 @@ def run_autonomous_swarm(
                 start_time=start_time,
                 equity_history=equity_history,
                 executed_trades=executed_trades,
+                proposal=in_pos_proposal,
+                c_res=c_res_pos,
             )
         else:
+            holding_bars = 0
             print("  📍 VỊ THẾ HIỆN TẠI: Chưa có vị thế mở (Flat). Hội đồng 6 AI đang rà quét tín hiệu...")
             
             # Formulate proposed stance based on trend/momentum
