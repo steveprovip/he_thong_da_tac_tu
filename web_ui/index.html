@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>GrokTOPUS - 8 Agents, 8 Brains, 1 Body</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%90%99</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>Grok<span>TOPUS</span></h1>
+      <div class="sub">8 AGENTS &middot; 8 BRAINS &middot; 1 BODY</div>
+    </div>
+    <div class="pill"><span class="dot" id="live-dot"></span><span id="live-text">connecting</span></div>
+    <div class="pill">brain <b id="brain-name">-</b></div>
+    <div class="pill">chu ky <b id="cycle-count">0</b></div>
+    <div class="pill">suy luan <b id="infer-count">0</b> &middot; dong thoi <b id="peak-conc">-</b></div>
+    <div class="pill">che do <b>PAPER / SIMULATION</b></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ================= left column ================= -->
+    <div class="stack">
+
+      <section class="panel">
+        <h2>Bach tuoc 8 xuc tu &middot; trang thai tac tu thoi gian thuc
+          <span class="right" id="octo-caption">dang khoi dong</span></h2>
+        <div class="body" style="padding:6px 10px 10px">
+          <svg id="octo" viewBox="0 72 1060 596" role="img"
+               aria-label="Eight-tentacle octopus, one tentacle per agent">
+            <defs>
+              <radialGradient id="headGrad" cx="50%" cy="38%" r="62%">
+                <stop offset="0%"  stop-color="#1d3b55"/>
+                <stop offset="55%" stop-color="#12243a"/>
+                <stop offset="100%" stop-color="#0a1524"/>
+              </radialGradient>
+              <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="12" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="glow" x="-70%" y="-70%" width="240%" height="240%">
+                <feGaussianBlur stdDeviation="5" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <g id="tentacles"></g>
+            <g id="head"></g>
+            <g id="nodes"></g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Duong von <span class="right" id="equity-range">-</span></h2>
+        <div class="body" style="padding:10px 12px 4px">
+          <svg id="equity" viewBox="0 0 900 200" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="stats cols-4" id="market-stats"></div>
+      </section>
+
+    </div>
+
+    <!-- ================= right column ================= -->
+    <div class="stack">
+
+      <section class="panel">
+        <h2>Dong ho dong thuan <span class="right">nguong 76.8%</span></h2>
+        <div class="body">
+          <div class="gauge-wrap">
+            <svg id="gauge" viewBox="0 0 260 150"></svg>
+            <div>
+              <div class="gauge-num" id="consensus-num">--.--%</div>
+              <div class="gauge-cap" id="consensus-prop">chua co de xuat</div>
+              <div class="verdict idle" id="verdict">CHO</div>
+              <div class="thresholds">
+                <b>&ge; 76.8%</b> uy quyen VESKA<br>
+                <b>70.0 - 76.8%</b> giu nguyen, quan sat<br>
+                <b>&lt; 70.0%</b> RUNE huy bo giao dich
+              </div>
+            </div>
+          </div>
+          <div class="stats cols-4" style="margin:16px -16px -16px" id="vote-stats"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Tai nguyen phan cung <span class="right" id="hw-source">-</span></h2>
+        <div class="body">
+          <div class="meter">
+            <div class="lab">GPU VRAM &middot; tran 10.0 GB<span class="r" id="vram-text">-</span></div>
+            <div class="bar"><i id="vram-bar" style="width:0%"></i></div>
+          </div>
+          <div class="meter">
+            <div class="lab">Swarm RAM &middot; tran 6.0 GB<span class="r" id="ram-text">-</span></div>
+            <div class="bar"><i id="ram-bar" style="width:0%"></i></div>
+          </div>
+          <div class="note">
+            Mot model duy nhat tru ngu tren GPU (Qwen3.8-27B IQ2_XXS, ~9.07 GB).
+            Ca 8 tac tu duoc luan chuyen ngu canh tuan tu qua mot semaphore = 1,
+            nen khong bao gio co hai KV cache cung luc.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Phieu bau vong gan nhat</h2>
+        <div class="scroll" style="max-height:340px">
+          <table>
+            <thead><tr>
+              <th>Tac tu</th><th>Vai tro</th><th class="num">Trong so</th>
+              <th>Lap truong</th><th class="num">Tin cay</th><th class="num">Dong gop</th>
+            </tr></thead>
+            <tbody id="votes"><tr><td colspan="6">chua bo phieu</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Chien dich tham chieu
+          <span class="right"><button class="ghost" id="run-campaign">chay 1.981 lenh</button></span></h2>
+        <div class="body">
+          <div id="campaign-body" class="note" style="border-left-color:var(--line);margin-top:0">
+            Kich ban chuan trong chi thi: 1.981 lenh mo phong, $150.000 &rarr; ~$198.000,
+            hat toan so nguyen, khong bao gio am so du. Bam nut de chay va xem ket qua that.
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <section class="panel" style="margin-top:18px">
+    <h2>Lich su giao dich <span class="right" id="trade-count">0</span></h2>
+    <div class="scroll" style="max-height:360px">
+      <table>
+        <thead><tr>
+          <th>Ma</th><th>Chieu</th><th class="num">SL</th>
+          <th class="num">Gia vao</th><th class="num">Gia ra</th>
+          <th class="num">Lai/Lo</th><th class="num">Buoc vao</th><th class="num">Buoc ra</th>
+          <th>Ly do dong</th><th class="num">Dong thuan</th>
+        </tr></thead>
+        <tbody id="trades"><tr><td colspan="10">chua co giao dich nao</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Sentry: <b id="foot-kill">-</b></span>
+    <span>So lenh bi tu choi: <b id="foot-reject">-</b></span>
+    <span>Buoc thi truong: <b id="foot-step">-</b></span>
+    <span>Chi doc: khong co route nao dat hoac dong lenh.</span>
+  </footer>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

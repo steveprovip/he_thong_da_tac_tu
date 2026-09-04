@@ -1,0 +1,174 @@
+{
+  "_comment": [
+    "Profile registry for the autonomous multi-agent engine.",
+    "",
+    "IMPORTANT - how VRAM numbers in this file should be read:",
+    "  'vram_gb_claimed' is the figure quoted in F:/KyThuatNenAIMoi/BRAIN.md.",
+    "  It is NOT trusted at runtime. local_llm_client.py stats the real GGUF on",
+    "  disk and recomputes the budget via estimate_vram_gb(). If the recomputed",
+    "  value disagrees with vram_gb_claimed by more than tolerance_gb, the client",
+    "  emits a warning naming both numbers.",
+    "",
+    "  Reason this matters: BRAIN.md section 2 lists Qwen3.8-27B IQ2_XXS at",
+    "  7.27 GB on disk, but the file actually present on this machine is",
+    "  ~8.39 GB. Trusting the document would understate Profile S VRAM by more",
+    "  than a gigabyte. Measured file size always wins.",
+    "",
+    "Only ONE profile is resident at a time. 16 GB of VRAM cannot hold two of",
+    "these simultaneously. Agent roles are personas multiplexed over the single",
+    "resident model - see architecture_plan.md section 4."
+  ],
+
+  "schema_version": 2,
+
+  "budget": {
+    "vram_ceiling_gb": 10.0,
+    "ram_ceiling_gb": 6.0,
+    "cuda_overhead_gb": 0.55,
+    "cuda_overhead_note": "BRAIN.md section 7 item 2 flags this as an ESTIMATED constant, not a measurement. Calibrate against nvidia-smi with the server running, then update here.",
+    "tolerance_gb": 0.75
+  },
+
+  "budgets": {
+    "_comment": [
+      "Named memory envelopes. `budget` above stays the default so existing",
+      "callers are unaffected; core/memory_governor.py selects one of these by",
+      "name and every plan it prints says which envelope it was measured against.",
+      "",
+      "TIGHT is the operator-chosen target as of 2026-09-04: keep the GGUF that is",
+      "already on disk and spend the headroom on KV slots for batched deliberation.",
+      "The 7.8 GB target in the original directive is kept as ULTRA and is marked",
+      "unreachable for this file - see its note. That is arithmetic, not opinion:",
+      "8.39 (weights) + 0.55 (CUDA) = 8.94 GB before a single KV token exists."
+    ],
+    "STANDARD": {
+      "vram_ceiling_gb": 10.0,
+      "ram_ceiling_gb": 6.0,
+      "note": "The shipped envelope. Sentry RiskGuard defaults to these."
+    },
+    "TIGHT": {
+      "vram_ceiling_gb": 9.5,
+      "ram_ceiling_gb": 4.0,
+      "note": "Active target. Fits Qwen3.8-27B IQ2_XXS as measured on this disk plus 6 KV slots at 4096 for batched deliberation. The 4.0 GB host ceiling holds only with mmap enabled - --no-mmap copies the whole 8.39 GB into host RAM and breaks it instantly."
+    },
+    "ULTRA": {
+      "vram_ceiling_gb": 7.8,
+      "ram_ceiling_gb": 4.0,
+      "note": "UNREACHABLE with the GGUF currently on disk. 8.39 + 0.55 = 8.94 GB at zero context. Needs Qwen3.8-27B IQ1_M (6.73 GB) or IQ1_S (6.19 GB), neither of which is downloaded. memory_governor reports the shortfall rather than silently degrading."
+    }
+  },
+
+  "draft_models": {
+    "_comment": [
+      "Draft models for speculative decoding. A draft model costs VRAM twice:",
+      "its own weights and its own KV cache, and both come out of the same",
+      "ceiling as the target model. core/inference_planner.py counts both."
+    ],
+    "qwen2.5-0.5b-q4km": {
+      "label": "Qwen2.5-0.5B-Instruct Q4_K_M",
+      "model_file": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+      "explicit_path": "D:/models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+      "weights_gb_claimed": 0.35,
+      "kv_kib_per_token_f16": 12.0,
+      "kv_note": "24 layers x 2 KV heads x 64 head_dim x 2 (K and V) x 2 bytes = 12 KiB/token at f16. Derived from the published Qwen2.5-0.5B config, NOT measured from the GGUF header - verify with tools/gguf_budget.py before quoting.",
+      "source": "F:/KyThuatNenAIMoi/TAI_DRAFT_MODEL.bat downloads this from Hugging Face.",
+      "vocab_compatible_with": "Qwen3.8-27B",
+      "vocab_note": "UNVERIFIED. Speculative decoding requires the draft and target to share a tokenizer vocabulary. Qwen2.5 and Qwen3.x are different generations; llama-server refuses mismatched vocabularies at load. Confirm before relying on this entry."
+    }
+  },
+
+  "search_paths": [
+    "D:/models",
+    "F:/models",
+    "F:/KyThuatNenAIMoi/model_AI"
+  ],
+
+  "profiles": {
+    "S": {
+      "label": "SPEED / low-VRAM worker",
+      "model_file": "Qwen3.8-27B-UD-IQ2_XXS.gguf",
+      "explicit_path": "D:/models/Qwen3.8-27B-UD-IQ2_XXS.gguf",
+      "quant": "IQ2_XXS",
+      "disk_gb_claimed": 7.27,
+      "disk_gb_reported_by_user": 8.39,
+      "vram_gb_claimed": 7.96,
+      "context": 8192,
+      "kv_type": "q4_0",
+      "kv_kib_per_token_f16": 64.0,
+      "mtp": false,
+      "mtp_note": "Disabled deliberately. BRAIN.md QD-3: at 2-3 bit quantization MTP makes generation SLOWER, not faster.",
+      "tok_s_measured": null,
+      "tok_s_inferred": 52,
+      "confidence": "INFERRED",
+      "confidence_note": "BRAIN.md section 7 item 1 lists this ~52 tok/s as unverified, extrapolated from eta=0.852 which was calibrated on IQ3_XXS. Do not quote as fact. Measure with tools/probe_tokps.py.",
+      "reasoning_effort": "medium",
+      "leaves_free_vram": true
+    },
+
+    "Q": {
+      "label": "QUALITY / high-reasoning coordinator",
+      "model_file": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+      "explicit_path": null,
+      "quant": "IQ3_XXS",
+      "disk_gb_claimed": 10.9,
+      "disk_gb_reported_by_user": null,
+      "vram_gb_claimed": 13.07,
+      "context": 94208,
+      "kv_type": "q4_0",
+      "kv_kib_per_token_f16": 64.0,
+      "mtp": true,
+      "mtp_draft_n_max": 3,
+      "tok_s_measured": [50, 55],
+      "tok_s_inferred": null,
+      "confidence": "MEASURED",
+      "confidence_note": "BRAIN.md section 3: 35 tok/s without MTP, 50-55 with draft-mtp n=3, on this exact card.",
+      "reasoning_effort": "medium",
+      "reasoning_effort_note": "BRAIN.md QD-4: default xhigh burned 22276 reasoning tokens on one SVG task (~7 min). Forcing medium is a bigger latency lever than MTP.",
+      "leaves_free_vram": false,
+      "status": "WEIGHTS_NOT_FOUND_AS_OF_2026-09-03"
+    },
+
+    "T": {
+      "label": "TURBO MoE / fast subagent routing",
+      "model_file": "Qwen3.6-35B-A3B-UD-IQ1_M.gguf",
+      "explicit_path": "F:/KyThuatNenAIMoi/model_AI/Qwen3.6-35B-A3B-UD-IQ1_M.gguf",
+      "quant": "IQ1_M",
+      "disk_gb_claimed": 10.59,
+      "disk_gb_verified": 10.59,
+      "vram_gb_claimed": null,
+      "context": 32768,
+      "context_note": "Deliberately 32768, not the 327680 used in the BRAIN.md benchmark run. BRAIN.md QD-2 lists reducing context as one of three untried levers toward 100 tok/s, and a 327K KV cache is unaffordable alongside anything else.",
+      "kv_type": "q8_0",
+      "kv_kib_per_token_f16": null,
+      "mtp": true,
+      "mtp_draft_n_max": 2,
+      "tok_s_measured": null,
+      "tok_s_inferred": null,
+      "confidence": "UNBENCHMARKED_QUANT",
+      "confidence_note": "CRITICAL: the 87.4-95.9 tok/s in BRAIN.md was measured on IQ2_M at ctx 327680 via Vulkan with ngram-mod. The file on this disk is IQ1_M, a DIFFERENT and lower quant tier that appears nowhere in the BRAIN.md benchmark table. The directive attributed those numbers to Q2_K_XL, a third quant. Three distinct quants, one set of numbers - none of them this file. Treat 1-bit output quality as unproven for coordinator work.",
+      "reasoning_effort": "medium",
+      "leaves_free_vram": false
+    }
+  },
+
+  "default_profile": "S",
+  "default_profile_note": "S is default here ONLY because it is the profile whose weights are confirmed present and it leaves headroom. Note this CONTRADICTS BRAIN.md QD-1, which calls Profile S 'gan nhu vo dung' on this card (same throughput as Q, one quant tier worse, 11.5x less context). Switch to Q as soon as IQ3_XXS is downloaded.",
+
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "n_threads": 8,
+    "n_threads_note": "Directive caps worker threads at 8 of the 12 available on the i5-12400F, leaving headroom for OS and IDE.",
+    "n_gpu_layers": 99,
+    "flash_attn": true,
+    "request_timeout_s": 300
+  },
+
+  "fallback": {
+    "enabled": false,
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "note": "Opt-in only. Disabled by default so a local-only run can never silently egress prompt content to a paid remote API. Enable explicitly in code or via ENGINE_ALLOW_FALLBACK=1."
+  }
+}
