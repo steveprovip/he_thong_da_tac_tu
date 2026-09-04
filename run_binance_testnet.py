@@ -308,6 +308,21 @@ def update_web_dashboard(
     score_pct = float(c_res.score_pct) if c_res else 50.0
     decision_str = c_res.decision.value if c_res else "IDLE"
 
+    recent_cycle_entry = {
+        "cycle": cycle_count,
+        "proposal": {
+            "symbol": symbol,
+            "side": proposal.side.value if proposal else "SELL",
+            "qty": proposal.qty if proposal else 2,
+            "price_cents": int(spot * 100),
+            "notional_cents": proposal.notional_cents if proposal else int(spot * 2),
+        },
+        "decision": decision_str,
+        "score_pct": round(score_pct, 2),
+        "filled": bool(c_res and c_res.authorised),
+        "reject_reason": c_res.reason if (c_res and not c_res.authorised) else None,
+    }
+
     telemetry_snap = {
         "generated_at": time.time(),
         "uptime_s": round(time.time() - start_time, 2),
@@ -328,6 +343,12 @@ def update_web_dashboard(
             "reason": c_res.reason if c_res else "",
             "authorised": bool(c_res and c_res.authorised),
             "veto_source": c_res.veto_source if c_res else None,
+            "stats": {
+                "evaluated": cycle_count,
+                "execute": total_executed,
+                "hold": cycle_count - total_executed,
+                "veto": 1 if (c_res and c_res.decision == ConsensusDecision.VETO) else 0,
+            },
             "proposal": {
                 "symbol": symbol,
                 "side": proposal.side.value,
@@ -366,7 +387,7 @@ def update_web_dashboard(
             "source": "Windows PC",
             "budget": "Local Live",
         },
-        "recent_cycles": [],
+        "recent_cycles": [recent_cycle_entry],
     }
     web_hub.update_snapshot(telemetry_snap)
 
