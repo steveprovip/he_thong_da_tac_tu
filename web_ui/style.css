@@ -610,6 +610,21 @@ body.theme-obsidian {
 #reef-octo-svg {
   width: 100%;
   height: 100%;
+  overflow: visible;
+}
+
+#reef-octo-body {
+  cursor: pointer;
+  filter: drop-shadow(0 0 16px rgba(255, 85, 0, 0.35));
+  transition: filter 0.3s ease;
+}
+
+#reef-octo-body:hover {
+  filter: drop-shadow(0 0 24px rgba(255, 110, 0, 0.6));
+}
+
+#reef-tentacles {
+  filter: drop-shadow(0 0 10px rgba(255, 85, 0, 0.4));
 }
 
 .hud-layer {

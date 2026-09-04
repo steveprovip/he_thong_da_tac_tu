@@ -170,9 +170,15 @@ class TelemetryHub:
         t = self._thread
         return bool(t is not None and t.is_alive())
 
-    # -- readers -----------------------------------------------------------
-
     def snapshot(self) -> dict[str, Any]:
+        snap_file = REPO_ROOT / "data" / "live_telemetry.json"
+        if snap_file.is_file():
+            try:
+                mtime = snap_file.stat().st_mtime
+                if time.time() - mtime < 120.0:
+                    return json.loads(snap_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
         with self._lock:
             return self._snapshot
 

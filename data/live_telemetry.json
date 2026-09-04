@@ -1,0 +1,281 @@
+{
+  "generated_at": 1788531616.9292033,
+  "uptime_s": 41.55,
+  "cycles_run": 4,
+  "inference_count": 24,
+  "peak_concurrency": 6,
+  "max_concurrent_inferences": 6,
+  "brain": "Binance Testnet 8-Agent Swarm",
+  "mode": "BINANCE TESTNET ($5,000 USDT)",
+  "agents": [
+    {
+      "name": "TIDAL",
+      "tier": "ANALYST",
+      "role": "Quet thi truong, phat hien bien dong bat thuong",
+      "weight": 0.16,
+      "hue": 190,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.6994,
+      "rationale": "TIDAL: momentum -0.44 sigma, RSI 34, sweep +0.00",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "NORO",
+      "tier": "ANALYST",
+      "role": "Tinh gia tri hop ly, xac dinh do lech gia",
+      "weight": 0.2,
+      "hue": 265,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.5666,
+      "rationale": "NORO: drift -18.5 bps, VWAP z -1.41",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "LUMEN",
+      "tier": "ANALYST",
+      "role": "Phan tich tam ly thi truong va tin tuc thoi gian thuc",
+      "weight": 0.12,
+      "hue": 45,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.5866,
+      "rationale": "LUMEN: flow tone -0.09 (OBI +0.68, CVD -0.60)",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "ZEPHR",
+      "tier": "ANALYST",
+      "role": "Do sau so lenh, thanh khoan va truot gia",
+      "weight": 0.16,
+      "hue": 155,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.6755,
+      "rationale": "ZEPHR: round trip costs 11.1 bps against 20.6 bps of edge",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "OKAPI",
+      "tier": "ANALYST",
+      "role": "Quan ly phoi nhiem danh muc, phan bo ty trong von",
+      "weight": 0.16,
+      "hue": 25,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.97,
+      "rationale": "OKAPI: portfolio would be 0.0% at risk against a 75% cap",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "RUNE",
+      "tier": "ANALYST",
+      "role": "Ve si rui ro toi cao, nam quyen phu quyet tuyet doi",
+      "weight": 0.2,
+      "hue": 0,
+      "status": "VOTED",
+      "stance": "SELL",
+      "confidence": 0.6693,
+      "rationale": "RUNE: no limit breached; edge/cost 1.85, 0.0% at risk",
+      "advisory": false,
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 15.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "VESKA",
+      "tier": "EXECUTION",
+      "role": "Agent duy nhat duoc phep dat lenh, chi khi du dong thuan",
+      "weight": 0.0,
+      "hue": 210,
+      "status": "IDLE",
+      "stance": "HOLD",
+      "confidence": 0.0,
+      "rationale": "Cho dong thuan >= 76.8% va mot AuthToken hop le",
+      "calls": 0,
+      "errors": 0,
+      "mean_latency_ms": 25.0,
+      "last_active_at": 1788531616.9292033
+    },
+    {
+      "name": "MARIN",
+      "tier": "SETTLEMENT",
+      "role": "Giam sat dong vi the, chot loi, cat lo va thanh ly an toan",
+      "weight": 0.0,
+      "hue": 300,
+      "status": "IDLE",
+      "stance": "HOLD",
+      "confidence": 0.0,
+      "rationale": "Khong co vi the mo - khong co gi de giam sat",
+      "calls": 4,
+      "errors": 0,
+      "mean_latency_ms": 10.0,
+      "last_active_at": 1788531616.9292033
+    }
+  ],
+  "consensus": {
+    "proposal_id": "PROP_1788531616929",
+    "score_pct": 0.0,
+    "last_score_pct": 0.0,
+    "decision": "VETO",
+    "last_decision": "VETO",
+    "advisory": false,
+    "direction": "SELL",
+    "reason": "Khong co phien bieu quyet trong chu ky nay",
+    "authorised": false,
+    "veto_source": null,
+    "stats": {
+      "evaluated": 4,
+      "execute": 0,
+      "hold": 4,
+      "veto": 0
+    },
+    "proposal": {
+      "symbol": "BTCUSDT",
+      "side": "SELL",
+      "qty": 1,
+      "price_cents": 7922000,
+      "notional_cents": 7922000
+    },
+    "execute_threshold_pct": 76.8,
+    "hold_threshold_pct": 70.0,
+    "veto_threshold_pct": 70.0,
+    "votes": [
+      {
+        "agent": "TIDAL",
+        "stance": "SELL",
+        "confidence": 0.6994,
+        "rationale": "TIDAL: momentum -0.44 sigma, RSI 34, sweep +0.00",
+        "veto": false
+      },
+      {
+        "agent": "NORO",
+        "stance": "SELL",
+        "confidence": 0.5666,
+        "rationale": "NORO: drift -18.5 bps, VWAP z -1.41",
+        "veto": false
+      },
+      {
+        "agent": "LUMEN",
+        "stance": "SELL",
+        "confidence": 0.5866,
+        "rationale": "LUMEN: flow tone -0.09 (OBI +0.68, CVD -0.60)",
+        "veto": false
+      },
+      {
+        "agent": "ZEPHR",
+        "stance": "SELL",
+        "confidence": 0.6755,
+        "rationale": "ZEPHR: round trip costs 11.1 bps against 20.6 bps of edge",
+        "veto": false
+      },
+      {
+        "agent": "OKAPI",
+        "stance": "SELL",
+        "confidence": 0.97,
+        "rationale": "OKAPI: portfolio would be 0.0% at risk against a 75% cap",
+        "veto": false
+      },
+      {
+        "agent": "RUNE",
+        "stance": "SELL",
+        "confidence": 0.6693,
+        "rationale": "RUNE: no limit breached; edge/cost 1.85, 0.0% at risk",
+        "veto": false
+      }
+    ]
+  },
+  "market": {
+    "start_equity_cents": 500000,
+    "equity_cents": 500268,
+    "cash_cents": 500268,
+    "equity_curve": [
+      {
+        "step": 1,
+        "equity_cents": 500268
+      },
+      {
+        "step": 2,
+        "equity_cents": 500268
+      },
+      {
+        "step": 3,
+        "equity_cents": 500268
+      },
+      {
+        "step": 4,
+        "equity_cents": 500268
+      }
+    ],
+    "open_positions": 0,
+    "closed_trades": 0,
+    "win_rate": null,
+    "return_pct": 0.0536,
+    "unrealised_pnl_cents": 0,
+    "fees_paid_cents": 0,
+    "realised_pnl_cents": 268,
+    "recent_trades": [],
+    "rejections": {},
+    "step": 4,
+    "halted": false,
+    "spot_price_cents": 7922000,
+    "symbol": "BTCUSDT",
+    "position": null,
+    "sizing": {
+      "fraction": 0.01,
+      "notional_cents": 5002,
+      "quantity_units": 631,
+      "raw_kelly_f": 0.0,
+      "trades": true,
+      "reason": "only 0 closed trades against a 10-trade minimum; sizing at the 1.00% warm-up fraction while the win rate is still being measured rather than assumed",
+      "stats": null
+    }
+  },
+  "hardware": {
+    "vram_used_gb": 0.0,
+    "vram_ceiling_gb": 10.0,
+    "ram_used_gb": 0.38,
+    "ram_ceiling_gb": 6.0,
+    "source": "Windows PC",
+    "budget": "Local Live"
+  },
+  "recent_cycles": [
+    {
+      "cycle": 4,
+      "proposal": {
+        "symbol": "BTCUSDT",
+        "side": "SELL",
+        "qty": 1,
+        "price_cents": 7922000,
+        "notional_cents": 7922000
+      },
+      "decision": "VETO",
+      "score_pct": 0.0,
+      "advisory": false,
+      "filled": false,
+      "reject_reason": null
+    }
+  ]
+}

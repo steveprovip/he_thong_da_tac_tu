@@ -491,7 +491,23 @@ def update_web_dashboard(
         },
         "recent_cycles": [recent_cycle_entry],
     }
-    web_hub.update_snapshot(telemetry_snap)
+
+    # Always persist snapshot to disk so web_ui_server serves it immediately
+    try:
+        data_dir = ROOT / "data"
+        data_dir.mkdir(exist_ok=True)
+        snap_file = data_dir / "live_telemetry.json"
+        snap_tmp = data_dir / "live_telemetry.tmp"
+        snap_tmp.write_text(json.dumps(telemetry_snap, indent=2, ensure_ascii=False), encoding="utf-8")
+        snap_tmp.replace(snap_file)
+    except Exception:
+        pass
+
+    if web_hub is not None:
+        try:
+            web_hub.update_snapshot(telemetry_snap)
+        except Exception:
+            pass
 
 
 def run_autonomous_swarm(
@@ -511,6 +527,11 @@ def run_autonomous_swarm(
     6. MARIN monitors position PnL, trailing stops, and takes profit.
     7. Streams real-time telemetry to Web UI (http://127.0.0.1:8765) with animated Octopus!
     """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
+
     registry = AgentRegistry()
     engine = ConsensusEngine(registry)
     rng = random.Random()
@@ -527,7 +548,8 @@ def run_autonomous_swarm(
 
     while True:
         cycle_count += 1
-        os.system("cls" if os.name == "nt" else "clear")
+        if sys.stdout.isatty():
+            os.system("cls" if os.name == "nt" else "clear")
         print("==============================================================================")
         print("    🐙 GROKTOPUS - BINANCE TESTNET 8-AGENT AUTONOMOUS SWARM")
         print("==============================================================================")
@@ -818,6 +840,7 @@ def run_autonomous_swarm(
 
         print("-" * 78)
         print(f"  ⏳ Đang đếm ngược {interval_s}s sang chu kỳ #{cycle_count + 1}... (Nhấn Ctrl+C để dừng)")
+        sys.stdout.flush()
         try:
             for s in range(interval_s, 0, -1):
                 time.sleep(1.0)

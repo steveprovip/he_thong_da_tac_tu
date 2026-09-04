@@ -86,17 +86,28 @@ function drawReefTentacles() {
   if (!g) return;
   g.innerHTML = "";
 
-  const cx = 500, cy = 310;
+  const time = performance.now() * 0.0025;
+  const cx = 500 + Math.sin(time) * 4;
+  const cy = 310 + Math.cos(time * 0.8) * 6;
+
+  // Animate the central 3D octopus body in sync with tentacles
+  const octo = $("reef-octo-body");
+  if (octo) {
+    const rot = Math.sin(time * 0.7) * 2.0;
+    const scale = 1.0 + Math.sin(time * 1.2) * 0.015;
+    octo.setAttribute("transform", `translate(${cx}, ${cy}) rotate(${rot}) scale(${scale})`);
+  }
 
   for (const name of Object.keys(HUD_TARGETS)) {
     const target = HUD_TARGETS[name];
     const col = AGENT_COLORS[name] || "#ff5500";
 
-    // Curve control point calculation
+    // Dynamic waving curve control point
     const dx = target.x - cx;
     const dy = target.y - cy;
-    const cpx = cx + dx * 0.45 + (dy > 0 ? -dy * 0.15 : dy * 0.15);
-    const cpy = cy + dy * 0.45 + (dx > 0 ? dx * 0.15 : -dx * 0.15);
+    const wave = Math.sin(time * 2.0 + (target.x * 0.01)) * 8;
+    const cpx = cx + dx * 0.45 + (dy > 0 ? -dy * 0.15 : dy * 0.15) + wave * 0.5;
+    const cpy = cy + dy * 0.45 + (dx > 0 ? dx * 0.15 : -dx * 0.15) + wave;
 
     // Tentacle background shadow
     const bgPath = document.createElementNS(SVGNS, "path");
@@ -143,7 +154,7 @@ function drawReefTentacles() {
 }
 
 function animateReef() {
-  pulseOffset = (pulseOffset + 0.6) % 26;
+  pulseOffset = (pulseOffset + 0.8) % 26;
   drawReefTentacles();
   animFrameId = requestAnimationFrame(animateReef);
 }
