@@ -331,7 +331,18 @@ class LiveExecutionRouter:
         self.guard = guard
         self.limits = limits or RouterLimits()
         self.timeout_s = float(timeout_s)
-        self._env = dict(os.environ if env is None else env)
+        current_env = dict(os.environ)
+        for env_file in (REPO_ROOT / ".env.local", REPO_ROOT / ".env"):
+            if env_file.is_file():
+                for line in env_file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip()
+                        if k not in current_env:
+                            current_env[k] = v
+                            os.environ[k] = v
+        self._env = dict(current_env if env is None else env)
         self._edge_report_path = edge_report_path
         self.venue: Optional[VenueSpec] = VENUES.get(self.mode)
         self.db_path = Path(db_path or (REPO_ROOT / "state" / "live_trade_ledger.db"))

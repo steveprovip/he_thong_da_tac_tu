@@ -132,11 +132,12 @@ def interactive_menu():
         print()
         print("  [1] CHAY THUC TE  (Live Mode - Giá thật Coinbase, 8 Agent trên Model Local)")
         print("  [2] CHAY GIA LAP  (Simulation Mode - Paper Trading 1.981 lệnh $150K->$198K)")
+        print("  [3] BINANCE TESTNET (Sàn Thật, Tiền Ảo $5,000 USDT - Lệnh & Stop-Loss Thật)")
         print("  [0] Thoát (Exit)")
         print()
         print("==============================================================================")
         try:
-            choice = input("👉 Nhập lựa chọn của bạn (1 hoặc 2): ").strip()
+            choice = input("👉 Nhập lựa chọn của bạn (1, 2 hoặc 3): ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nĐã thoát.")
             break
@@ -155,11 +156,15 @@ def interactive_menu():
                 input("\nNhấn Enter để quay lại menu...")
             except (KeyboardInterrupt, EOFError):
                 break
+        elif choice == "3":
+            os.system("cls" if os.name == "nt" else "clear")
+            import run_binance_testnet
+            run_binance_testnet.main()
         elif choice == "0":
             print("\nTạm biệt!")
             sys.exit(0)
         else:
-            print("\n❌ Lựa chọn không hợp lệ! Vui lòng chỉ nhập 1 hoặc 2.")
+            print("\n❌ Lựa chọn không hợp lệ! Vui lòng chỉ nhập 1, 2 hoặc 3.")
             time.sleep(1.2)
 
 
