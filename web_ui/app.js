@@ -476,6 +476,7 @@ async function poll() {
     txt($("cycle-count"), String(data.cycles_run || 0));
     txt($("infer-count"), String(data.inference_count || 0));
     txt($("peak-conc"), `${data.peak_concurrency || 0}/${data.max_concurrent_inferences || 1}`);
+    if (data.mode) txt($("mode-badge"), data.mode);
 
     const running = data.hub ? data.hub.running : true;
     setStatus(running ? "live" : "stale", running ? "dang chay" : "da dung");

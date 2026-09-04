@@ -132,7 +132,7 @@ def interactive_menu():
         print()
         print("  [1] CHAY THUC TE  (Live Mode - Giá thật Coinbase, 8 Agent trên Model Local)")
         print("  [2] CHAY GIA LAP  (Simulation Mode - Paper Trading 1.981 lệnh $150K->$198K)")
-        print("  [3] BINANCE TESTNET (Sàn Thật, Tiền Ảo $5,000 USDT - Lệnh & Stop-Loss Thật)")
+        print("  [3] BINANCE TESTNET (Sàn Thật $5,000 USDT - Treo Máy Tự Động + Web UI Bạch Tuộc)")
         print("  [0] Thoát (Exit)")
         print()
         print("==============================================================================")

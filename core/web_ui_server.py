@@ -148,6 +148,16 @@ class TelemetryHub:
         with self._lock:
             self._snapshot = snap
 
+    def update_snapshot(self, snap: dict[str, Any]) -> None:
+        """Update snapshot directly from an external driver (e.g. Binance Testnet)."""
+        snap["hub"] = {
+            "running": True,
+            "interval_s": self.interval_s,
+            "error": self.error,
+        }
+        with self._lock:
+            self._snapshot = snap
+
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
         t = self._thread

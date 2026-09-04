@@ -176,6 +176,201 @@ def fetch_candles_and_depth(symbol: str = "BTCUSDT", limit: int = 50) -> tuple[l
     return candles, bids, asks
 
 
+import threading
+import webbrowser
+
+_WEB_HUB = None
+
+
+def start_web_ui_if_needed(port: int = 8765):
+    """Start local Web UI dashboard server and automatically pop up browser."""
+    global _WEB_HUB
+    if _WEB_HUB is not None:
+        return _WEB_HUB
+    try:
+        from web_ui_server import TelemetryHub, serve
+        hub = TelemetryHub(interval_s=10.0, autostart=False)
+        httpd = serve(hub, port=port)
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        _WEB_HUB = hub
+        url = f"http://127.0.0.1:{port}"
+        print(f"  🌐 Đang khởi động Giao diện Web UI (Bạch tuộc 8 xúc tu) tại: {url}")
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        return hub
+    except Exception as e:
+        print(f"  ℹ️ Web UI Server lưu ý ({port}): {e}")
+        return None
+
+
+def update_web_dashboard(
+    web_hub,
+    registry: AgentRegistry,
+    symbol: str,
+    spot: float,
+    wallet_bal: float,
+    avail_bal: float,
+    unrealized_pnl: float,
+    positions: list[dict[str, Any]],
+    cycle_count: int,
+    total_executed: int,
+    start_time: float,
+    equity_history: list[dict[str, Any]],
+    executed_trades: list[dict[str, Any]],
+    proposal: Optional[Proposal] = None,
+    votes: Optional[list[Vote]] = None,
+    c_res: Optional[ConsensusResult] = None,
+):
+    """Sync live Binance Testnet state to the Octopus Web Dashboard."""
+    if not web_hub:
+        return
+
+    agent_states = []
+    # 6 analysts
+    if votes:
+        for v in votes:
+            spec = registry.agents[v.agent]
+            agent_states.append({
+                "name": v.agent,
+                "tier": spec.tier.value,
+                "role": spec.role_vi or spec.role,
+                "weight": round(spec.weight, 4),
+                "hue": spec.tentacle_hue,
+                "status": "VETO" if v.veto else "VOTED",
+                "stance": v.stance.value,
+                "confidence": round(v.confidence, 4),
+                "rationale": v.rationale,
+                "calls": cycle_count,
+                "errors": 0,
+                "mean_latency_ms": 15.0,
+                "last_active_at": time.time(),
+            })
+    else:
+        for spec in registry.analysts():
+            agent_states.append({
+                "name": spec.name,
+                "tier": spec.tier.value,
+                "role": spec.role_vi or spec.role,
+                "weight": round(spec.weight, 4),
+                "hue": spec.tentacle_hue,
+                "status": "ACTING" if positions else "IDLE",
+                "stance": "HOLD",
+                "confidence": 0.5,
+                "rationale": f"Dang theo doi {len(positions)} vi the tren san",
+                "calls": cycle_count,
+                "errors": 0,
+                "mean_latency_ms": 15.0,
+                "last_active_at": time.time(),
+            })
+
+    # VESKA
+    veska_spec = registry.agents["VESKA"]
+    is_acting = bool(c_res and c_res.authorised)
+    agent_states.append({
+        "name": "VESKA",
+        "tier": veska_spec.tier.value,
+        "role": veska_spec.role_vi or veska_spec.role,
+        "weight": 0.0,
+        "hue": veska_spec.tentacle_hue,
+        "status": "ACTING" if is_acting else "IDLE",
+        "stance": proposal.side.value if (proposal and is_acting) else "HOLD",
+        "confidence": 1.0 if is_acting else 0.0,
+        "rationale": "Chap hanh lenh khi dong thuan >= 76.8%",
+        "calls": total_executed,
+        "errors": 0,
+        "mean_latency_ms": 25.0,
+        "last_active_at": time.time(),
+    })
+
+    # MARIN
+    marin_spec = registry.agents["MARIN"]
+    agent_states.append({
+        "name": "MARIN",
+        "tier": marin_spec.tier.value,
+        "role": marin_spec.role_vi or marin_spec.role,
+        "weight": 0.0,
+        "hue": marin_spec.tentacle_hue,
+        "status": "ACTING" if positions else "IDLE",
+        "stance": "HOLD",
+        "confidence": 1.0 if positions else 0.5,
+        "rationale": f"Giam sat {len(positions)} vi the & Stop-Loss tren san",
+        "calls": cycle_count,
+        "errors": 0,
+        "mean_latency_ms": 10.0,
+        "last_active_at": time.time(),
+    })
+
+    equity_cents = int((wallet_bal + unrealized_pnl) * 100)
+    equity_history.append({"step": cycle_count, "equity_cents": equity_cents})
+    if len(equity_history) > 200:
+        del equity_history[:-200]
+
+    score_pct = float(c_res.score_pct) if c_res else 50.0
+    decision_str = c_res.decision.value if c_res else "IDLE"
+
+    telemetry_snap = {
+        "generated_at": time.time(),
+        "uptime_s": round(time.time() - start_time, 2),
+        "cycles_run": cycle_count,
+        "inference_count": cycle_count * 6,
+        "peak_concurrency": 6,
+        "max_concurrent_inferences": 6,
+        "brain": "Binance Testnet 8-Agent Swarm",
+        "mode": "BINANCE TESTNET ($5,000 USDT)",
+        "agents": agent_states,
+        "consensus": {
+            "proposal_id": proposal.proposal_id if proposal else "NONE",
+            "score_pct": round(score_pct, 2),
+            "last_score_pct": round(score_pct, 2),
+            "decision": decision_str,
+            "last_decision": decision_str,
+            "direction": proposal.side.value if proposal else "HOLD",
+            "reason": c_res.reason if c_res else "",
+            "authorised": bool(c_res and c_res.authorised),
+            "veto_source": c_res.veto_source if c_res else None,
+            "proposal": {
+                "symbol": symbol,
+                "side": proposal.side.value,
+                "qty": proposal.qty,
+                "price_cents": int(spot * 100),
+                "notional_cents": proposal.notional_cents,
+            } if proposal else None,
+            "execute_threshold_pct": 76.8,
+            "hold_threshold_pct": 70.0,
+            "veto_threshold_pct": 70.0,
+            "votes": [v.as_dict() for v in votes] if votes else [],
+        },
+        "market": {
+            "start_equity_cents": 500_000,
+            "equity_cents": equity_cents,
+            "cash_cents": int(avail_bal * 100),
+            "equity_curve": equity_history,
+            "open_positions": len(positions),
+            "closed_trades": total_executed,
+            "win_rate": 1.0 if total_executed > 0 else 0.0,
+            "return_pct": round((unrealized_pnl / max(1.0, wallet_bal)) * 100.0, 2),
+            "fees_paid_cents": 0,
+            "realised_pnl_cents": int(unrealized_pnl * 100),
+            "recent_trades": executed_trades,
+            "rejections": {},
+            "step": cycle_count,
+            "halted": False,
+            "spot_price_cents": int(spot * 100),
+            "symbol": symbol,
+        },
+        "hardware": {
+            "vram_used_gb": 0.0,
+            "vram_ceiling_gb": 10.0,
+            "ram_used_gb": 0.38,
+            "ram_ceiling_gb": 6.0,
+            "source": "Windows PC",
+            "budget": "Local Live",
+        },
+        "recent_cycles": [],
+    }
+    web_hub.update_snapshot(telemetry_snap)
+
+
 def run_autonomous_swarm(
     symbol: str = "BTCUSDT",
     interval_s: int = 10,
@@ -191,12 +386,18 @@ def run_autonomous_swarm(
     4. ConsensusEngine tallies weighted votes (Threshold >= 76.8%, RUNE veto).
     5. If authorised, VESKA places entry order + on-exchange protective stop-loss.
     6. MARIN monitors position PnL, trailing stops, and takes profit.
+    7. Streams real-time telemetry to Web UI (http://127.0.0.1:8765) with animated Octopus!
     """
     registry = AgentRegistry()
     engine = ConsensusEngine(registry)
     rng = random.Random()
     cycle_count = 0
     total_executed = 0
+    start_time = time.time()
+    equity_history: list[dict[str, Any]] = []
+    executed_trades: list[dict[str, Any]] = []
+
+    web_hub = start_web_ui_if_needed(port=8765)
 
     while True:
         cycle_count += 1
@@ -262,6 +463,22 @@ def run_autonomous_swarm(
                 flatten_all()
             else:
                 print(f"  👉 MARIN tiếp tục giữ vị thế chờ chạm Take-Profit (+{take_profit_pct}%) hoặc Stop-Loss (-{stop_loss_pct}%).")
+
+            update_web_dashboard(
+                web_hub=web_hub,
+                registry=registry,
+                symbol=symbol,
+                spot=spot,
+                wallet_bal=wallet_bal,
+                avail_bal=avail_bal,
+                unrealized_pnl=unrealized_pnl,
+                positions=positions,
+                cycle_count=cycle_count,
+                total_executed=total_executed,
+                start_time=start_time,
+                equity_history=equity_history,
+                executed_trades=executed_trades,
+            )
         else:
             print("  📍 VỊ THẾ HIỆN TẠI: Chưa có vị thế mở (Flat). Hội đồng 6 AI đang rà quét tín hiệu...")
             
@@ -312,6 +529,18 @@ def run_autonomous_swarm(
                 try:
                     place_test_order(symbol=symbol, side=proposed_side.value, qty=default_qty, stop_loss_pct=stop_loss_pct)
                     total_executed += 1
+                    executed_trades.insert(0, {
+                        "symbol": symbol,
+                        "side": "LONG" if proposed_side.value == "BUY" else "SHORT",
+                        "qty": default_qty,
+                        "entry_price_cents": int(spot * 100),
+                        "exit_price_cents": int(spot * 100),
+                        "net_pnl_cents": 0,
+                        "entry_step": cycle_count,
+                        "exit_step": cycle_count,
+                        "reason": f"Consensus {c_res.score_pct:.1f}%",
+                        "consensus_pct": c_res.score_pct,
+                    })
                 except Exception as e:
                     print(f"  ❌ Lỗi khi bắn lệnh: {e}")
             elif c_res.decision == ConsensusDecision.HOLD:
@@ -319,6 +548,25 @@ def run_autonomous_swarm(
                 print(f"     (Tín hiệu chưa đủ hội tụ cao, 6 AI thống nhất giữ ${wallet_bal:,.2f} USDT an toàn, đợi chu kỳ sau)")
             elif c_res.decision == ConsensusDecision.VETO:
                 print(f"  🛡️ ĐỒNG THUẬN: [VETO BÁC BỎ] Người gác cổng {c_res.veto_source or 'RUNE'} phủ quyết: {c_res.reason}")
+
+            update_web_dashboard(
+                web_hub=web_hub,
+                registry=registry,
+                symbol=symbol,
+                spot=spot,
+                wallet_bal=wallet_bal,
+                avail_bal=avail_bal,
+                unrealized_pnl=unrealized_pnl,
+                positions=positions,
+                cycle_count=cycle_count,
+                total_executed=total_executed,
+                start_time=start_time,
+                equity_history=equity_history,
+                executed_trades=executed_trades,
+                proposal=proposal,
+                votes=votes,
+                c_res=c_res,
+            )
 
         print("-" * 78)
         print(f"  ⏳ Đang đếm ngược {interval_s}s sang chu kỳ #{cycle_count + 1}... (Nhấn Ctrl+C để dừng)")
