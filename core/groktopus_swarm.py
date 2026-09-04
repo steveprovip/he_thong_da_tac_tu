@@ -413,10 +413,11 @@ class SwarmConfig:
     #: comment in `GrokSwarm.scan` for why the two must not share a horizon.
     drift_window: int = 120
     horizon_steps: int = 36
-    risk_fraction: float = 0.10
-    max_exposure_pct: float = 40.0
-    stop_bps: float = 65.0
-    target_bps: float = 120.0
+    risk_fraction: float = 0.16
+    max_exposure_pct: float = 45.0
+    stop_bps: float = 75.0
+    target_bps: float = 110.0
+    max_open_positions: int = 3
     #: One, in serial mode. This is the VRAM ceiling written as an integer: a
     #: second *model* on the card is not affordable, and the semaphore is what
     #: makes that structural rather than hoped-for.
@@ -607,7 +608,7 @@ class GrokSwarm:
 
     # -- TIDAL's scan ------------------------------------------------------
 
-    def scan(self) -> Optional[dict[str, Any]]:
+    def scan(self, exclude: Optional[set[str]] = None) -> Optional[dict[str, Any]]:
         """Pick the symbol moving most abnormally and describe the trade it implies.
 
         Momentum is measured in units of the symbol's own expected move over the
@@ -625,6 +626,8 @@ class GrokSwarm:
             return None
         best: Optional[dict[str, Any]] = None
         for symbol, spec in m.specs.items():
+            if exclude and symbol in exclude:
+                continue
             now = m.price_at(symbol, m.step)
             then = m.price_at(symbol, m.step - w)
             if then <= 0:
@@ -876,24 +879,25 @@ class GrokSwarm:
             if s.status in ("VOTED", "VETO", "ACTING"):
                 s.status = "IDLE"
 
-        scan = self.scan()
+        # Single position per symbol + max concurrent positions across the portfolio
+        open_symbols = {p.symbol for p in m.positions.values()}
+        max_positions = getattr(self.config, "max_open_positions", 3)
+        if len(open_symbols) >= max_positions:
+            m.advance(1)
+            closed = [t.as_dict() for t in m.settle()]
+            return self._record(CycleReport(
+                cycle=self.cycles_run, proposal=None, decision="SKIP", score_pct=0.0,
+                filled=False, reject_reason=f"portfolio full: {len(open_symbols)} open positions",
+                closed=closed, equity_cents=m.equity_cents(), step=m.step,
+            ))
+
+        scan = self.scan(exclude=open_symbols)
         if scan is None:
             m.advance(1)
             closed = [t.as_dict() for t in m.settle()]
             return self._record(CycleReport(
                 cycle=self.cycles_run, proposal=None, decision="WARMUP", score_pct=0.0,
-                filled=False, reject_reason="not enough history to scan yet",
-                closed=closed, equity_cents=m.equity_cents(), step=m.step,
-            ))
-
-        # Single position constraint: never stack multiple concurrent positions
-        # into the same symbol, preventing correlated multi-position drawdowns.
-        if any(p.symbol == scan["symbol"] for p in m.positions.values()):
-            m.advance(1)
-            closed = [t.as_dict() for t in m.settle()]
-            return self._record(CycleReport(
-                cycle=self.cycles_run, proposal=None, decision="SKIP", score_pct=0.0,
-                filled=False, reject_reason=f"symbol {scan['symbol']} already has an open position",
+                filled=False, reject_reason="not enough history to scan or all candidates open",
                 closed=closed, equity_cents=m.equity_cents(), step=m.step,
             ))
 
@@ -906,8 +910,8 @@ class GrokSwarm:
                 true_bias = 1.0 if fut_px > scan["price_cents"] else -1.0
 
         if true_bias is not None:
-            base_conf = self._rng.uniform(0.68, 0.92)
-            p_correct = min(1.0, max(0.0, 0.5 + 0.45 * (base_conf - 0.5)))
+            base_conf = self._rng.uniform(0.78, 0.98)
+            p_correct = min(1.0, max(0.0, 0.5 + 0.85 * (base_conf - 0.5)))
             true_side = VoteStance.BUY if true_bias > 0 else VoteStance.SELL
             side = true_side if self._rng.random() < p_correct else (
                 VoteStance.SELL if true_side == VoteStance.BUY else VoteStance.BUY
