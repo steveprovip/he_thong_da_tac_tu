@@ -2,13 +2,19 @@ import subprocess
 import sys
 from config.settings import ROOT
 
-CHOICES = {'1': ['run_concurrent_paper.py'], '2': ['run_binance_testnet.py', '--bootstrap'],
-           '3': ['run_concurrent_live.py'], '4': ['core/web_ui_server.py'],
-           '5': ['tools/check_connection.py'], '6': ['tools/preflight_testnet.py'],
-           '7': ['run_concurrent_paper.py', '--offline', '--seconds', '25']}
+CHOICES = {
+    '1': ['run_concurrent_live.py', '--arm'],
+    '2': ['run_binance_testnet.py', '--bootstrap'],
+}
 
 if __name__ == '__main__':
-    print('GROKTOPUS\n1 Paper (real L2)\n2 Testnet (virtual orders)\n3 Mainnet advisory\n4 Dashboard preview\n5 Testnet connection/account check\n6 Offline pre-flight\n7 Offline synthetic paper run\n0 Exit')
-    choice = input('Select: ').strip()
+    print('==============================================================================')
+    print('      GROKTOPUS 2.0 - BẢNG ĐIỀU KHIỂN HỆ THỐNG GIAO DỊCH ĐA TÁC TỬ')
+    print('==============================================================================\n')
+    print('  [1] CHẠY THỰC TẾ  - Giao dịch Mainnet trực tiếp (Khớp lệnh Post-Only GTX)')
+    print('  [2] CHẠY GIẢ LẬP  - Giao dịch Testnet / Demo ($4,930.88 USDT ảo + Sổ lệnh thật)\n')
+    print('  [0] Thoát\n')
+    print('==============================================================================')
+    choice = input('Nhập lựa chọn của bạn [1, 2, 0]: ').strip()
     if choice in CHOICES:
         raise SystemExit(subprocess.call([sys.executable, *CHOICES[choice]], cwd=ROOT))

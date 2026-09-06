@@ -4,35 +4,47 @@ setlocal
 :menu
 cls
 echo ==============================================================================
-echo       GROKTOPUS 2.0 - BANG DIEU KHIEN HE THONG DA TAC TU QUANT SWARM
+echo       GROKTOPUS 2.0 - BẢNG ĐIỀU KHIỂN HỆ THỐNG GIAO DỊCH ĐA TÁC TỬ
 echo ==============================================================================
-echo   1. Kiem tra truoc khi chay (Pre-flight offline: sizing / stop / gate)
-echo   2. Chay Gia Lap Khop Lenh (Paper Trading tren so lenh L2 that)
-echo   3. Chay Gia Lap Offline (Synthetic feed - khong can mang)
-echo   4. Chay Thu Nghiem San Binance Testnet (bootstrap, 20 giay)
-echo   5. Chay Binance Testnet lien tuc (Ctrl+C de dung)
-echo   6. Khoi Dong Web UI Dashboard (http://127.0.0.1:8765)
-echo   7. Kiem Tra Ket Noi Mang ^& So Du Vi Testnet
-echo   8. Chay Toan Bo Bo Kiem Thu Tu Dong (60 tests)
-echo   9. Mainnet ADVISORY - chi quan sat, KHONG dat lenh
-echo   0. Thoat
-echo ==============================================================================
-echo   Mainnet that su dat lenh chi chay thu cong: python run_concurrent_live.py --arm
+echo.
+echo   [1] CHẠY THỰC TẾ  - Giao dịch Mainnet trực tiếp (Khớp lệnh Post-Only GTX)
+echo   [2] CHẠY GIẢ LẬP  - Giao dịch Testnet / Demo ($4,930.88 USDT ảo + Sổ lệnh thật)
+echo.
+echo   [0] Thoát
+echo.
 echo ==============================================================================
 set "choice="
-set /p choice="Nhap lua chon cua ban [0-9]: "
+set /p choice="Nhập lựa chọn của bạn [1, 2, 0]: "
 
-if "%choice%"=="1" (python tools\preflight_testnet.py & pause & goto menu)
-if "%choice%"=="2" (python run_concurrent_paper.py & pause & goto menu)
-if "%choice%"=="3" (python run_concurrent_paper.py --offline --seconds 25 & pause & goto menu)
-if "%choice%"=="4" (python run_binance_testnet.py --bootstrap --seconds 20 & pause & goto menu)
-if "%choice%"=="5" (python run_binance_testnet.py --bootstrap & pause & goto menu)
-if "%choice%"=="6" (python core\web_ui_server.py & pause & goto menu)
-if "%choice%"=="7" (python tools\check_connection.py & pause & goto menu)
-if "%choice%"=="8" (python -m pytest -v & pause & goto menu)
-if "%choice%"=="9" (python run_concurrent_live.py --seconds 60 & pause & goto menu)
+if "%choice%"=="1" (
+    cls
+    echo ==============================================================================
+    echo   ⚡ ĐANG KHỞI CHẠY CHẾ ĐỘ THỰC TẾ (MAINNET LIVE)
+    echo   * Web Dashboard: http://127.0.0.1:8765
+    echo   * Lệnh bảo vệ: Maker Post-Only (GTX) + Exchange STOP_MARKET
+    echo ==============================================================================
+    start http://127.0.0.1:8765
+    python run_concurrent_live.py --arm
+    pause
+    goto menu
+)
+
+if "%choice%"=="2" (
+    cls
+    echo ==============================================================================
+    echo   🧪 ĐANG KHỞI CHẠY CHẾ ĐỘ GIẢ LẬP (BINANCE TESTNET / DEMO)
+    echo   * Số dư ví thử nghiệm: $4,930.88 USDT
+    echo   * Web Dashboard: http://127.0.0.1:8765
+    echo   * Sàn trực quan: https://demo.binance.com/en/futures/BTCUSDT
+    echo ==============================================================================
+    start http://127.0.0.1:8765
+    python run_binance_testnet.py --bootstrap
+    pause
+    goto menu
+)
+
 if "%choice%"=="0" goto end
-echo Lua chon khong hop le.
+echo Lựa chọn không hợp lệ. Vui lòng nhập 1, 2 hoặc 0.
 timeout /t 2 >nul
 goto menu
 :end
