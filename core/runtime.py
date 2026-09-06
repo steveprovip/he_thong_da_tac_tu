@@ -25,7 +25,7 @@ from simulation.paper_engine import PaperEngine
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT']
 DIRECTIONAL = ('NORO', 'LUMEN', 'TIDAL')
 # Calibrated buckets fill slower, so report VPIN from a partial window once it is meaningful.
-VPIN_MIN_BUCKETS = 5
+VPIN_MIN_BUCKETS = 3
 
 
 def directional_score(votes):
@@ -50,7 +50,7 @@ class Runtime:
         self.stop = asyncio.Event()
         self.alpha = {s: AlphaEngine(min_buckets=VPIN_MIN_BUCKETS) for s in self.symbols}
         self.edge_multiple = args.edge_multiple if getattr(args, 'edge_multiple', None) is not None else (0.2 if getattr(args, 'bootstrap', False) else 1.8)
-        self.toxic_vpin = args.toxic_vpin if getattr(args, 'toxic_vpin', None) is not None else (0.85 if getattr(args, 'bootstrap', False) else 0.65)
+        self.toxic_vpin = args.toxic_vpin if getattr(args, 'toxic_vpin', None) is not None else (0.95 if getattr(args, 'bootstrap', False) else 0.65)
         self.threshold = args.threshold if getattr(args, 'threshold', None) is not None else (0.50 if getattr(args, 'bootstrap', False) else 0.768)
         self.veto_threshold = args.veto_threshold if getattr(args, 'veto_threshold', None) is not None else (0.40 if getattr(args, 'bootstrap', False) else 0.70)
         self.books, self.filters = {}, {}
@@ -141,8 +141,6 @@ class Runtime:
         elif kind == 'aggTrade':
             timestamp = event['T']/1000
             price, quantity, trade_id = float(event['p']), float(event['q']), int(event['a'])
-            if alpha.last_trade_id >= 0 and trade_id > alpha.last_trade_id+1:
-                alpha.reset_flow()
             alpha.on_trade(price, quantity, not event['m'], timestamp, trade_id)
             if self.paper:
                 self.paper.trade(symbol, price, quantity, not event['m'], timestamp, trade_id)
@@ -447,8 +445,8 @@ def arguments(mode, argv=None):
     parser.add_argument('--no-ui', action='store_true')
     parser.add_argument('--arm', action='store_true', help='Explicitly enable Mainnet mutations')
     parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 20 settled outcomes')
-    parser.add_argument('--edge-multiple', type=float, default=None, help='Edge multiple hurdle (default 1.0 for bootstrap, 1.8 for live)')
-    parser.add_argument('--toxic-vpin', type=float, default=None, help='Toxic VPIN veto threshold (default 0.80 for bootstrap, 0.65 for live)')
+    parser.add_argument('--edge-multiple', type=float, default=None, help='Edge multiple hurdle (default 0.2 for bootstrap, 1.8 for live)')
+    parser.add_argument('--toxic-vpin', type=float, default=None, help='Toxic VPIN veto threshold (default 0.95 for bootstrap, 0.65 for live)')
     parser.add_argument('--threshold', type=float, default=None, help='Consensus quorum threshold (default 0.50 for bootstrap, 0.768 for live)')
     parser.add_argument('--veto-threshold', type=float, default=None, help='Consensus veto threshold (default 0.40 for bootstrap, 0.70 for live)')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
