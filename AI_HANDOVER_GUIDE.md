@@ -1,13 +1,14 @@
 # 📋 GROKTOPUS 2.0 — AI HANDOVER & OPERATOR RUNBOOK
 
-> Cập nhật: 2026-09-06 · Phase 3 (chẩn đoán điểm nghẽn "0 fills") tiếp nối Phase 2.
+> Cập nhật: 2026-09-06 · Phase 4 (tầng nghiên cứu) tiếp nối Phase 3.
 
 ## 1. Tổng quan Dự án
 - **Workspace**: `F:\he_thong_da_tac_tu_2`
 - **Mục tiêu**: Siêu hệ thống giao dịch đa tác tử GrokTOPUS — 8 Agent (VESKA, NORO, LUMEN, TIDAL, ZEPHR, RUNE, OKAPI, MARIN), một cổng thực thi duy nhất.
 - **Trạng thái**: Phase 1 hoàn tất bởi GPT-6 Astra (38 files, 41/41 tests, Testnet $4.930,88 USDT).
   Phase 2: Web UI Observatory, bộ bơm lỗi 19 bài, pre-flight offline.
-  Phase 3: **84/84 tests pass** — sửa suy thoái VPIN, sửa double-count chi phí, thêm Signal Lab đo edge.
+  Phase 3: sửa suy thoái VPIN, sửa double-count chi phí, thêm Signal Lab đo edge.
+  Phase 4: **95/95 tests pass** — thêm tầng nghiên cứu `research/` chạy swarm trong hftbacktest.
 
 ## 2. Kiến trúc & Quy chuẩn An toàn
 1. **VESKA** là Agent duy nhất chạm sàn. Mọi lệnh cần `AuthToken` HMAC-SHA256 gắn với đúng nội dung Intent, dùng một lần, TTL 5 giây (`core/consensus_engine.py::TokenAuthority`).
@@ -187,3 +188,68 @@ tỉ lệ chạm TP trước SL so với p hoà vốn (1,5/4,0 = 0,375), net edg
 2. **Chưa có bằng chứng nào cho thấy tín hiệu có edge dương.** Sửa VPIN gỡ được một lỗi đo lường
    thật, không phải một lời hứa lợi nhuận. Hãy chạy Signal Lab đủ lâu rồi đọc
    `tools/calibrate_edge.py` trước khi nới bất kỳ ngưỡng nào.
+
+
+---
+
+# 🔬 PHASE 4 — TẦNG NGHIÊN CỨU (`research/`)
+
+## 11. Vì sao cần
+
+Khảo sát 12 repo trong `mau_chatloctinhhoa` cho kết luận: chỉ 4 repo chạm được bài toán,
+và 6 repo (TradingAgents, FinMem, StockAgent, swarm-trader, FinRobot, FinGPT) là tác tử LLM
+trên **nến ngày** của cổ phiếu — lệch 172.800 lần so với vòng lặp 0,5 giây của hệ thống này.
+
+Repo đáng giá nhất là **hftbacktest** (MIT), và nó không dùng để xây lại hệ thống — nó trả
+lời câu hỏi mà `simulation/paper_engine.py` không trả lời nổi: **lệnh GTX có khớp không.**
+
+## 12. Thành phần
+
+| Tệp | Vai trò |
+|---|---|
+| `research/book_adapter.py` | Dựng đúng `core.models.Book` từ market depth của hftbacktest, kèm `MinuteBars` sinh nến 1 phút |
+| `research/bridge.py` | `SwarmBacktest` — chạy **đúng** AlphaEngine / GroktopusSwarm / BarrierPlanner / PositionSizer của bản live bên trong sàn mô phỏng |
+| `research/synthetic.py` | Feed tổng hợp để kiểm thử offline; báo cáo tự đóng dấu SYNTHETIC |
+| `tools/run_backtest.py` | CLI, chọn queue model và mô hình độ trễ |
+| `tests/test_research_bridge.py` | 11 bài, gồm bài khoá cái bẫy phí maker |
+
+Probe ghi qua chính `core.signal_lab.SignalLab` → **cùng schema JSONL với bản live** →
+`tools/calibrate_edge.py` đọc được cả hai, so sánh backtest với live trực tiếp.
+
+## 13. Ba con số mới
+
+Chạy thử 90 phút trên feed tổng hợp (số liệu vô nghĩa, chỉ chứng minh đường ống):
+
+```
+entries submitted   24
+  filled            13  (maker 13 · taker 0)
+  expired           11        <- sẽ cross nên bị sàn từ chối
+FILL RATE           54.2%     <- PaperEngine không tạo được con số này
+realized fee rate   3.50 bps  <- maker vào 2bps + taker ra 5bps
+```
+
+## 14. Cái bẫy đã suýt lọt
+
+`BUY = 1` và `MARKET = 1` **cùng giá trị** trong hftbacktest. Truyền nhầm hằng số phía vào
+chỗ `order_type` biến lệnh post-only thành lệnh thị trường, bị tính 5 bps thay vì 2 bps —
+trên chiến lược có tổng ngân sách chi phí ~8,75 bps. Không có lỗi nào được ném ra, PnL vẫn
+chạy. Test `test_post_only_entry_rests_and_is_charged_the_maker_fee` khoá lại vĩnh viễn.
+
+## 15. Giới hạn cần nhớ
+
+- Dữ liệu lịch sử **công khai** của Binance không có local timestamp → thiếu độ trễ feed →
+  **fill rate lạc quan hơn thực tế**. Muốn số đáng tin phải chạy collector `binancefuturesum`
+  trên chính máy chạy bot.
+- Cần tối thiểu ~21 phút dữ liệu mới bật `features.ready`; một lần chạy có ý nghĩa tính bằng giờ.
+- Tầng này đo **alpha**, không đo gateway. Gateway đã có 19 bài bơm lỗi riêng.
+
+Chi tiết đầy đủ: `research/README.md`.
+
+## 16. Hàng đợi việc còn lại
+
+Đã thống nhất làm tuần tự sau khi có số đo thật:
+
+1. Chống look-ahead / point-in-time theo cách TradingAgents v0.4.0 làm.
+2. Bộ `protections` kiểu freqtrade — stoploss guard, khoá cặp không sinh lời (**đọc ý tưởng
+   rồi tự viết, freqtrade là GPL-3.0**).
+3. Lớp nhận diện chế độ thị trường chạy theo giờ, tách hẳn khỏi vòng lặp nóng.
