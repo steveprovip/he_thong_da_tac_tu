@@ -55,18 +55,19 @@ class ConsensusEngine:
 
 
 class TokenAuthority:
-    def __init__(self, clock=time.monotonic):
+    def __init__(self, clock=time.monotonic, threshold=.768):
         self._key = secrets.token_bytes(32)
         self._issued = {}
         self._lock = threading.Lock()
         self.clock = clock
+        self.threshold = threshold
 
     @staticmethod
     def _digest(intent):
         return hashlib.sha256(json.dumps(asdict(intent), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
     def issue(self, intent, decision):
-        if not decision.allowed or decision.veto or decision.score < .768 - 1e-12 or decision.side != intent.side:
+        if not decision.allowed or decision.veto or decision.score < self.threshold - 1e-12 or decision.side != intent.side:
             raise PermissionError('Consensus denied')
         with self._lock:
             now = self.clock()

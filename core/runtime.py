@@ -55,7 +55,7 @@ class Runtime:
         self.veto_threshold = args.veto_threshold if getattr(args, 'veto_threshold', None) is not None else (0.40 if getattr(args, 'bootstrap', False) else 0.70)
         self.books, self.filters = {}, {}
         self.tracker = PartialBookTracker()
-        self.authority = TokenAuthority()
+        self.authority = TokenAuthority(threshold=self.threshold)
         self.swarm = GroktopusSwarm(threshold=self.threshold, veto_threshold=self.veto_threshold)
         self.sizer = PositionSizer()
         self.brake = DrawdownBrake()
