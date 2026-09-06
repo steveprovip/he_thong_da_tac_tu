@@ -44,6 +44,8 @@ logs/
 data/*.sqlite*
 data/*-outcomes.json
 data/*-last-state.json
+data/*-signal-lab.jsonl
+data/*.jsonl
 data/*.tmp
 # The original brief contains credentials supplied by the operator.
 FORM_GPT6_ASTRA_GROKTOPUS_REBUILD_MASTER.md

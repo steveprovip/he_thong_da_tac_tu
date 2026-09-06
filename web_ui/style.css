@@ -105,3 +105,13 @@
 @media(max-width:900px){.ticker-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 @media(prefers-reduced-motion:reduce){.arm .pulse,.arm.veto .node,.arm.veto .limb,
   #octopus.authorized #core-halo{animation:none!important}}
+
+/* Saturated VPIN and gate blockers: the two numbers that explain a flat session. */
+.tile dd.saturated,td.saturated{color:var(--veto)}
+td.blocked{color:var(--veto);font-size:9px}
+td:nth-last-child(2){white-space:nowrap}
+
+/* Signal lab readout: an undersized sample must never look like a result. */
+.tag.provisional{color:var(--amber);border-color:#f5bc7755}
+.tag.buy{color:var(--buy);border-color:#00ffa355}
+.tag.sell{color:var(--sell);border-color:#ff9f4355}

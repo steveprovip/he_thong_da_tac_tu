@@ -5,11 +5,38 @@ import math
 import statistics
 
 
+def calibrate_bucket_volume(trades, seconds=15.0, floor_multiple=25, minimum=1e-9):
+    """Bucket volume for VPIN: a slice of tape too wide for one print to own.
+
+    Binance aggTrades merge same-side fills at one price, so their sizes are heavy
+    tailed. Sizing a bucket at ~10x the mean trade lets a single sweep fill whole
+    buckets alone, which forces |delta| == volume and pins VPIN near 1.0 no matter
+    what the real flow looks like. Two constraints remove that artefact:
+      * time  - a bucket spans `seconds` of typical tape, so VPIN moves on a useful scale;
+      * grain - a bucket holds at least `floor_multiple` p95-sized trades, so no single
+                print can dominate the imbalance.
+    Measured on heavy-tailed sweep-heavy tape the old rule yields VPIN 0.73-0.96,
+    always above the 0.65 toxicity gate; at seconds=15 this yields ~0.26 with zero
+    saturated buckets, and needs roughly ten buckets (~2.5 min of tape) to report.
+    """
+    quantities = sorted(float(t['q']) for t in trades)
+    if not quantities:
+        return minimum
+    total = math.fsum(quantities)
+    stamps = [float(t['T']) / 1000 for t in trades if 'T' in t]
+    span = (max(stamps) - min(stamps)) if len(stamps) > 1 else 0.0
+    per_window = total / span * seconds if span > 0 else total / 100
+    p95 = quantities[min(len(quantities) - 1, int(.95 * len(quantities)))]
+    return max(per_window, floor_multiple * p95, minimum)
+
+
 class VolumeBuckets:
-    def __init__(self, volume=10.0, window=50):
+    def __init__(self, volume=10.0, window=50, min_buckets=None):
         if not math.isfinite(volume) or volume <= 0 or window < 1:
             raise ValueError('Invalid bucket settings')
         self.volume, self.window = volume, window
+        # Wider buckets fill more slowly, so VPIN may report from a partial window.
+        self.min_buckets = window if min_buckets is None else max(1, min(int(min_buckets), window))
         self.imbalances = deque(maxlen=window)
         self.filled = self.delta = 0.0
 
@@ -28,9 +55,19 @@ class VolumeBuckets:
 
     @property
     def value(self):
-        if len(self.imbalances) < self.window:
+        if len(self.imbalances) < self.min_buckets:
             return None
-        return min(1.0, sum(self.imbalances) / (self.window * self.volume))
+        return min(1.0, math.fsum(self.imbalances) / (len(self.imbalances) * self.volume))
+
+    @property
+    def saturation(self):
+        """Share of buckets that were completely one-sided - VPIN's degeneracy tell.
+
+        Near 1.0 means the bucket is too small to measure anything: read it before
+        trusting a high VPIN."""
+        if not self.imbalances:
+            return None
+        return sum(x >= self.volume - 1e-9 for x in self.imbalances) / len(self.imbalances)
 
 
 @dataclass(frozen=True)
@@ -40,6 +77,7 @@ class Features:
     cvd: float = 0
     flow: float = 0
     vpin: float | None = None
+    vpin_saturation: float | None = None
     vwap_z: float = 0
     momentum: float = 0
     rsi: float = 50
@@ -53,8 +91,9 @@ class Features:
 
 
 class AlphaEngine:
-    def __init__(self, bucket_volume=10.0, bucket_window=50, window=120):
-        self.buckets = VolumeBuckets(bucket_volume, bucket_window)
+    def __init__(self, bucket_volume=10.0, bucket_window=50, window=120, min_buckets=None):
+        self.min_buckets = min_buckets
+        self.buckets = VolumeBuckets(bucket_volume, bucket_window, min_buckets)
         self.trades = deque(maxlen=window)
         self.bars = deque(maxlen=window)
         self.ofis = deque(maxlen=window)
@@ -107,7 +146,7 @@ class AlphaEngine:
         return True
 
     def reset_flow(self):
-        self.buckets = VolumeBuckets(self.buckets.volume, self.buckets.window)
+        self.buckets = VolumeBuckets(self.buckets.volume, self.buckets.window, self.min_buckets)
         self.trades.clear()
         self.ofis.clear()
         self.book = None
@@ -130,7 +169,7 @@ class AlphaEngine:
         momentum = statistics.mean(changes)/scale if scale > 1e-12 else 0
         return Features((b-a)/(b+a), sum(self.ofis)/(b+a), self.cvd,
                         sum(q*s for _, q, s in self.trades)/volume if volume else 0,
-                        self.buckets.value, vwap_z, momentum, rsi,
+                        self.buckets.value, self.buckets.saturation, vwap_z, momentum, rsi,
                         statistics.mean(true_ranges) if true_ranges else 0, self.sweep,
                         self.book.spread_bps, len(bars) >= 20 and len(self.trades) >= 20 and self.buckets.value is not None)
 

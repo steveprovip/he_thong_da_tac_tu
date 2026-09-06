@@ -1,12 +1,13 @@
 # 📋 GROKTOPUS 2.0 — AI HANDOVER & OPERATOR RUNBOOK
 
-> Cập nhật: 2026-09-06 · Bàn giao Phase 2 (Claude Opus 5, Cowork) tiếp nối Phase 1 (GPT-6 Astra).
+> Cập nhật: 2026-09-06 · Phase 3 (chẩn đoán điểm nghẽn "0 fills") tiếp nối Phase 2.
 
 ## 1. Tổng quan Dự án
 - **Workspace**: `F:\he_thong_da_tac_tu_2`
 - **Mục tiêu**: Siêu hệ thống giao dịch đa tác tử GrokTOPUS — 8 Agent (VESKA, NORO, LUMEN, TIDAL, ZEPHR, RUNE, OKAPI, MARIN), một cổng thực thi duy nhất.
 - **Trạng thái**: Phase 1 hoàn tất bởi GPT-6 Astra (38 files, 41/41 tests, Testnet $4.930,88 USDT).
-  Phase 2 hoàn tất: **60/60 tests pass**, Web UI Observatory nâng cấp, bộ bơm lỗi 19 bài, pre-flight offline.
+  Phase 2: Web UI Observatory, bộ bơm lỗi 19 bài, pre-flight offline.
+  Phase 3: **84/84 tests pass** — sửa suy thoái VPIN, sửa double-count chi phí, thêm Signal Lab đo edge.
 
 ## 2. Kiến trúc & Quy chuẩn An toàn
 1. **VESKA** là Agent duy nhất chạm sàn. Mọi lệnh cần `AuthToken` HMAC-SHA256 gắn với đúng nội dung Intent, dùng một lần, TTL 5 giây (`core/consensus_engine.py::TokenAuthority`).
@@ -101,3 +102,88 @@ Môi trường cloud của Claude bị chặn egress tới `testnet.binancefutur
 2. `python run_binance_testnet.py --bootstrap --seconds 20` — vòng lặp Testnet thật, sau đó soi `data/testnet-journal.sqlite` và `data/testnet-last-state.json`.
 
 Mọi thứ khác trong lộ trình đã được chạy và xác minh offline.
+
+
+---
+
+# 📊 PHASE 3 — CHẨN ĐOÁN "0 FILLS / 100% RUNE VETO"
+
+## 8. Ba chẩn đoán, ba kết luận khác nhau
+
+### ✅ Suy thoái VPIN — XÁC NHẬN, đã sửa
+Cho tape aggTrade đuôi nặng (lognormal σ=1,2–2,2, có sweep-run) chạy qua chính `VolumeBuckets`:
+
+| Quy tắc bucket | trades/bucket | VPIN | % bucket một chiều |
+|---|---:|---:|---:|
+| Cũ: `sum(1000)/100` | ~10 | 0,73 – 0,96 | > 40% |
+| Mới: `calibrate_bucket_volume` | ~300 | 0,26 | 0% |
+
+Bucket cũ nhỏ hơn ~30 lần so với cần thiết → VPIN đo **cỡ mẫu chứ không đo độc tính**.
+`core/real_alpha_engine.py::calibrate_bucket_volume` ràng buộc bucket phải trải 15 giây tape
+**và** chứa ≥ 25 lệnh cỡ p95. Thêm `VolumeBuckets.saturation` — tỉ lệ bucket một chiều; gần 1,0
+nghĩa là VPIN vô nghĩa, dashboard hiện `SAT` màu đỏ. `min_buckets=10` cho phép báo VPIN từ
+cửa sổ một phần (~2,5 phút tape) thay vì chờ đủ 50 bucket.
+
+### 🟡 Mô hình chi phí ZEPHR — ĐÚNG MỘT NỬA
+Double-count có thật: lệnh GTX nằm trong sổ **kiếm** spread chứ không trả. Đã sửa thành
+`maker + taker + spread/2 + slippage` → 10,5 bps xuống 8,75 bps ở spread 1,5 bps.
+
+Nhưng ngưỡng 1,8× **không** bất khả thi — nó là bộ lọc chế độ biến động:
+
+| ATR/giá | edge (conviction 0,60) | ratio |
+|---:|---:|---:|
+| 5 bps | 3,0 bps | 0,29 |
+| 20 bps | 12,0 bps | 1,14 |
+| 40 bps | 24,0 bps | **2,29 ✅** |
+
+Ba ngưỡng `slippage_bps`, `toxic_vpin`, `edge_multiple` nay là tham số của
+`GroktopusSwarm.evaluate()`, chỉnh được mà không phải sửa logic.
+
+### ❌ "Pha loãng đồng thuận" — NGƯỢC LẠI
+0,40 trọng số của 5 agent cổng là **trợ cấp**, không phải pha loãng:
+
+```
+Với cả 5 cổng xanh, bộ ba định hướng chỉ cần 0,613 (không phải 0,768).
+Kiểm chứng: conviction 0,61 → 76,60% BỊ CHẶN · 0,62 → 77,20% AUTHORIZED
+```
+
+Bỏ phiếu phân tầng sẽ đòi bộ ba đạt 0,768 → **chặt hơn**, không lỏng hơn. Con số 27,6–43,8%
+trên dashboard là do ZEPHR+RUNE bị đưa về 0 trọng số (hệ quả của suy thoái VPIN), không phải
+do pha loãng. Đã giữ nguyên luật bỏ phiếu, chỉ bổ sung hiển thị: cột `DIRECTIONAL` và
+`BLOCKED BY` trong bảng vi cấu trúc.
+
+## 9. Signal Lab — đo trước, chỉnh sau
+
+`core/signal_lab.py` mở một probe phản thực cho **mọi** tín hiệu định hướng, kể cả tín hiệu bị
+ZEPHR/RUNE chặn, lập cùng bộ rào chắn mà planner thật sẽ lập, rồi giải quyết bằng các sổ lệnh
+về sau. Đây là quan sát viên thuần tuý — không giữ tham chiếu tới gateway (có test bảo vệ).
+
+Lý do tồn tại: hệ thống chỉ từng quan sát kết quả của những lệnh mà cổng **đã** chấp nhận —
+đúng cái mẫu không thể dùng để biết cổng có hiệu chuẩn đúng hay không.
+
+Ghi ra `data/{mode}-signal-lab.jsonl`, mỗi dòng một probe đã đóng: entry/stop/TP, conviction,
+edge/cost dự báo, VPIN, có bị chặn không và ai chặn, kết cục TP/SL/TIMEOUT, MFE/MAE, gross/net bps.
+
+**Giới hạn đã ghi rõ trong docstring**: giả định lệnh vào luôn khớp ở giá maker, rào chắn giải
+quyết theo top-of-book, chi phí là mô hình chứ không phải phí thật. Cả ba thiên lệch đều làm
+chiến lược **trông đẹp hơn thực tế** — hướng an toàn cho một quyết định nới phanh.
+
+Tắt bằng `--no-lab`.
+
+`tools/calibrate_edge.py` đọc file đó và trả lời bằng khoảng tin cậy chứ không phải khẳng định:
+tỉ lệ chạm TP trước SL so với p hoà vốn (1,5/4,0 = 0,375), net edge có phân biệt được với 0 không
+(bootstrap CI 95%), **cổng ZEPHR có thật sự tách được lệnh tốt khỏi lệnh xấu không**, và mức
+`edge_multiple` nào dữ liệu thực sự biện minh được. Dưới 200 probe nó tự nói là chưa đủ.
+
+## 10. ⚠️ Hai điều cần bạn để mắt
+
+1. **`run_launcher.py` menu `[1] CHẠY THỰC TẾ` gọi `run_concurrent_live.py --arm`.**
+   Hiện tại vô hại vì `BINANCE_MAINNET_API_KEY` và `SECRET_KEY` trong `.env.local` đang **rỗng** —
+   lệnh sẽ dừng ở `PermissionError: Missing API key`. Nhưng ngay khi bạn dán khoá Mainnet vào,
+   phím `1` sẽ đặt lệnh thật bằng tiền thật, không có bước xác nhận thứ hai, trên một chiến lược
+   mà Signal Lab **chưa** chứng minh có edge. Tôi để nguyên file vì bạn đã commit nó có chủ ý.
+   Nếu muốn, tôi thêm bước gõ xác nhận trước khi chạy nhánh đó.
+
+2. **Chưa có bằng chứng nào cho thấy tín hiệu có edge dương.** Sửa VPIN gỡ được một lỗi đo lường
+   thật, không phải một lời hứa lợi nhuận. Hãy chạy Signal Lab đủ lâu rồi đọc
+   `tools/calibrate_edge.py` trước khi nới bất kỳ ngưỡng nào.

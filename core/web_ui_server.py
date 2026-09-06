@@ -18,7 +18,8 @@ class Telemetry:
         self.state = {'mode': 'OFFLINE', 'status': 'Waiting for engine', 'equity': None,
                       'wallet': None, 'pnl': None, 'volume': 0, 'fees': 0, 'score': 0,
                       'agents': [], 'markets': [], 'positions': [], 'armed': False,
-                      'authorized': 0, 'auth_at': None, 'execute_gate': .768, 'veto_gate': .70}
+                      'authorized': 0, 'auth_at': None, 'execute_gate': .768, 'veto_gate': .70,
+                      'lab': None}
 
     def update(self, **kwargs):
         with self.lock:

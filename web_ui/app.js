@@ -97,7 +97,10 @@ function renderTicker(markets) {
     t.mid.textContent = number(m.mid, m.mid >= 100 ? 2 : 5);
     t.cells.spread.textContent = number(m.spread, 2);
     t.cells.obi.textContent = number(m.obi, 3);
-    t.cells.vpin.textContent = finite(m.vpin) ? number(m.vpin, 3) : 'WARMUP';
+    // A saturated bucket means VPIN measured nothing; say so rather than showing a number.
+    const saturated = finite(m.saturation) && m.saturation > 0.5;
+    t.cells.vpin.textContent = finite(m.vpin) ? number(m.vpin, 3) + (saturated ? ' SAT' : '') : 'WARMUP';
+    t.cells.vpin.className = saturated ? 'saturated' : '';
     const obi = Math.max(-1, Math.min(1, Number(m.obi) || 0));
     t.obiFill.style.left = (obi >= 0 ? 50 : 50 + obi * 50) + '%';
     t.obiFill.style.width = Math.abs(obi) * 50 + '%';
@@ -109,7 +112,9 @@ function renderTicker(markets) {
     t.barFill.style.width = score * 100 + '%';
     t.barFill.className = score >= EXECUTE_GATE ? 'pass' : score >= VETO_GATE ? 'near' : 'blocked';
     t.cval.textContent = number(score * 100, 1) + '%';
-    t.state.textContent = m.status ?? '—';
+    const blockers = (m.blockers ?? []).join(', ');
+    t.state.textContent = blockers ? `${m.status} · ${blockers}` : (m.status ?? '—');
+    t.state.title = m.why ?? '';
     t.root.classList.toggle('authorized', m.status === 'AUTHORIZED');
     order.push(t.root);
   }
@@ -196,18 +201,37 @@ function render(s) {
   byId('core-state').className = authorized ? 'auth-live' : '';
   set('auth-tag', 'AUTHTOKEN ×' + (s.authorized ?? 0));
 
+  // The lab counts signals the gates refused, so a flat session is still measurable.
+  const lab = s.lab;
+  if (!lab || !lab.probes) {
+    set('lab-tag', lab ? `LAB ${lab.open ?? 0} OPEN · 0 RESOLVED` : 'LAB OFF');
+    byId('lab-tag').className = 'tag';
+  } else {
+    set('lab-tag', `LAB n=${lab.probes} · TP ${number(lab.tp * 100, 0)}% · `
+      + `${lab.net_bps >= 0 ? '+' : ''}${number(lab.net_bps, 2)} bps`
+      + (lab.probes < 200 ? ' · PROVISIONAL' : ''));
+    byId('lab-tag').className = 'tag ' + (lab.probes < 200 ? 'provisional' : lab.net_bps > 0 ? 'buy' : 'sell');
+  }
+
   const markets = s.markets ?? [];
   renderTicker(markets);
   const tbody = byId('markets');
   tbody.replaceChildren();
   for (const m of markets) {
     const tr = document.createElement('tr');
-    for (const value of [m.symbol, number(m.mid), number(m.spread), number(m.obi, 3),
-      finite(m.vpin) ? number(m.vpin, 3) : 'WARMUP', number(clamp01(m.score) * 100, 1) + '%', m.status])
-      tr.append(el('td', null, value));
+    const saturated = finite(m.saturation) && m.saturation > 0.5;
+    const cells = [m.symbol, number(m.mid), number(m.spread), number(m.obi, 3),
+      finite(m.vpin) ? number(m.vpin, 3) + (saturated ? ' SAT' : '') : 'WARMUP',
+      number(clamp01(m.score) * 100, 1) + '%', number(clamp01(m.directional) * 100, 1) + '%',
+      (m.blockers ?? []).join(', ') || '—', m.status];
+    cells.forEach((value, i) => {
+      const td = el('td', i === 4 && saturated ? 'saturated' : i === 7 && (m.blockers ?? []).length ? 'blocked' : null, value);
+      if (i === 7) td.title = m.why ?? '';
+      tr.append(td);
+    });
     tbody.append(tr);
   }
-  if (!markets.length) { const tr = document.createElement('tr'); const td = el('td', null, 'Waiting for live order books…'); td.colSpan = 7; tr.append(td); tbody.append(tr); }
+  if (!markets.length) { const tr = document.createElement('tr'); const td = el('td', null, 'Waiting for live order books…'); td.colSpan = 9; tr.append(td); tbody.append(tr); }
 
   renderEquity(s.history ?? []);
 

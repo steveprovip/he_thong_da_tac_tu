@@ -10,11 +10,12 @@ import time
 
 from config.settings import ROOT, Settings
 from core.barrier_planner import BarrierPlanner, Barriers
-from core.consensus_engine import TokenAuthority
+from core.consensus_engine import TokenAuthority, WEIGHTS
 from core.groktopus_swarm import GroktopusSwarm
 from core.models import Book, Filters, Intent, dec, quantize
 from core.position_sizer import PositionSizer, DrawdownBrake
-from core.real_alpha_engine import AlphaEngine, cross_sectional_momentum
+from core.real_alpha_engine import AlphaEngine, calibrate_bucket_volume, cross_sectional_momentum
+from core.signal_lab import SignalLab
 from core.web_ui_server import Telemetry, start_server
 from live.binance_futures_client import BinanceFuturesClient, BinanceError
 from live.execution_gateway import ExecutionGateway, Journal
@@ -22,6 +23,24 @@ from live.futures_streams import PartialBookTracker, consume_stream, stream_url,
 from simulation.paper_engine import PaperEngine
 
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT']
+DIRECTIONAL = ('NORO', 'LUMEN', 'TIDAL')
+# Calibrated buckets fill slower, so report VPIN from a partial window once it is meaningful.
+VPIN_MIN_BUCKETS = 10
+
+
+def directional_score(votes):
+    """Conviction of the three alpha agents alone, with the gate weight stripped out.
+
+    The headline consensus adds 0.40 of gate weight to every authorized trade, so a
+    0.768 headline only implies 0.613 mean directional conviction. This is the number
+    to read when asking whether the swarm actually had an opinion."""
+    weights = {v.agent: WEIGHTS[v.agent] for v in votes if v.agent in DIRECTIONAL}
+    total = math.fsum(weights.values())
+    if not total:
+        return 0.0
+    sides = {side: math.fsum(weights[v.agent]*v.confidence for v in votes
+                             if v.agent in weights and v.side == side) for side in ('BUY', 'SELL')}
+    return max(sides.values())/total
 
 
 class Runtime:
@@ -29,7 +48,7 @@ class Runtime:
         self.settings, self.args, self.telemetry = settings, args, telemetry
         self.symbols = args.symbols
         self.stop = asyncio.Event()
-        self.alpha = {s: AlphaEngine() for s in self.symbols}
+        self.alpha = {s: AlphaEngine(min_buckets=VPIN_MIN_BUCKETS) for s in self.symbols}
         self.books, self.filters = {}, {}
         self.tracker = PartialBookTracker()
         self.authority = TokenAuthority()
@@ -58,6 +77,9 @@ class Runtime:
         if self.outcomes_path.exists() and not args.offline:
             for value in json.loads(self.outcomes_path.read_text()):
                 self.sizer.record(float(value))
+        # Pure observer: records what the gates refused so the gates can be calibrated.
+        self.lab = None if args.no_lab else SignalLab(
+            ROOT/'data'/f'{settings.mode}-signal-lab.jsonl', horizon=args.horizon)
 
     def record_outcome(self, pnl):
         self.sizer.record(pnl)
@@ -137,8 +159,7 @@ class Runtime:
                 if k[6] < time.time()*1000+self.client.offset_ms:
                     self.alpha[symbol].on_bar(k[6]/1000, float(k[2]), float(k[3]), float(k[4]))
             trades = await self.client.request('GET', '/fapi/v1/aggTrades', {'symbol': symbol, 'limit': 1000}, weight=20)
-            bucket = max(sum(float(t['q']) for t in trades)/100, 1e-9)
-            self.alpha[symbol].buckets.volume = bucket
+            self.alpha[symbol].buckets.volume = calibrate_bucket_volume(trades)
             for trade in trades:
                 self.alpha[symbol].on_trade(float(trade['p']), float(trade['q']), not trade['m'], trade['T']/1000, trade['a'])
         if not self.paper and self.settings.api_key:
@@ -228,6 +249,17 @@ class Runtime:
                     await self.gateway.exit(symbol)
                 self.cooldowns[symbol] = now+30
 
+    def observe_signal(self, symbol, features, book, decision, votes, conviction, now):
+        """Hand the lab the plan the runtime would have made, gated or not."""
+        filters = self.filters.get(symbol)
+        tick = float(filters.tick) if filters else max(book.mid*1e-6, 1e-12)
+        price = book.bid if decision.side == 'BUY' else book.ask
+        try:
+            plan = self.planner.plan(decision.side, price, features.atr, tick, now)
+        except ValueError:
+            return None
+        return self.lab.observe(symbol, features, book, decision, votes, plan, now, conviction)
+
     async def cycle(self):
         now = time.time()+self.client.offset_ms/1000
         if self.paper:
@@ -271,8 +303,14 @@ class Runtime:
             if symbol == self.symbols[0]:
                 self.last_votes = votes
             rows.append({'symbol': symbol, 'mid': book.mid, 'spread': book.spread_bps, 'obi': f.obi,
-                         'vpin': f.vpin, 'score': decision.score, 'side': decision.side,
+                         'vpin': f.vpin, 'saturation': f.vpin_saturation, 'score': decision.score,
+                         'directional': directional_score(votes), 'side': decision.side,
+                         'blockers': [v.agent for v in votes if v.veto],
+                         'why': next((v.reason for v in votes if v.veto), ''),
                          'status': decision.reason if f.ready else 'WARMUP', 'age': max(0, now-book.timestamp)})
+            if self.lab:
+                self.lab.resolve(symbol, book, now)
+                self.observe_signal(symbol, f, book, decision, votes, rows[-1]['directional'], now)
             if not decision.allowed or symbol in self.active() or now < self.cooldowns.get(symbol, 0):
                 continue
             filters = self.filters[symbol]
@@ -317,6 +355,7 @@ class Runtime:
             volume=self.paper.volume if self.paper else self.session_volume, fees=self.paper.fees if self.paper else self.session_fees,
             score=max((d.score for d in self.last_decision.values()), default=0), agents=[asdict(v) for v in self.last_votes],
             markets=rows, positions=positions, kelly=self.sizer.kelly(), margin=self.used_margin,
+            lab=self.lab.summary() if self.lab else None,
             authorized=self.authorized, auth_at=self.auth_at,
             drawdown=1-self.equity/self.brake.peak if self.brake.peak else 0, updated_at=time.time())
 
@@ -403,6 +442,7 @@ def arguments(mode, argv=None):
     parser.add_argument('--arm', action='store_true', help='Explicitly enable Mainnet mutations')
     parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 20 settled outcomes')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
+    parser.add_argument('--no-lab', action='store_true', help='Disable the counterfactual signal recorder')
     args = parser.parse_args(argv)
     args.symbols = list(dict.fromkeys(s.upper() for s in args.symbols))
     if not args.symbols or len(args.symbols) > 8 or any(not s.isalnum() for s in args.symbols):
