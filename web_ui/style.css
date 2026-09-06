@@ -1,0 +1,107 @@
+:root{color-scheme:dark;--bg:#080e13;--panel:#0e171e;--line:#25343d;--text:#e0eeec;--muted:#91a5ae;--mint:#5ae5be;--amber:#f5bc77;--red:#ff8797;--mono:Consolas,'Cascadia Code',monospace;font-family:'Segoe UI',sans-serif;font-size:14px}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 18% 12%,#14273066,transparent 45%),var(--bg);color:var(--text)}header{height:88px;border-bottom:1px solid var(--line);padding:0 4vw;display:flex;align-items:center;justify-content:space-between}.wordmark{font-size:23px;letter-spacing:2px;font-weight:800;color:var(--text);text-decoration:none}.wordmark span{color:var(--mint)}.wordmark small{display:block;font:9px var(--mono);letter-spacing:3px;color:var(--muted);margin-top:5px}.connection{display:flex;align-items:center;gap:12px;font:10px var(--mono);letter-spacing:1px}.connection i{width:6px;height:6px;background:var(--amber);border-radius:50%}.connection i.online{background:var(--mint);box-shadow:0 0 10px #5ae5be77}#clock{padding-left:20px;color:var(--muted)}main{max-width:1680px;margin:auto;padding:38px 4vw 0}.intro{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}.eyebrow{font:10px var(--mono);letter-spacing:2px;color:var(--mint)}h1{font-weight:500;letter-spacing:-1.8px;font-size:42px;margin:8px 0}.accent{color:var(--mint)}.mode{text-align:right;font:12px var(--mono);color:var(--mint);letter-spacing:1px}.mode small{display:block;color:var(--muted);font-size:10px;margin-top:9px}.status{display:flex;gap:20px;align-items:center;padding:13px 0;border-block:1px solid var(--line);font:10px var(--mono);flex-wrap:wrap}.label{color:var(--muted);letter-spacing:1px}.status strong{font-weight:400;color:var(--amber);flex:1}.tag{border:1px solid #354a4b;color:#a1bcb7;padding:4px 7px;font-size:9px}.metrics{display:grid;grid-template-columns:1.2fr 1.2fr 1fr 1fr;padding:27px 0 32px}.metrics article{padding:0 24px;border-right:1px solid var(--line)}.metrics article:first-child{padding-left:0}.metrics article:last-child{border:0}.metrics p{font:10px var(--mono);color:var(--muted);letter-spacing:1px}.metrics p small{font-size:9px;margin-left:8px;color:var(--mint)}.metrics h2{font:32px var(--mono);margin:14px 0 9px;letter-spacing:-1.5px}.metrics span{font-size:10px;color:var(--muted)}.metrics b{font-weight:400;color:var(--text)}.positive{color:var(--mint)}.negative{color:var(--red)}.workbench{display:grid;grid-template-columns:1.15fr 1fr;gap:18px}.panel{border:1px solid var(--line);background:linear-gradient(140deg,#12222b66,#0e171e99);min-width:0}.panel-title{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}h3{margin:0;font:10px var(--mono);font-weight:400;letter-spacing:1.2px}.panel-title>span{font:8px var(--mono);color:var(--muted);letter-spacing:.8px}.organism{grid-row:span 2;overflow:hidden}#octopus{display:block;width:100%;max-height:350px}.orbit{stroke:#263d44;fill:none;stroke-dasharray:2 8}.inner{stroke-dasharray:1 5}.head path:first-child{fill:#102c2c;stroke:var(--mint);stroke-width:1.2}.head .eyes{fill:none;stroke:var(--mint);stroke-width:3}.head circle{fill:var(--mint)}.core-label{fill:#709791;font:8px var(--mono);letter-spacing:2px}.arm path{fill:none;stroke:#36535b;stroke-width:2;transition:stroke .2s}.arm circle{fill:#0d1a21;stroke:#547078;stroke-width:1}.arm text{fill:#b7ccce;font:11px var(--mono);letter-spacing:1px}.arm.approve path,.arm.approve circle{stroke:var(--mint)}.arm.reject path,.arm.reject circle{stroke:var(--red)}.consensus{display:flex;align-items:center;justify-content:space-between;padding:0 25px}.consensus p{font:9px var(--mono);letter-spacing:1.5px;color:var(--muted)}.consensus strong{font:56px var(--mono);font-weight:400;letter-spacing:-3px}.consensus strong span{font-size:26px;color:var(--mint)}.gate-note{font:10px/2 var(--mono);color:var(--muted)}.track{height:4px;background:#25373b;margin:15px 25px;position:relative}.track>div{height:4px;background:var(--mint);width:0;transition:width .2s}.threshold{position:absolute;left:76.8%;top:-4px;height:12px;width:1px;background:var(--amber)}.footnote{font-size:10px;line-height:1.7;color:var(--muted);margin:18px 25px 22px;max-width:470px}.agent{display:grid;grid-template-columns:28px 1fr 60px 65px;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #20303977}.agent:last-child{border:0}.agent .index{font:9px var(--mono);color:#5f828b}.agent strong{font:11px var(--mono);letter-spacing:1px}.agent small{display:block;color:var(--muted);font-size:9px;margin-top:3px}.agent .stance{font:9px var(--mono);text-align:center;border:1px solid var(--line);padding:4px}.agent .confidence{font:13px var(--mono);text-align:right}.equity-panel{padding-bottom:13px}#equity-chart{width:calc(100% - 44px);height:100px;margin:15px 22px 5px;border-bottom:1px solid var(--line)}#equity-line{fill:none;stroke:var(--mint);stroke-width:2;vector-effect:non-scaling-stroke}.chart-bottom{display:flex;justify-content:space-between;gap:20px;font:8px var(--mono);color:var(--muted);padding:0 22px}.market-panel{margin-top:18px}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left;font:11px var(--mono);white-space:nowrap}th{font-size:9px;font-weight:400;color:var(--muted);padding:15px 22px}td{padding:14px 22px;border-top:1px solid #25343d88}td:last-child{font-size:9px;color:var(--amber)}.bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.positions{padding:20px 22px;color:var(--muted);font:11px/2 var(--mono)}.position{border-bottom:1px solid var(--line);padding:8px 0}#events{list-style:none;margin:0;padding:10px 22px;max-height:195px;overflow:auto}#events li{font:10px/1.7 var(--mono);padding:7px 0;border-bottom:1px solid #25343d88;overflow-wrap:anywhere}#events time{color:var(--muted);margin-right:12px}footer{display:flex;justify-content:space-between;gap:20px;padding:26px 0;color:var(--muted);font:9px/1.8 var(--mono)}@media(min-width:1450px){#octopus{max-height:385px}.agent{padding-block:14px}}@media(max-width:900px){main{padding-top:25px}.workbench{grid-template-columns:1fr}.organism{grid-row:auto}.metrics{grid-template-columns:1fr 1fr;gap:25px}.metrics article:nth-child(3){padding-left:0}.metrics article:nth-child(2){border:0}.bottom-grid{grid-template-columns:1fr}h1{font-size:34px}.chart-bottom{font-size:7px}}@media(max-width:550px){header{height:76px}.connection{font-size:8px}.connection #clock{display:none}.wordmark{font-size:19px}.intro{display:block}.mode{text-align:left;margin-top:18px}.metrics h2{font-size:24px}.metrics article{padding-right:10px;padding-left:15px}.status{gap:12px}.panel-title{padding:16px}.panel-title>span{font-size:7px}footer{display:block}.agent{padding-inline:15px}.consensus strong{font-size:46px}td,th{padding:13px 16px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ============================================================================
+   GROKTOPUS 2.0 — Observatory upgrade
+   Vote states are colour-coded AND written out in text, so nothing is carried
+   by colour alone. Neon hues are fixed brand tokens; each clears 3:1 contrast
+   against the panel surface.
+   ========================================================================= */
+:root{--buy:#00ffa3;--sell:#ff9f43;--veto:#ff4b4b;--auth:#00f2fe;--hold:#5f828b}
+
+/* --- 01 · living tentacles ------------------------------------------------ */
+.arm .limb{stroke:#36535b;transition:stroke .25s ease}
+.arm .node{fill:#0d1a21;stroke:#547078}
+.arm .pulse{fill:none;stroke:none;stroke-width:2.6;stroke-linecap:round;
+  stroke-dasharray:12 88;stroke-dashoffset:100;opacity:0}
+.arm.buy .limb,.arm.buy .node{stroke:var(--buy)}
+.arm.sell .limb,.arm.sell .node{stroke:var(--sell)}
+.arm.veto .limb,.arm.veto .node{stroke:var(--veto)}
+.arm.hold .limb,.arm.idle .limb{stroke:#36535b}
+.arm.buy .node,.arm.sell .node{fill:#08161a;filter:url(#neon)}
+.arm.buy .pulse{stroke:var(--buy);opacity:1;animation:impulse 1.7s linear infinite}
+.arm.sell .pulse{stroke:var(--sell);opacity:1;animation:impulse 2.1s linear infinite}
+.arm.veto .node{fill:#2a0d11;animation:alarm 1s ease-in-out infinite}
+.arm.veto .limb{animation:alarm 1s ease-in-out infinite}
+.arm.buy text{fill:var(--buy)}
+.arm.sell text{fill:var(--sell)}
+.arm.veto text{fill:var(--veto)}
+@keyframes impulse{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+@keyframes alarm{0%,100%{opacity:1}50%{opacity:.42}}
+
+/* --- 01 · VESKA execution core -------------------------------------------- */
+#core-halo{opacity:0;transition:opacity .35s ease}
+#octopus.authorized #core-halo{opacity:1;animation:breathe 1.6s ease-in-out infinite}
+#octopus.authorized .head path:first-child{stroke:var(--auth);fill:#062830}
+#octopus.authorized .head .eyes,#octopus.authorized .head circle{stroke:var(--auth);fill:var(--auth)}
+@keyframes breathe{0%,100%{opacity:.55}50%{opacity:1}}
+.core-sub{fill:#5f828b;font:7px var(--mono);letter-spacing:2px}
+#octopus.authorized .core-sub{fill:var(--auth)}
+
+/* --- 01 · consensus track -------------------------------------------------- */
+.track>div.blocked{background:var(--veto)}
+.track>div.near{background:var(--sell)}
+.track>div.pass{background:var(--buy)}
+.threshold.veto-line{left:70%;background:var(--veto);opacity:.7}
+
+/* --- 02 · council stances -------------------------------------------------- */
+.agent .stance.buy{color:var(--buy);border-color:#00ffa355}
+.agent .stance.sell{color:var(--sell);border-color:#ff9f4355}
+.agent .stance.veto{color:var(--veto);border-color:#ff4b4b55}
+.agent .stance.hold{color:var(--hold)}
+
+/* The global header/footer element rules must not leak into ticker tiles. */
+.tile header{height:auto;padding:0;border:0;justify-content:flex-start}
+.tile .state{display:block;padding:0;gap:0;justify-content:flex-start}
+.panel-title>span.auth-live{color:var(--auth)}
+
+/* --- 00 · multi-market ticker strip ---------------------------------------- */
+.ticker-panel{margin:18px 0 0}
+.ticker-grid{display:grid;grid-template-columns:repeat(8,minmax(150px,1fr));gap:1px;
+  background:var(--line);border-top:1px solid var(--line);overflow-x:auto}
+.ticker-empty{grid-column:1/-1;background:var(--panel);margin:0;padding:22px;
+  font:10px var(--mono);color:var(--muted)}
+.tile{background:#0c161d;padding:14px 15px 12px;min-width:0;transition:background .3s}
+.tile.authorized{background:#0a2029;box-shadow:inset 0 0 0 1px #00f2fe44}
+.tile header{display:flex;align-items:baseline;gap:5px}
+.tile header b{font:13px var(--mono);letter-spacing:.5px}
+.tile .pair{font:8px var(--mono);color:var(--muted)}
+.tile .chip{margin-left:auto;font:8px var(--mono);letter-spacing:.6px;padding:3px 5px;
+  border:1px solid var(--line);color:var(--hold)}
+.tile .chip.buy{color:var(--buy);border-color:#00ffa355}
+.tile .chip.sell{color:var(--sell);border-color:#ff9f4355}
+.tile .chip.veto{color:var(--veto);border-color:#ff4b4b55}
+.tile .mid{font:19px var(--mono);letter-spacing:-.8px;margin:9px 0 10px}
+.tile dl{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 9px}
+.tile dt{font:7px var(--mono);letter-spacing:.8px;color:var(--muted)}
+.tile dd{margin:3px 0 0;font:10px var(--mono)}
+.meter{position:relative;height:3px;background:#1b2a32;margin-bottom:7px}
+.meter b{position:absolute;top:0;height:3px;background:var(--mint);transition:width .3s,left .3s}
+.meter b.bid{background:var(--buy)}
+.meter b.ask{background:var(--sell)}
+.meter b.toxic{background:var(--veto)}
+.meter .centre{position:absolute;left:50%;top:-2px;width:1px;height:7px;background:#3c525c}
+.meter .gate.toxic{position:absolute;left:65%;top:-2px;width:1px;height:7px;background:var(--veto);opacity:.55}
+.consensus-row{display:flex;align-items:center;gap:8px}
+.cbar{position:relative;flex:1;height:4px;background:#1b2a32}
+.cbar b{position:absolute;left:0;top:0;height:4px;width:0;background:var(--hold);transition:width .3s}
+.cbar b.blocked{background:#43606a}
+.cbar b.near{background:var(--sell)}
+.cbar b.pass{background:var(--buy)}
+.cbar .gate{position:absolute;left:76.8%;top:-2px;width:1px;height:8px;background:var(--amber)}
+.cval{font:9px var(--mono);color:var(--muted);min-width:44px;text-align:right}
+.tile .state{font:7px var(--mono);letter-spacing:.7px;color:var(--muted);margin-top:9px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* --- 03 · equity trace ----------------------------------------------------- */
+.chart-wrap{position:relative}
+#equity-area{fill:url(#equityFill);stroke:none}
+#equity-cursor{stroke:var(--mint);stroke-width:1;vector-effect:non-scaling-stroke;opacity:0}
+#equity-cursor.visible{opacity:.6}
+.chart-tip{position:absolute;top:6px;transform:translateX(-50%);pointer-events:none;
+  background:#08141a;border:1px solid var(--line);padding:5px 9px;
+  font:9px var(--mono);color:var(--text);white-space:nowrap;z-index:2}
+
+@media(max-width:1450px){.ticker-grid{grid-template-columns:repeat(4,minmax(150px,1fr))}}
+@media(max-width:900px){.ticker-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}}
+@media(prefers-reduced-motion:reduce){.arm .pulse,.arm.veto .node,.arm.veto .limb,
+  #octopus.authorized #core-halo{animation:none!important}}

@@ -1,0 +1,5 @@
+# GrokTOPUS Quantitative Swarm Engine Requirements
+aiohttp>=3.10,<4
+websockets>=12,<16
+pytest>=8,<9
+pytest-asyncio>=0.24,<1

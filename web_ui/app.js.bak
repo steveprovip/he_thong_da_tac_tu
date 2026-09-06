@@ -1,0 +1,47 @@
+'use strict';
+const names=['NORO','LUMEN','TIDAL','ZEPHR','RUNE','OKAPI','MARIN','VESKA'];
+const roles=['Fair value & VWAP','Order flow & sentiment','Momentum & liquidity sweeps','Liquidity & cost gate','Absolute risk veto','Exposure & Kelly sizing','Exit & position protection','Authenticated execution'];
+const byId=id=>document.getElementById(id);
+const number=(v,d=2)=>v===null||v===undefined||!Number.isFinite(Number(v))?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const set=(id,value)=>{byId(id).textContent=value;};
+const svgNS='http://www.w3.org/2000/svg';
+names.forEach((name,i)=>{
+  const angle=(i*45-112.5)*Math.PI/180,x=300+220*Math.cos(angle),y=210+155*Math.sin(angle);
+  const arm=document.createElementNS(svgNS,'g');arm.classList.add('arm');arm.id='arm-'+name;
+  const path=document.createElementNS(svgNS,'path');path.setAttribute('d',`M ${300+45*Math.cos(angle)} ${205+40*Math.sin(angle)} C ${300+115*Math.cos(angle-.35)} ${210+100*Math.sin(angle-.35)},${x-30*Math.sin(angle)} ${y+30*Math.cos(angle)},${x} ${y}`);
+  const circle=document.createElementNS(svgNS,'circle');circle.setAttribute('cx',x);circle.setAttribute('cy',y);circle.setAttribute('r',5);
+  const label=document.createElementNS(svgNS,'text');label.setAttribute('x',x);label.setAttribute('y',y+(y<210?-17:25));label.setAttribute('text-anchor','middle');label.textContent=name;
+  arm.append(path,circle,label);byId('arms').append(arm);
+  const row=document.createElement('div');row.className='agent';row.id='agent-'+name;
+  const index=document.createElement('span');index.className='index';index.textContent=String(i+1).padStart(2,'0');
+  const description=document.createElement('div'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=name;small.textContent=roles[i];description.append(strong,small);
+  const stance=document.createElement('span');stance.className='stance';stance.textContent='WAIT';
+  const confidence=document.createElement('span');confidence.className='confidence';confidence.textContent='—';
+  row.append(index,description,stance,confidence);byId('agent-list').append(row);
+});
+function render(s){
+  set('mode',s.mode??'OFFLINE');set('armed',s.armed?'EXECUTION ENABLED':'EXECUTION LOCKED');set('status',s.status??'Waiting');
+  for(const field of ['equity','wallet','pnl','volume','fees'])set(field,number(s[field]));
+  byId('pnl').className=Number(s.pnl)>=0?'positive':'negative';
+  set('drawdown',s.drawdown==null?'—':number(s.drawdown*100)+'%');set('kelly',s.kelly==null?'WARMUP':number(s.kelly*100)+'%');
+  const score=Math.max(0,Math.min(1,s.score??0));byId('score').replaceChildren(document.createTextNode(number(score*100,1)));const pct=document.createElement('span');pct.textContent='%';byId('score').append(pct);byId('scorebar').style.width=(score*100)+'%';
+  for(const name of names){
+    const vote=(s.agents??[]).find(v=>v.agent===name),row=byId('agent-'+name),arm=byId('arm-'+name);
+    row.querySelector('.stance').textContent=vote?.veto?'VETO':vote?.side??'WAIT';
+    row.querySelector('.confidence').textContent=vote?number(vote.confidence*100,0)+'%':'—';
+    row.title=vote?.reason??'Awaiting data';arm.classList.toggle('approve',!!vote&&vote.side!=='HOLD'&&!vote.veto);arm.classList.toggle('reject',!!vote?.veto);
+    row.querySelector('.stance').className='stance '+(vote?.veto?'negative':vote?.side==='BUY'?'positive':'');
+  }
+  const history=(s.history??[]).filter(p=>Number.isFinite(p.value));
+  if(history.length){const min=Math.min(...history.map(p=>p.value)),max=Math.max(...history.map(p=>p.value)),range=max-min||1;byId('equity-line').setAttribute('d',history.map((p,i)=>`${i?'L':'M'} ${i/Math.max(1,history.length-1)*900} ${max===min?70:125-(p.value-min)/range*110}`).join(' '));set('equity-range',number(min)+' — '+number(max)+' USDT');}
+  const tbody=byId('markets');tbody.replaceChildren();for(const m of s.markets??[]){const tr=document.createElement('tr');for(const val of [m.symbol,number(m.mid),number(m.spread),number(m.obi,3),number(m.vpin,3),number((m.score??0)*100,1)+'%',m.status]){const td=document.createElement('td');td.textContent=val;tr.append(td);}tbody.append(tr);}
+  const positions=byId('positions');positions.replaceChildren();if(!(s.positions??[]).length)positions.textContent='No active positions';for(const p of s.positions??[]){const row=document.createElement('div');row.className='position';row.textContent=`${p.symbol} / ${p.side} · ${number(p.filled,4)} · SL ${number(p.stop)} · ${p.protection}`;positions.append(row);}
+  const events=byId('events');events.replaceChildren();for(const e of s.events??[]){const li=document.createElement('li'),time=document.createElement('time');time.textContent=new Date(e.t*1000).toLocaleTimeString();li.append(time,document.createTextNode(e.message));events.append(li);}
+}
+async function poll(){
+  if(document.hidden){setTimeout(poll,2000);return;}
+  try{const response=await fetch('/api/state',{cache:'no-store',signal:AbortSignal.timeout(3500)});if(!response.ok)throw new Error('HTTP');const s=await response.json();render(s);const fresh=s.updated_at&&Date.now()/1000-s.updated_at<5;set('connection',fresh?'TELEMETRY CONNECTED':'ENGINE IDLE / STALE');byId('lamp').className=fresh?'online':'';set('clock',new Date().toLocaleTimeString());}
+  catch{set('connection','DISCONNECTED');byId('lamp').className='';set('status','Telemetry unavailable · last values retained');}
+  setTimeout(poll,1000);
+}
+poll();

@@ -1,0 +1,17 @@
+{
+  "environment": "testnet",
+  "rest": "https://testnet.binancefuture.com",
+  "ws": "wss://stream.binancefuture.com",
+  "time_offset_ms": -108,
+  "trading_symbols": 601,
+  "account": {
+    "totalWalletBalance": "4930.88747361",
+    "totalMarginBalance": "4930.88747361",
+    "availableBalance": "4930.88747361",
+    "canTrade": null
+  },
+  "open_positions": [],
+  "recent_btc_trade_count": 95,
+  "public_stream": "depthUpdate",
+  "market_stream": "aggTrade"
+}
