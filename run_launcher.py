@@ -35,28 +35,15 @@ if __name__ == '__main__':
         print('      GROKTOPUS 2.0 - BẢNG ĐIỀU KHIỂN HỆ THỐNG GIAO DỊCH ĐA TÁC TỬ')
         print('==============================================================================\n')
         print('  [1] CHẠY THỰC TẾ  - Giao dịch Mainnet trực tiếp (Có xác nhận an toàn 2 bước)')
-        print('  [2] CHẠY GIẢ LẬP  - Giao dịch Testnet / Demo ($4,930.88 USDT ảo + Sổ lệnh thật)')
-        print('  [3] SIGNAL LAB    - Đo lường Edge & Kiểm tra Alpha từ dữ liệu đã ghi')
-        print('  [4] HFT BACKTEST  - Mô phỏng vi cấu trúc hàng đợi (hftbacktest 90 phút)\n')
+        print('  [2] CHẠY GIẢ LẬP  - Giao dịch Testnet / Demo ($4,930.88 USDT ảo + Sổ lệnh thật)\n')
         print('  [0] Thoát\n')
         print('==============================================================================')
-        choice = input('Nhập lựa chọn của bạn [1, 2, 3, 4, 0]: ').strip()
+        choice = input('Nhập lựa chọn của bạn [1, 2, 0]: ').strip()
         if choice == '1':
             raise SystemExit(run_mainnet_live())
         elif choice == '2':
             raise SystemExit(run_testnet_demo())
-        elif choice == '3':
-            run_signal_lab()
-            print('\n' + '-' * 78)
-            input('Nhấn Enter để quay lại menu...')
-            print()
-        elif choice == '4':
-            run_hft_backtest()
-            print('\n' + '-' * 78)
-            input('Nhấn Enter để quay lại menu...')
-            print()
         elif choice == '0':
             raise SystemExit(0)
         else:
-            print('\nLựa chọn không hợp lệ. Vui lòng nhập 1, 2, 3, 4 hoặc 0.\n')
-
+            print('\nLựa chọn không hợp lệ. Vui lòng nhập 1, 2 hoặc 0.\n')
