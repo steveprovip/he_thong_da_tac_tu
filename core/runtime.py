@@ -25,7 +25,7 @@ from simulation.paper_engine import PaperEngine
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT']
 DIRECTIONAL = ('NORO', 'LUMEN', 'TIDAL')
 # Calibrated buckets fill slower, so report VPIN from a partial window once it is meaningful.
-VPIN_MIN_BUCKETS = 10
+VPIN_MIN_BUCKETS = 5
 
 
 def directional_score(votes):
@@ -49,6 +49,8 @@ class Runtime:
         self.symbols = args.symbols
         self.stop = asyncio.Event()
         self.alpha = {s: AlphaEngine(min_buckets=VPIN_MIN_BUCKETS) for s in self.symbols}
+        self.edge_multiple = args.edge_multiple if getattr(args, 'edge_multiple', None) is not None else (1.0 if getattr(args, 'bootstrap', False) else 1.8)
+        self.toxic_vpin = args.toxic_vpin if getattr(args, 'toxic_vpin', None) is not None else (0.80 if getattr(args, 'bootstrap', False) else 0.65)
         self.books, self.filters = {}, {}
         self.tracker = PartialBookTracker()
         self.authority = TokenAuthority()
@@ -298,7 +300,8 @@ class Runtime:
             risk_ok = fresh and not self.brake.halted and (self.paper is not None or (time.monotonic()-self.account_at < 10 and self.private_ready))
             capacity = self.used_margin < self.equity*.75 and self.equity > 0
             ready = self.paper is not None or (self.gateway is not None and not self.gateway.halted)
-            decision, votes = self.swarm.evaluate(f, book.mid, capacity, risk_ok, ready, True, cross.get(symbol, 0))
+            decision, votes = self.swarm.evaluate(f, book.mid, capacity, risk_ok, ready, True, cross.get(symbol, 0),
+                                                  toxic_vpin=self.toxic_vpin, edge_multiple=self.edge_multiple)
             self.last_decision[symbol] = decision
             if symbol == self.symbols[0]:
                 self.last_votes = votes
@@ -441,6 +444,8 @@ def arguments(mode, argv=None):
     parser.add_argument('--no-ui', action='store_true')
     parser.add_argument('--arm', action='store_true', help='Explicitly enable Mainnet mutations')
     parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 20 settled outcomes')
+    parser.add_argument('--edge-multiple', type=float, default=None, help='Edge multiple hurdle (default 1.0 for bootstrap, 1.8 for live)')
+    parser.add_argument('--toxic-vpin', type=float, default=None, help='Toxic VPIN veto threshold (default 0.80 for bootstrap, 0.65 for live)')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
     parser.add_argument('--no-lab', action='store_true', help='Disable the counterfactual signal recorder')
     args = parser.parse_args(argv)

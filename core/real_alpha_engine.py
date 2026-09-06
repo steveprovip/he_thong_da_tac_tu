@@ -6,27 +6,17 @@ import statistics
 
 
 def calibrate_bucket_volume(trades, seconds=15.0, floor_multiple=25, minimum=1e-9):
-    """Bucket volume for VPIN: a slice of tape too wide for one print to own.
-
-    Binance aggTrades merge same-side fills at one price, so their sizes are heavy
-    tailed. Sizing a bucket at ~10x the mean trade lets a single sweep fill whole
-    buckets alone, which forces |delta| == volume and pins VPIN near 1.0 no matter
-    what the real flow looks like. Two constraints remove that artefact:
-      * time  - a bucket spans `seconds` of typical tape, so VPIN moves on a useful scale;
-      * grain - a bucket holds at least `floor_multiple` p95-sized trades, so no single
-                print can dominate the imbalance.
-    Measured on heavy-tailed sweep-heavy tape the old rule yields VPIN 0.73-0.96,
-    always above the 0.65 toxicity gate; at seconds=15 this yields ~0.26 with zero
-    saturated buckets, and needs roughly ten buckets (~2.5 min of tape) to report.
-    """
     quantities = sorted(float(t['q']) for t in trades)
     if not quantities:
         return minimum
-    total = math.fsum(quantities)
+    p95 = quantities[min(len(quantities) - 1, int(.95 * len(quantities)))]
+    # Winsorize extreme outlier prints (> 3 * p95) so rare mega-prints (common on Testnet)
+    # do not inflate bucket volume into taking hours to fill.
+    cap = max(p95 * 3.0, minimum)
+    total = math.fsum(min(q, cap) for q in quantities)
     stamps = [float(t['T']) / 1000 for t in trades if 'T' in t]
     span = (max(stamps) - min(stamps)) if len(stamps) > 1 else 0.0
     per_window = total / span * seconds if span > 0 else total / 100
-    p95 = quantities[min(len(quantities) - 1, int(.95 * len(quantities)))]
     return max(per_window, floor_multiple * p95, minimum)
 
 
@@ -43,7 +33,9 @@ class VolumeBuckets:
     def add(self, quantity, buyer_aggressor):
         if not math.isfinite(quantity) or quantity <= 0:
             raise ValueError('Invalid trade volume')
-        remaining = quantity
+        # Outlier guard: a single execution print cannot physically represent dozens of future buckets.
+        # It caps at 2.0x bucket volume to complete the current bucket and at most 1 spillover.
+        remaining = min(quantity, self.volume * 2.0)
         while remaining > 1e-12:
             take = min(remaining, self.volume - self.filled)
             self.filled += take
