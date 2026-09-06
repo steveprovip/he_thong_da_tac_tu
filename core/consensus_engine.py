@@ -31,8 +31,10 @@ class Decision:
 
 
 class ConsensusEngine:
-    def __init__(self, weights=None):
+    def __init__(self, weights=None, threshold=.768, veto_threshold=.70):
         self.weights = dict(WEIGHTS if weights is None else weights)
+        self.threshold = threshold
+        self.veto_threshold = veto_threshold
         if set(self.weights) != set(WEIGHTS) or any(not math.isfinite(w) or w <= 0 for w in self.weights.values()):
             raise ValueError('Exactly eight positive weights required')
         total = sum(self.weights.values())
@@ -47,9 +49,9 @@ class ConsensusEngine:
         side = max(scores, key=scores.get)
         score = scores[side]
         hard = any(v.veto for v in votes) or any(v.agent == 'RUNE' and v.side == 'HOLD' for v in votes)
-        veto = hard or score < .70 - 1e-12
-        allowed = not veto and score >= .768 - 1e-12
-        return Decision(side, score, allowed, veto, 'AUTHORIZED' if allowed else 'RUNE VETO' if veto else 'BELOW 76.8%')
+        veto = hard or score < self.veto_threshold - 1e-12
+        allowed = not veto and score >= self.threshold - 1e-12
+        return Decision(side, score, allowed, veto, 'AUTHORIZED' if allowed else 'RUNE VETO' if veto else f'BELOW {self.threshold*100:.1f}%')
 
 
 class TokenAuthority:

@@ -4,8 +4,8 @@ from core.consensus_engine import Vote, ConsensusEngine
 
 
 class GroktopusSwarm:
-    def __init__(self):
-        self.consensus = ConsensusEngine()
+    def __init__(self, threshold=.768, veto_threshold=.70):
+        self.consensus = ConsensusEngine(threshold=threshold, veto_threshold=veto_threshold)
 
     def evaluate(self, features, price, capacity_ok, risk_ok, gateway_ready, exits_ready, cross_momentum=0.0,
                  maker_fee=.0002, taker_fee=.0005, slippage_bps=1.0, toxic_vpin=.65, edge_multiple=1.8):

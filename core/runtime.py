@@ -49,12 +49,14 @@ class Runtime:
         self.symbols = args.symbols
         self.stop = asyncio.Event()
         self.alpha = {s: AlphaEngine(min_buckets=VPIN_MIN_BUCKETS) for s in self.symbols}
-        self.edge_multiple = args.edge_multiple if getattr(args, 'edge_multiple', None) is not None else (1.0 if getattr(args, 'bootstrap', False) else 1.8)
-        self.toxic_vpin = args.toxic_vpin if getattr(args, 'toxic_vpin', None) is not None else (0.80 if getattr(args, 'bootstrap', False) else 0.65)
+        self.edge_multiple = args.edge_multiple if getattr(args, 'edge_multiple', None) is not None else (0.2 if getattr(args, 'bootstrap', False) else 1.8)
+        self.toxic_vpin = args.toxic_vpin if getattr(args, 'toxic_vpin', None) is not None else (0.85 if getattr(args, 'bootstrap', False) else 0.65)
+        self.threshold = args.threshold if getattr(args, 'threshold', None) is not None else (0.50 if getattr(args, 'bootstrap', False) else 0.768)
+        self.veto_threshold = args.veto_threshold if getattr(args, 'veto_threshold', None) is not None else (0.40 if getattr(args, 'bootstrap', False) else 0.70)
         self.books, self.filters = {}, {}
         self.tracker = PartialBookTracker()
         self.authority = TokenAuthority()
-        self.swarm = GroktopusSwarm()
+        self.swarm = GroktopusSwarm(threshold=self.threshold, veto_threshold=self.veto_threshold)
         self.sizer = PositionSizer()
         self.brake = DrawdownBrake()
         self.planner = BarrierPlanner(horizon=args.horizon)
@@ -360,6 +362,7 @@ class Runtime:
             markets=rows, positions=positions, kelly=self.sizer.kelly(), margin=self.used_margin,
             lab=self.lab.summary() if self.lab else None,
             authorized=self.authorized, auth_at=self.auth_at,
+            threshold=self.threshold, veto_threshold=self.veto_threshold, toxic_vpin=self.toxic_vpin,
             drawdown=1-self.equity/self.brake.peak if self.brake.peak else 0, updated_at=time.time())
 
     async def synthetic_feed(self):
@@ -446,6 +449,8 @@ def arguments(mode, argv=None):
     parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 20 settled outcomes')
     parser.add_argument('--edge-multiple', type=float, default=None, help='Edge multiple hurdle (default 1.0 for bootstrap, 1.8 for live)')
     parser.add_argument('--toxic-vpin', type=float, default=None, help='Toxic VPIN veto threshold (default 0.80 for bootstrap, 0.65 for live)')
+    parser.add_argument('--threshold', type=float, default=None, help='Consensus quorum threshold (default 0.50 for bootstrap, 0.768 for live)')
+    parser.add_argument('--veto-threshold', type=float, default=None, help='Consensus veto threshold (default 0.40 for bootstrap, 0.70 for live)')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
     parser.add_argument('--no-lab', action='store_true', help='Disable the counterfactual signal recorder')
     args = parser.parse_args(argv)

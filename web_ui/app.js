@@ -8,7 +8,7 @@ const NAMES = ['NORO', 'LUMEN', 'TIDAL', 'ZEPHR', 'RUNE', 'OKAPI', 'MARIN', 'VES
 const ROLES = ['Fair value & VWAP', 'Order flow & sentiment', 'Momentum & liquidity sweeps',
   'Liquidity & cost gate', 'Absolute risk veto', 'Exposure & Kelly sizing',
   'Exit & position protection', 'Authenticated execution'];
-const EXECUTE_GATE = 0.768, VETO_GATE = 0.70, VPIN_TOXIC = 0.65;
+let EXECUTE_GATE = 0.768, VETO_GATE = 0.70, VPIN_TOXIC = 0.65;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const byId = id => document.getElementById(id);
@@ -169,6 +169,19 @@ wrap.addEventListener('pointerleave', () => { cursor.classList.remove('visible')
 
 /* ---------- render ---------- */
 function render(s) {
+  if (finite(s.threshold)) EXECUTE_GATE = Number(s.threshold);
+  if (finite(s.veto_threshold)) VETO_GATE = Number(s.veto_threshold);
+  if (finite(s.toxic_vpin)) VPIN_TOXIC = Number(s.toxic_vpin);
+
+  const gateNote = document.querySelector('.gate-note');
+  if (gateNote) {
+    gateNote.innerHTML = `EXECUTE &ge; ${(EXECUTE_GATE * 100).toFixed(1)}%<br>RUNE VETO &lt; ${(VETO_GATE * 100).toFixed(1)}%`;
+  }
+  const thExecute = document.querySelector('.threshold:not(.veto-line)');
+  if (thExecute) thExecute.style.left = `${EXECUTE_GATE * 100}%`;
+  const thVeto = document.querySelector('.threshold.veto-line');
+  if (thVeto) thVeto.style.left = `${VETO_GATE * 100}%`;
+
   set('mode', s.mode ?? 'OFFLINE');
   set('armed', s.armed ? 'EXECUTION ENABLED' : 'EXECUTION LOCKED');
   set('status', s.status ?? 'Waiting');
