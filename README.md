@@ -1,5 +1,7 @@
 # 🐙 GROKTOPUS 2.0: Autonomous 8-Agent Quantitative Swarm
-> **"8 AI AGENTS, 8 BỘ NÃO, 1 CƠ THỂ – CON QUÁI VẬT GIAO DỊCH BIẾN $150K THÀNH $198K CHỈ TRONG 1 BUỔI SÁNG!"**
+Hệ thống nghiên cứu giao dịch có kiểm soát thực thi. Chưa có bằng chứng lợi nhuận sau phí hoặc xác minh tuyên bố hiệu suất ban đầu.
+
+**Bản sửa 06/09/2026:** xem [chẩn đoán, số liệu đối soát, nguồn nghiên cứu và lệnh chạy](docs/CHAN_DOAN_2026-09-06.md). Paper mặc định đọc dữ liệu Mainnet; Kelly chỉ đọc ledger có đơn vị đã xác minh. `--bootstrap` không còn tự hạ ngưỡng rủi ro; Signal Lab không cấp vốn hoặc phiếu đồng thuận.
 
 ## 1. Giới thiệu tổng quan
 Hầu hết mọi người xây dựng bot theo mô hình: `AI -> Ví -> Mua/Bán`.

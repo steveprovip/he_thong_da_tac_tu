@@ -115,3 +115,8 @@ td:nth-last-child(2){white-space:nowrap}
 .tag.provisional{color:var(--amber);border-color:#f5bc7755}
 .tag.buy{color:var(--buy);border-color:#00ffa355}
 .tag.sell{color:var(--sell);border-color:#ff9f4355}
+
+/* 07 · emergency stop (kill switch) */
+.kill { margin-left: auto; background: #2a1214; color: #ff7b7b; border: 1px solid #7a2e2e; border-radius: 4px; padding: 6px 14px; font: inherit; font-size: 11px; letter-spacing: .08em; cursor: pointer; white-space: nowrap; }
+.kill.armed { background: #7a2e2e; color: #fff; }
+.kill:disabled { opacity: .6; cursor: wait; }

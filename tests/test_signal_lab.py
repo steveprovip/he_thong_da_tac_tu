@@ -14,7 +14,7 @@ from core.barrier_planner import Barriers
 from core.consensus_engine import Decision, Vote
 from core.models import Book
 from core.real_alpha_engine import Features
-from core.signal_lab import SignalLab
+from core.signal_lab import MEASURED_ROUNDTRIP_BPS, SignalLab
 
 SYMBOL = 'BTCUSDT'
 
@@ -149,3 +149,28 @@ async def test_runtime_observation_leaves_the_gateway_untouched(engine_factory):
     assert probe is not None and probe.gated is False
     for method in ('submit', 'ratchet', 'exit', 'cancel_entries', 'reconcile'):
         getattr(engine.gateway, method).assert_not_awaited()
+
+
+# --------------------------------------------------------------- cost model
+def test_cost_model_defaults_to_the_measured_roundtrip():
+    """8.0 bps was a guess; 6.00 is what the venue actually charged.
+
+    Reconciling 14 audited round trips against /fapi/v1/userTrades fits
+    fee = 2bps*entry_notional + 4bps*exit_notional to a mean absolute error of
+    5e-6 bps. The old constant biased every calibrate_edge verdict by 2 bps in
+    the same direction, which is the direction that hides a working strategy.
+    """
+    assert MEASURED_ROUNDTRIP_BPS == 6.0
+    lab = SignalLab()
+    assert lab.cost_bps == 6.0
+    probe = open_probe(lab)
+    assert probe.cost_bps == 6.0
+    closed = lab.resolve(SYMBOL, book(103.5, 103.52, 2.), 2.)[0]
+    assert closed.net_bps == pytest.approx(closed.gross_bps - 6.0)
+
+
+def test_cost_model_is_configurable_and_validated():
+    assert open_probe(SignalLab(cost_bps=9.5)).cost_bps == 9.5
+    for bad in (-1.0, float('nan'), float('inf')):
+        with pytest.raises(ValueError):
+            SignalLab(cost_bps=bad)

@@ -97,6 +97,29 @@ class BinanceFuturesClient:
         except (aiohttp.ClientError, asyncio.TimeoutError):
             raise BinanceError('TRANSPORT', 0, mutation) from None
 
+    async def history(self, symbol):
+        return await self.request('GET', '/fapi/v1/userTrades', {'symbol': symbol, 'limit': 200}, signed=True, weight=5)
+
+    async def history_since(self, symbol, start_ms, max_pages=10):
+        """Every fill from start_ms onward, paginated past the 1000-row page cap.
+
+        complete is False only when max_pages is exhausted before the feed
+        reaches the present, so callers can distinguish a full window from a
+        truncated one instead of inferring completeness from a page size."""
+        trades = await self.request('GET', '/fapi/v1/userTrades',
+                                    {'symbol': symbol, 'startTime': int(start_ms), 'limit': 1000},
+                                    signed=True, weight=5)
+        fetched = list(trades)
+        complete = len(trades) < 1000
+        for _ in range(max_pages):
+            if complete or not trades:
+                break
+            trades = await self.request('GET', '/fapi/v1/userTrades',
+                                        {'symbol': symbol, 'fromId': int(trades[-1]['id'])+1, 'limit': 1000},
+                                        signed=True, weight=5)
+            fetched.extend(trades)
+            complete = len(trades) < 1000
+        return fetched, complete
     async def sync_time(self):
         start = time.time()*1000
         data = await self.request('GET', '/fapi/v1/time')
@@ -104,6 +127,9 @@ class BinanceFuturesClient:
 
     async def exchange_info(self):
         return await self.request('GET', '/fapi/v1/exchangeInfo')
+
+    async def premium_index(self):
+        return await self.request('GET', '/fapi/v1/premiumIndex', weight=10)
 
     async def depth(self, symbol):
         return await self.request('GET', '/fapi/v1/depth', {'symbol': symbol, 'limit': 5}, weight=2)
@@ -146,6 +172,13 @@ class BinanceFuturesClient:
     async def reduce_position(self, symbol, side, quantity, client_id):
         return await self.request('POST', '/fapi/v1/order', {'symbol': symbol, 'side': side,
             'type': 'MARKET', 'quantity': str(quantity), 'reduceOnly': 'true', 'positionSide': 'BOTH',
+            'newClientOrderId': client_id}, signed=True)
+
+    async def reduce_maker(self, symbol, side, quantity, price, client_id):
+        """Passive reduce-only exit: LIMIT GTX so closing pays maker 2 bps, not taker 5."""
+        return await self.request('POST', '/fapi/v1/order', {'symbol': symbol, 'side': side,
+            'type': 'LIMIT', 'timeInForce': 'GTX', 'quantity': str(quantity), 'price': str(price),
+            'reduceOnly': 'true', 'positionSide': 'BOTH',
             'newClientOrderId': client_id}, signed=True)
 
     async def listen_key(self):

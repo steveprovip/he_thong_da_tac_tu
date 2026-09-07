@@ -188,7 +188,7 @@ function render(s) {
   for (const field of ['equity', 'wallet', 'pnl', 'volume', 'fees']) set(field, number(s[field]));
   byId('pnl').className = Number(s.pnl) >= 0 ? 'positive' : 'negative';
   set('drawdown', s.drawdown == null ? '—' : number(s.drawdown * 100) + '%');
-  set('kelly', s.kelly == null ? 'WARMUP' : number(s.kelly * 100) + '%');
+  set('kelly', (s.kelly == null ? 'WARMUP' : number(s.kelly * 100) + '%') + ` · n=${s.outcome_samples ?? 0}`);
 
   const score = clamp01(s.score);
   byId('score').replaceChildren(document.createTextNode(number(score * 100, 1)), el('span', null, '%'));
@@ -222,10 +222,11 @@ function render(s) {
   } else {
     set('lab-tag', `LAB n=${lab.probes} · TP ${number(lab.tp * 100, 0)}% · `
       + `${lab.net_bps >= 0 ? '+' : ''}${number(lab.net_bps, 2)} bps`
-      + (lab.probes < 200 ? ' · PROVISIONAL' : ''));
+      + ' · ASSUMED FILLS');
     byId('lab-tag').className = 'tag ' + (lab.probes < 200 ? 'provisional' : lab.net_bps > 0 ? 'buy' : 'sell');
   }
 
+  set('data-source', `FEED ${String(s.market_data ?? 'unknown').toUpperCase()} · ${s.policy ?? '—'} · EDGE PROXY UNCALIBRATED`);
   const markets = s.markets ?? [];
   renderTicker(markets);
   const tbody = byId('markets');
@@ -236,10 +237,10 @@ function render(s) {
     const cells = [m.symbol, number(m.mid), number(m.spread), number(m.obi, 3),
       finite(m.vpin) ? number(m.vpin, 3) + (saturated ? ' SAT' : '') : 'WARMUP',
       number(clamp01(m.score) * 100, 1) + '%', number(clamp01(m.directional) * 100, 1) + '%',
-      (m.blockers ?? []).join(', ') || '—', m.status];
+      (m.reasons ?? m.blockers ?? []).join(', ') || '—', m.status];
     cells.forEach((value, i) => {
       const td = el('td', i === 4 && saturated ? 'saturated' : i === 7 && (m.blockers ?? []).length ? 'blocked' : null, value);
-      if (i === 7) td.title = m.why ?? '';
+      if (i === 7) td.title = `${m.why ?? ''} | ATR ${number(m.atr_bps)}bps | edge ${number(m.edge_bps)} / cost ${number(m.cost_bps)}bps | VPIN buckets ${m.vpin_buckets ?? 0}`;
       tr.append(td);
     });
     tbody.append(tr);
@@ -275,6 +276,7 @@ async function poll() {
     set('connection', fresh ? 'TELEMETRY CONNECTED' : 'ENGINE IDLE / STALE');
     byId('lamp').className = fresh ? 'online' : '';
     set('clock', new Date().toLocaleTimeString());
+    byId('kill').hidden = false;
   } catch {
     set('connection', 'DISCONNECTED');
     byId('lamp').className = '';
@@ -283,3 +285,41 @@ async function poll() {
   setTimeout(poll, 1000);
 }
 poll();
+
+/* ---------- 07 · emergency stop (kill switch) ----------
+   Two-step confirm, loopback-only POST /api/shutdown. The engine answers by
+   cancelling every working order and closing every position before exiting. */
+const kill = byId('kill');
+const KILL_LABEL = kill.textContent;
+let killArmed = false, killTimer = null;
+kill.addEventListener('click', async () => {
+  if (!killArmed) {
+    killArmed = true;
+    kill.textContent = 'NHẤP LẦN NỮA ĐỂ XÁC NHẬN TẮT HỆ THỐNG';
+    kill.classList.add('armed');
+    killTimer = setTimeout(() => {
+      killArmed = false;
+      kill.classList.remove('armed');
+      kill.textContent = KILL_LABEL;
+    }, 6000);
+    return;
+  }
+  clearTimeout(killTimer);
+  killArmed = false;
+  kill.classList.remove('armed');
+  kill.disabled = true;
+  kill.textContent = 'ĐANG TẮT · ĐANG ĐÓNG VỊ THẾ…';
+  try {
+    const response = await fetch('/api/shutdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'SHUTDOWN' })
+    });
+    if (!response.ok) throw new Error('HTTP');
+    set('status', 'SHUTDOWN REQUESTED · cancelling orders & flattening positions');
+  } catch {
+    set('status', 'Shutdown request failed · bot may already be stopped');
+    kill.disabled = false;
+    kill.textContent = KILL_LABEL;
+  }
+});

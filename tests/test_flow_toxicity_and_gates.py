@@ -12,7 +12,7 @@ import pytest
 from core.consensus_engine import ConsensusEngine, Vote, WEIGHTS
 from core.groktopus_swarm import GroktopusSwarm
 from core.real_alpha_engine import Features, VolumeBuckets, calibrate_bucket_volume
-from core.runtime import DIRECTIONAL, directional_score
+from core.runtime import DIRECTIONAL, arguments, directional_score, volatility_block
 
 
 def sweep_tape(count=20000, mean=.02, sigma=1.9, run_length=4.0, seed=11, start=1_700_000_000_000):
@@ -171,3 +171,75 @@ def test_red_gates_alone_explain_the_observed_score_band():
     decision = ConsensusEngine().evaluate(votes)
     assert decision.veto and decision.score < .45
     assert directional_score(votes) > decision.score
+
+
+# ------------------------------------------------------------ volatility band
+def test_volatility_band_blocks_both_tails():
+    """ATR >= 20 bps measured -4.03 bps gross (95% CI [-7.44, -0.66]) over 5178
+    probes, so the ceiling excludes a measured-negative tail, not a guess."""
+    assert volatility_block(12.0, 6.0, 20.0) == ''
+    assert volatility_block(6.0, 6.0, 20.0) == '', 'the floor is inclusive'
+    assert volatility_block(20.0, 6.0, 20.0) == '', 'the ceiling is inclusive'
+    assert volatility_block(5.9, 6.0, 20.0) == 'LOW_VOLATILITY'
+    assert volatility_block(20.1, 6.0, 20.0) == 'HIGH_VOLATILITY'
+
+
+def test_either_bound_at_zero_disables_that_side():
+    assert volatility_block(0.4, 0.0, 20.0) == ''
+    assert volatility_block(4000.0, 6.0, 0.0) == ''
+    assert volatility_block(4000.0, 0.0, 0.0) == ''
+
+
+def test_missing_atr_fails_whichever_bound_is_configured():
+    """An unmeasurable move is not evidence that the move is tradeable."""
+    assert volatility_block(None, 6.0, 20.0) == 'LOW_VOLATILITY'
+    assert volatility_block(None, 0.0, 20.0) == 'HIGH_VOLATILITY'
+    assert volatility_block(None, 0.0, 0.0) == ''
+
+
+def test_volatility_band_arguments_are_validated():
+    base = ['--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui']
+    args = arguments('testnet', base + ['--min-atr-bps', '6', '--max-atr-bps', '20'])
+    assert (args.min_atr_bps, args.max_atr_bps) == (6.0, 20.0)
+    assert arguments('testnet', base).max_atr_bps == 0.0
+    for bad in (['--max-atr-bps', '-1'], ['--min-atr-bps', '20', '--max-atr-bps', '20'],
+                ['--min-atr-bps', '20', '--max-atr-bps', '6'], ['--max-atr-bps', 'nan']):
+        with pytest.raises(SystemExit):
+            arguments('testnet', base + bad)
+
+
+def test_runtime_wires_the_volatility_band(engine_factory):
+    engine = engine_factory(argv=('--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui',
+                                  '--min-atr-bps', '6', '--max-atr-bps', '20'))
+    assert (engine.min_atr_bps, engine.max_atr_bps) == (6.0, 20.0)
+    assert engine.mission_summary()['max_atr_bps'] == 20.0
+
+
+# ----------------------------------------------------------- conviction gate
+def test_conviction_gate_arguments_are_validated():
+    base = ['--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui']
+    assert arguments('testnet', base).min_conviction == 0.0, 'absent flag must be inert'
+    assert arguments('testnet', base + ['--min-conviction', '0.3575']).min_conviction == 0.3575
+    assert arguments('testnet', base + ['--min-conviction', '1']).min_conviction == 1.0
+    for bad in ('-0.1', '1.1', 'nan'):
+        with pytest.raises(SystemExit):
+            arguments('testnet', base + ['--min-conviction', bad])
+
+
+def test_conviction_gate_reads_alpha_conviction_not_the_headline_score():
+    """directional_score strips the 0.40 of gate weight every authorized trade
+    carries, so a 0.768 headline only implies 0.613 alpha conviction. Gating on
+    the headline would be gating mostly on the gates agreeing with themselves."""
+    votes = [Vote('NORO', 'BUY', .9, 'x'), Vote('LUMEN', 'BUY', .9, 'x'), Vote('TIDAL', 'BUY', .9, 'x')]
+    votes += [Vote(a, 'HOLD', 0.0, 'gate') for a in WEIGHTS if a not in DIRECTIONAL]
+    assert directional_score(votes) == pytest.approx(.9)
+    assert ConsensusEngine().evaluate(votes).score == pytest.approx(.9 * .60)
+
+
+def test_runtime_wires_the_conviction_gate(engine_factory):
+    off = engine_factory(argv=('--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui'))
+    assert off.min_conviction == 0.0 and off.mission_summary()['min_conviction'] == 0.0
+    on = engine_factory(argv=('--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui',
+                              '--min-conviction', '0.3575'))
+    assert on.min_conviction == 0.3575
+    assert on.mission_summary()['min_conviction'] == 0.3575

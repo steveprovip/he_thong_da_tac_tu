@@ -49,5 +49,6 @@ async def test_offline_paper_runtime_runs_without_network(monkeypatch,tmp_path):
     snapshot=telemetry.snapshot()
     assert snapshot['mode']=='PAPER · SYNTHETIC'
     assert snapshot['markets'][0]['symbol']=='BTCUSDT'
+    assert {'regime', 'threshold', 'micro_price', 'micro_delta_ticks', 'lead_lag'} <= set(snapshot['markets'][0])
     assert snapshot['equity']==10000
     forbidden.assert_not_awaited()

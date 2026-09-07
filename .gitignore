@@ -47,6 +47,9 @@ data/*-last-state.json
 data/*-signal-lab.jsonl
 data/*.jsonl
 data/*.tmp
+data/*-settled-v2.json
+data/audit-baseline-*/
+data/execution-audit.json
 # The original brief contains credentials supplied by the operator.
 FORM_GPT6_ASTRA_GROKTOPUS_REBUILD_MASTER.md
 
@@ -56,3 +59,12 @@ Thumbs.db
 
 # External research repos (965MB)
 mau_chatloctinhhoa/
+
+# Runtime data & session artifacts (never commit)
+data/.fuse_hidden*
+data/backup-*/
+data/commit-msg-*.txt
+data/*.truoc-backfill.json
+data/testnet-mission-report.json
+mau/
+

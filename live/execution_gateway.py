@@ -46,6 +46,8 @@ class ExecutionGateway:
         self.lock = asyncio.Lock()
         self.halted = False
         self.alert = ''
+        self.maker_exits = {}
+        self.maker_exit_stats = {'placed': 0, 'fallback': 0, 'filled': 0}
 
     async def submit(self, intent, token):
         async with self.lock:
@@ -93,6 +95,15 @@ class ExecutionGateway:
             try:
                 result = await self.client.protect(order.intent.symbol, side, stop, stop_id)
             except BinanceError as error:
+                if error.code == -4509:
+                    # Demo venue rejects closePosition algo stops while the
+                    # position is not yet registered. Transient: leave the
+                    # order unstop-covered; the reconcile loop (~3s) retries
+                    # as soon as the position exists.
+                    self.journal.write('STOP_DEFERRED',
+                                       {'client_id': stop_id, 'symbol': order.intent.symbol,
+                                        'code': error.code})
+                    return
                 if not error.uncertain:
                     raise
                 result = await self.client.algo(stop_id)
@@ -102,7 +113,15 @@ class ExecutionGateway:
             self.journal.write('STOP_ACK', {'client_id': stop_id, 'symbol': order.intent.symbol})
             # Ratchet without a gap: new protective stop is acknowledged first.
             if old_id:
-                await self.client.cancel_algo(old_id)
+                # The new stop is already acknowledged, so protection is live.
+                # A stale ratchet cancel (venue already deleted the old algo)
+                # must never discard the new protective stop.
+                try:
+                    await self.client.cancel_algo(old_id)
+                except BinanceError as error:
+                    if error.uncertain or error.code not in (-2011, -2013):
+                        self.journal.write('STOP_OLD_CANCEL_FAILED',
+                                           {'old': old_id, 'code': getattr(error, 'code', None)})
         except Exception:
             self.halted = True
             self.alert = 'Protective stop failure; cancel entry and flatten residual exposure'
@@ -120,10 +139,23 @@ class ExecutionGateway:
             elif event.get('e') == 'ALGO_UPDATE':
                 data = event.get('o', {})
                 if data.get('X') in ('REJECTED', 'EXPIRED', 'CANCELED'):
-                    for order in list(self.active.values()):
-                        if data.get('caid') == order.stop_id or data.get('clientAlgoId') == order.stop_id:
-                            self.halted = True
-                            self.alert = 'Protective algo inactive; REST reconciliation required'
+                    stop_id = data.get('caid') or data.get('clientAlgoId')
+                    order = next((o for o in self.active.values()
+                                  if o.stop_id and o.stop_id == stop_id), None)
+                    if order:
+                        # A deliberate cancel (exit/ratchet/shutdown) also emits
+                        # CANCELED; only a venue refusal is a protection failure.
+                        # Either way the reconcile loop re-covers open positions.
+                        order.stop_id = ''
+                        if data.get('X') != 'CANCELED':
+                            # A closedPosition algo auto-EXPIRES when the position
+                            # it protects closed naturally — that is bookkeeping,
+                            # not a protection failure. Halt only while exposure
+                            # is actually uncovered.
+                            positions = await self.client.positions(order.intent.symbol)
+                            if any(float(p['positionAmt']) != 0 for p in positions):
+                                self.halted = True
+                                self.alert = 'Protective algo inactive; REST reconciliation required'
 
     async def _cancel_entry(self, order):
         if order.status in ('NEW', 'PARTIALLY_FILLED', 'SUBMITTING'):
@@ -156,11 +188,73 @@ class ExecutionGateway:
                         raise
         order.closing = True
 
-    async def exit(self, symbol):
+    async def _maker_exit(self, order, peg, grace):
+        """Post-only reduce exit: join the passive side so closing costs 2 bps.
+
+        Returns True when the peg is parked (sweep + reconcile own it from here),
+        False when the venue refused it (would cross) and a market flatten must run."""
+        positions = await self.client.positions(order.intent.symbol)
+        amount = sum(dec(p['positionAmt']) for p in positions)
+        if not amount:
+            return True  # already flat; reconcile closes the books
+        side = 'SELL' if amount > 0 else 'BUY'
+        client_id = 'gm-'+uuid.uuid4().hex[:28]
+        self.journal.write('MAKER_EXIT_INTENT', {'symbol': order.intent.symbol,
+                                                 'client_id': client_id, 'price': str(peg),
+                                                 'quantity': str(abs(amount))})
+        try:
+            await self.client.reduce_maker(order.intent.symbol, side, abs(amount), peg, client_id)
+        except BinanceError as error:
+            if error.code == -5022 and not error.uncertain:
+                return False  # post-only would cross: immediate market fallback
+            if error.uncertain:
+                self.halted = True
+                self.alert = 'Unknown maker-exit result; inspect venue position before retry'
+            raise
+        order.closing = True
+        self.maker_exits[order.intent.symbol] = {
+            'client_id': client_id, 'placed_at': time.time(),
+            'deadline': time.time()+grace, 'stop': order.current_stop,
+            'position_side': order.intent.side}
+        self.maker_exit_stats['placed'] += 1
+        return True
+
+    async def sweep_maker_exits(self, now, books=None):
+        """Fallback sweep: a parked maker exit that aged out, or whose symbol
+        traded back through its stop, is cancelled and market-flattened."""
+        for symbol, pending in list(self.maker_exits.items()):
+            positions = await self.client.positions(symbol)
+            if not any(float(p['positionAmt']) != 0 for p in positions):
+                # Fully filled: reconcile owns the POSITION_CLOSED bookkeeping.
+                self.maker_exits.pop(symbol, None)
+                self.maker_exit_stats['filled'] += 1
+                continue
+            book = (books or {}).get(symbol)
+            sign = 1 if pending['position_side'] == 'BUY' else -1
+            crossed = bool(pending['stop']) and book is not None and \
+                sign*(book.mid-pending['stop']) <= 0
+            if now < pending['deadline'] and not crossed:
+                continue
+            try:
+                await self.client.cancel(symbol, pending['client_id'])
+            except BinanceError:
+                await self.client.order(symbol, pending['client_id'])
+            positions = await self.client.positions(symbol)
+            order = self.active.get(symbol)
+            if any(float(p['positionAmt']) != 0 for p in positions) and order:
+                await self._flatten(order)
+            self.maker_exits.pop(symbol, None)
+            self.maker_exit_stats['fallback'] += 1
+
+    async def exit(self, symbol, maker_peg=None, grace=8.0):
         async with self.lock:
             order = self.active.get(symbol)
             if order and not order.closing:
                 await self._cancel_entry(order)
+                if maker_peg and grace > 0 and await self._maker_exit(order, maker_peg, grace):
+                    return
+                if maker_peg:
+                    self.maker_exit_stats['fallback'] += 1
                 await self._flatten(order)
 
     async def ratchet(self, symbol, stop):
@@ -200,6 +294,16 @@ class ExecutionGateway:
                                 raise
                     self.active.pop(symbol, None)
                     self.journal.write('POSITION_CLOSED', {'symbol': symbol, 'client_id': order.client_id})
+            # A protection halt is justified only while exposure is uncovered.
+            # Once reconcile has verified every tracked fill is stop-covered
+            # (or being closed), the halt is cleared and trading may resume.
+            if self.halted and self.alert.startswith('Protective'):
+                uncovered = [o.intent.symbol for o in self.active.values()
+                             if o.filled > 0 and not o.stop_id and not o.closing]
+                if not uncovered:
+                    self.halted = False
+                    self.alert = ''
+                    self.journal.write('HALT_CLEARED', {'verified': 'reconcile coverage'})
 
     async def cancel_entries(self):
         async with self.lock:
@@ -209,3 +313,31 @@ class ExecutionGateway:
                     await self._protect(order, order.current_stop)
                 if not order.filled:
                     self.active.pop(order.intent.symbol, None)
+
+    async def full_shutdown(self):
+        """User-initiated stop: cancel entries, flatten fills, remove protection.
+
+        Unlike the natural-exit path (which retains on-exchange stops for open
+        positions), a full shutdown leaves the account completely flat with no
+        working orders of any kind.
+        """
+        for symbol, pending in list(self.maker_exits.items()):
+            try:
+                await self.client.cancel(symbol, pending['client_id'])
+            except BinanceError:
+                await self.client.order(symbol, pending['client_id'])
+            self.maker_exits.pop(symbol, None)
+        for symbol in list(self.active):
+            await self.exit(symbol)
+        async with self.lock:
+            for symbol, order in list(self.active.items()):
+                if order.stop_id:
+                    try:
+                        await self.client.cancel_algo(order.stop_id)
+                    except BinanceError as error:
+                        if error.uncertain or error.code not in (-2011, -2013):
+                            raise
+                    order.stop_id = ''
+                self.active.pop(symbol, None)
+                self.journal.write('POSITION_CLOSED',
+                                   {'symbol': symbol, 'client_id': order.client_id, 'reason': 'shutdown'})

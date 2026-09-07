@@ -19,7 +19,13 @@ class Telemetry:
                       'wallet': None, 'pnl': None, 'volume': 0, 'fees': 0, 'score': 0,
                       'agents': [], 'markets': [], 'positions': [], 'armed': False,
                       'authorized': 0, 'auth_at': None, 'execute_gate': .768, 'veto_gate': .70,
-                      'lab': None}
+                      'lab': None, 'shutdown': False, 'shutdown_reason': ''}
+
+    def request_shutdown(self, reason='user'):
+        """Kill switch: the engine polls this flag and flattens before exiting."""
+        with self.lock:
+            self.state['shutdown'] = True
+            self.state['shutdown_reason'] = str(reason)[:120]
 
     def update(self, **kwargs):
         with self.lock:
@@ -67,6 +73,40 @@ def make_server(telemetry, host='127.0.0.1', port=8765):
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_POST(self):
+            if self.headers.get('Host', '').split(':')[0] not in ('127.0.0.1', 'localhost'):
+                self.send_error(403)
+                return
+            path = self.path.split('?')[0]
+            if path != '/api/shutdown':
+                self.send_error(404)
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+            except ValueError:
+                length = 0
+            body = {}
+            if 0 < length <= 1024:
+                try:
+                    body = json.loads(self.rfile.read(length) or b'{}')
+                except ValueError:
+                    body = {}
+            if not isinstance(body, dict) or body.get('confirm') != 'SHUTDOWN':
+                payload = b'{"error": "confirm token required: {\\"confirm\\": \\"SHUTDOWN\\"}"}'
+                status = 400
+            else:
+                telemetry.request_shutdown('dashboard kill switch')
+                telemetry.event('KILL SWITCH: full shutdown requested; flattening venue')
+                payload = b'{"ok": true, "shutdown": true}'
+                status = 200
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
             self.end_headers()
             self.wfile.write(payload)
 

@@ -3,3 +3,8 @@ aiohttp>=3.10,<4
 websockets>=12,<16
 pytest>=8,<9
 pytest-asyncio>=0.24,<1
+# Backtest research stack: imported only by tools/run_backtest.py,
+# research/bridge.py and tests/test_research_bridge.py. Pinned so a clean
+# checkout can run the full suite without a collection error.
+hftbacktest>=2,<3
+numba>=0.59
