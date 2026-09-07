@@ -93,6 +93,46 @@ async def test_maker_exit_fill_is_left_to_reconcile(gateway):
     assert intent.symbol not in gw.active
 
 
+async def test_maker_exit_reduceonly_rejection_falls_back_cleanly(gateway):
+    """-2022 (ReduceOnly refused) during peg parking means the stop already
+    closed the position while the peg was being submitted. Benign race: must
+    fall back to the (no-op) flatten path, not raise into the banner."""
+    gw, client, intent, token = gateway
+    await gw.submit(intent, token)
+    client.reduce_maker.side_effect = BinanceError(-2022)
+    await gw.exit(intent.symbol, maker_peg=100.1, grace=8.0)
+    client.reduce_position.assert_awaited_once()
+    assert not gw.maker_exits
+    assert gw.maker_exit_stats['fallback'] == 1
+    assert not gw.halted
+
+
+async def test_flatten_treats_reduceonly_rejection_as_already_flat(gateway):
+    """-2022 from the market flatten means the position vanished between the
+    snapshot and the order (stop or peg won the race). Nothing to reduce --
+    continue with closing bookkeeping instead of raising."""
+    gw, client, intent, token = gateway
+    await gw.submit(intent, token)
+    client.reduce_position.side_effect = BinanceError(-2022)
+    await gw.exit(intent.symbol)  # taker path
+    assert not gw.halted
+
+
+async def test_sweep_counts_filled_peg_even_when_cancel_raced(gateway):
+    """A peg that fills while its own cancel is in flight was booked as a
+    fallback, biasing p_fill downward. It must count as filled."""
+    gw, client, intent, token = gateway
+    await gw.submit(intent, token)
+    await gw.exit(intent.symbol, maker_peg=100.1, grace=8.0)
+    pending_id = gw.maker_exits[intent.symbol]['client_id']
+    client.positions.side_effect = [[{'positionAmt': '1'}], [{'positionAmt': '0'}]]
+    await gw.sweep_maker_exits(time.time()+60, books={})
+    assert any(call.args[1] == pending_id for call in client.cancel.await_args_list)
+    client.reduce_position.assert_not_awaited()
+    assert gw.maker_exit_stats['filled'] == 1
+    assert gw.maker_exit_stats['fallback'] == 0
+
+
 async def test_full_shutdown_cancels_parked_maker_exit(gateway):
     gw, client, intent, token = gateway
     await gw.submit(intent, token)

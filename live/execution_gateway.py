@@ -180,6 +180,11 @@ class ExecutionGateway:
                 try:
                     await self.client.reduce_position(order.intent.symbol, 'SELL' if amount > 0 else 'BUY', abs(amount), client_id)
                 except BinanceError as error:
+                    if error.code == -2022 and not error.uncertain:
+                        # Position closed underneath us (stop or peg filled
+                        # between the snapshot and this order). Nothing left
+                        # to reduce; reconcile owns the books.
+                        continue
                     if error.uncertain:
                         self.halted = True
                         self.alert = 'Unknown exit; inspect venue position before retry'
@@ -207,6 +212,12 @@ class ExecutionGateway:
         except BinanceError as error:
             if error.code == -5022 and not error.uncertain:
                 return False  # post-only would cross: immediate market fallback
+            if error.code == -2022 and not error.uncertain:
+                # ReduceOnly refused because the position is already gone: the
+                # venue stop filled while the peg was being parked. Benign race;
+                # the flatten below finds nothing to do and reconcile closes
+                # the books. Previously this raised into the telemetry banner.
+                return False
             if error.uncertain:
                 self.halted = True
                 self.alert = 'Unknown maker-exit result; inspect venue position before retry'
@@ -243,8 +254,14 @@ class ExecutionGateway:
             order = self.active.get(symbol)
             if any(float(p['positionAmt']) != 0 for p in positions) and order:
                 await self._flatten(order)
+                self.maker_exit_stats['fallback'] += 1
+            else:
+                # Flat after the cancel: the peg actually filled while the
+                # cancel was in flight, so the exit cost 2 bps, not 4+spread.
+                # Count it where P2 looks -- a filled peg booked as fallback
+                # biases the fill-rate estimate downward.
+                self.maker_exit_stats['filled'] += 1
             self.maker_exits.pop(symbol, None)
-            self.maker_exit_stats['fallback'] += 1
 
     async def exit(self, symbol, maker_peg=None, grace=8.0):
         async with self.lock:

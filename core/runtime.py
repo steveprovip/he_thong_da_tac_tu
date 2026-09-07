@@ -769,7 +769,7 @@ def arguments(mode, argv=None):
     parser.add_argument('--port', type=int)
     parser.add_argument('--no-ui', action='store_true')
     parser.add_argument('--arm', action='store_true', help='Explicitly enable Mainnet mutations')
-    parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 20 settled outcomes')
+    parser.add_argument('--bootstrap', action='store_true', help='Testnet only: small uncalibrated sizing until 60 settled outcomes')
     parser.add_argument('--bootstrap-fraction', type=float, default=None,
                         help='Bootstrap sizing as a fraction of equity per trade (demo observation knob; default .01, cap .25)')
     parser.add_argument('--market-data', choices=('mainnet', 'testnet'), default=None,
