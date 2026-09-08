@@ -193,3 +193,13 @@ footer{padding:8px 0;font-size:8px}
   letter-spacing:1.2px;color:var(--muted);list-style:none}
 .agent-details summary:hover{color:var(--mint)}
 .agent-details[open] summary{border-bottom:1px solid var(--line);color:var(--mint)}
+
+/* 05 organism hien luon nhung nen: mucus 140px, consensus gon, bo footnote */
+#octopus{max-height:140px;margin-top:-10px}
+.organism .consensus{padding:0 16px}
+.organism .consensus strong{font-size:30px}
+.organism .consensus p{font-size:8px}
+.organism .gate-note{font-size:8px}
+.organism .footnote{display:none}
+.organism .track{margin:0 16px 8px}
+.organism .panel-title{padding:6px 16px}
