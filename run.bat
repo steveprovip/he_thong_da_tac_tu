@@ -12,15 +12,12 @@ echo   [1] CHAY THUC TE  - Giao dich Mainnet truc tiep (Co xac nhan an toan 2 bu
 echo   [2] CHAY GIA LAP  - Phien dai 11 GIO tu dong (demo.binance.com)
 echo                       Tu ngat bot cu > Tu backup > Chay > Tu audit > Tu cham P1-P3
 echo                       (Von ao $4930 USDT - KHONG can nhan gi cho den khi xong)
-echo                       Tu khoi dong them L2 recorder (phan_tich du lieu)
-echo   [3] TAT HE THONG  - KILL SWITCH: Dung bot + dong moi vi the + huy moi lenh
-echo   [6] GHI L2        - Recorder bookTicker+depth mainnet (khong key, khong lenh)
 echo.
 echo   [0] Thoat
 echo.
 echo ==============================================================================
 set "choice="
-set /p choice="Nhap lua chon cua ban [1, 2, 3, 0]: "
+set /p choice="Nhap lua chon cua ban [1, 2, 0]: "
 if defined choice set "choice=%choice: =%"
 
 if "%choice%"=="1" goto opt_live
@@ -30,7 +27,7 @@ if "%choice%"=="6" goto opt_l2
 if "%choice%"=="0" goto opt_exit
 
 echo.
-echo Lua chon khong hop le. Vui long nhap 1, 2, 3, 6 hoac 0.
+echo Lua chon khong hop le. Vui long nhap 1, 2, 0.
 ping 127.0.0.1 -n 2 >nul
 goto menu
 
