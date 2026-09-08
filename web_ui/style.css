@@ -120,3 +120,36 @@ td:nth-last-child(2){white-space:nowrap}
 .kill { margin-left: auto; background: #2a1214; color: #ff7b7b; border: 1px solid #7a2e2e; border-radius: 4px; padding: 6px 14px; font: inherit; font-size: 11px; letter-spacing: .08em; cursor: pointer; white-space: nowrap; }
 .kill.armed { background: #7a2e2e; color: #fff; }
 .kill:disabled { opacity: .6; cursor: wait; }
+
+/* ============================================================================
+   08 · Monitoring-first layout (2026-09-08):
+   giám sát trước, trang trí sau — mọi số sống còn nhìn được không cần cuộn.
+   ========================================================================= */
+header{height:50px;padding:0 3vw}
+main{padding-top:12px}
+.intro{margin-bottom:6px}
+h1{font-size:24px;margin:3px 0;letter-spacing:-1px}
+.eyebrow{font-size:9px}
+.mode{font-size:11px}
+.status{position:sticky;top:0;z-index:50;background:#0a1219f5;backdrop-filter:blur(5px);
+  padding:8px 0;border-block:1px solid var(--line)}
+.metrics{padding:10px 0 12px}
+.metrics h2{font-size:22px;margin:5px 0 3px;letter-spacing:-1px}
+.market-panel{margin-top:10px}
+.market-panel .panel-title{padding:10px 16px}
+th{padding:7px 12px}
+td{padding:7px 12px}
+.bottom-grid{margin-top:10px}
+.bottom-grid .panel-title{padding:10px 16px}
+.positions{padding:10px 16px;font:11px/1.8 var(--mono)}
+#events{padding:6px 16px;max-height:132px}
+#events li{padding:4px 0}
+.ticker-panel{margin-top:10px}
+.ticker-panel .panel-title{padding:10px 16px}
+.tile{padding:8px 11px 7px}
+.tile .mid{font-size:14px;margin:4px 0 5px}
+.tile dl{gap:4px;margin-bottom:6px}
+.workbench{margin-top:10px}
+#octopus{max-height:215px}
+.panel-title{padding:10px 16px}
+footer{padding:14px 0}

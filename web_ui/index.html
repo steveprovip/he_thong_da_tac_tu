@@ -7,17 +7,19 @@
 <section class="intro"><div><p class="eyebrow">EIGHT PERSPECTIVES. ONE EXECUTION GATE.</p><h1>Swarm observatory<span class="accent">.</span></h1></div><div class="mode"><span id="mode">OFFLINE</span><small id="armed">EXECUTION LOCKED</small></div></section>
 <div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
 
-<section class="panel ticker-panel"><div class="panel-title"><h3>00 / MULTI-MARKET TICKER</h3><span>MID · SPREAD · OBI · VPIN · CONSENSUS</span></div>
-<div id="ticker" class="ticker-grid"><p class="ticker-empty">Waiting for live order books…</p></div></section>
-
 <section class="metrics" aria-label="Account metrics">
 <article><p>ACCOUNT EQUITY <small>USDT</small></p><h2 id="equity">—</h2><span>Wallet <b id="wallet">—</b></span></article>
 <article><p>SESSION EQUITY CHANGE</p><h2 id="pnl">—</h2><span>Includes unrealized PnL and balance changes</span></article>
 <article><p>EXECUTED NOTIONAL <small>USDT</small></p><h2 id="volume">—</h2><span>Settled fills · fees <b id="fees">—</b></span></article>
 <article><p>CAPITAL GUARD</p><h2 id="drawdown">—</h2><span>Drawdown · Kelly <b id="kelly">WARMUP</b></span></article>
 </section>
+<section class="panel market-panel"><div class="panel-title"><h3>01 / MARKET MICROSTRUCTURE</h3><span>USDⓈ-M PERPETUALS</span></div><div class="table-scroll"><table><thead><tr><th>MARKET</th><th>MIDPRICE</th><th>SPREAD / BPS</th><th>OBI</th><th>VPIN</th><th>CONSENSUS</th><th>DIRECTIONAL</th><th>BLOCKED BY</th><th>STATE</th></tr></thead><tbody id="markets"><tr><td colspan="7">Waiting for live order books…</td></tr></tbody></table></div></section>
+<div class="bottom-grid"><section class="panel"><div class="panel-title"><h3>02 / POSITION PROTECTION</h3></div><div id="positions" class="positions">No active positions</div></section><section class="panel"><div class="panel-title"><h3>03 / EVENT TAPE</h3></div><ol id="events"></ol></section></div>
+<section class="panel ticker-panel"><div class="panel-title"><h3>04 / MULTI-MARKET TICKER</h3><span>MID · SPREAD · OBI · VPIN · CONSENSUS</span></div>
+<div id="ticker" class="ticker-grid"><p class="ticker-empty">Waiting for live order books…</p></div></section>
+
 <div class="workbench">
-<section class="organism panel"><div class="panel-title"><h3>01 / THE ORGANISM</h3><span id="core-state">STANDBY</span></div>
+<section class="organism panel"><div class="panel-title"><h3>05 / THE ORGANISM</h3><span id="core-state">STANDBY</span></div>
 <svg id="octopus" viewBox="0 0 600 430" role="img" aria-label="Eight agent voting states surrounding the execution core">
 <defs>
 <radialGradient id="halo"><stop stop-color="#41ebc4" stop-opacity=".12"/><stop offset="1" stop-color="#41ebc4" stop-opacity="0"/></radialGradient>
@@ -32,15 +34,13 @@
 <div class="consensus"><div><p>HIGHEST MARKET CONSENSUS</p><strong id="score">0.0<span>%</span></strong></div><div class="gate-note">EXECUTE ≥ 76.8%<br>RUNE VETO &lt; 70.0%</div></div><div class="track"><div id="scorebar"></div><i class="threshold"></i><i class="threshold veto-line"></i></div>
 <p class="footnote">Agent views show the first selected market. Confidence is a policy score, not a probability of profit.</p>
 </section>
-<section class="agents panel"><div class="panel-title"><h3>02 / COUNCIL REGISTER</h3><span>WEIGHTED QUORUM</span></div><div id="agent-list"></div></section>
-<section class="equity-panel panel"><div class="panel-title"><h3>03 / EQUITY TRACE</h3><span id="equity-range">AWAITING ACCOUNT DATA</span></div>
+<section class="agents panel"><div class="panel-title"><h3>06 / COUNCIL REGISTER</h3><span>WEIGHTED QUORUM</span></div><div id="agent-list"></div></section>
+<section class="equity-panel panel"><div class="panel-title"><h3>07 / EQUITY TRACE</h3><span id="equity-range">AWAITING ACCOUNT DATA</span></div>
 <div class="chart-wrap"><svg id="equity-chart" viewBox="0 0 900 140" preserveAspectRatio="none" role="img" aria-label="Equity history, rolling 600 observations">
 <defs><linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#5ae5be" stop-opacity=".34"/><stop offset="1" stop-color="#5ae5be" stop-opacity="0"/></linearGradient></defs>
 <path id="equity-area" d=""/><path id="equity-line" d=""/><line id="equity-cursor" x1="0" y1="0" x2="0" y2="140"/></svg>
 <div id="equity-tip" class="chart-tip" hidden></div></div>
 <div class="chart-bottom"><span>ROLLING 600 OBSERVATIONS</span><span>ACTUAL SNAPSHOTS / NO INTERPOLATED RETURNS</span></div></section>
 </div>
-<section class="panel market-panel"><div class="panel-title"><h3>04 / MARKET MICROSTRUCTURE</h3><span>USDⓈ-M PERPETUALS</span></div><div class="table-scroll"><table><thead><tr><th>MARKET</th><th>MIDPRICE</th><th>SPREAD / BPS</th><th>OBI</th><th>VPIN</th><th>CONSENSUS</th><th>DIRECTIONAL</th><th>BLOCKED BY</th><th>STATE</th></tr></thead><tbody id="markets"><tr><td colspan="7">Waiting for live order books…</td></tr></tbody></table></div></section>
-<div class="bottom-grid"><section class="panel"><div class="panel-title"><h3>05 / POSITION PROTECTION</h3></div><div id="positions" class="positions">No active positions</div></section><section class="panel"><div class="panel-title"><h3>06 / EVENT TAPE</h3></div><ol id="events"></ol></section></div>
 <footer><span>LOCAL OBSERVABILITY · 127.0.0.1 · KILL SWITCH ENABLED</span><span>Heuristic research system. Results require independent validation.</span></footer>
 </main></body></html>
