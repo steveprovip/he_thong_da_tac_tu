@@ -159,16 +159,23 @@ class ExecutionGateway:
 
     async def _cancel_entry(self, order):
         if order.status in ('NEW', 'PARTIALLY_FILLED', 'SUBMITTING'):
-            try:
-                result = await self.client.cancel(order.intent.symbol, order.client_id)
-            except BinanceError:
-                result = await self.client.order(order.intent.symbol, order.client_id)
-            # Cancel acknowledgment can include a fill racing with cancellation.
-            order.filled = max(order.filled, float(result.get('executedQty', 0)))
-            order.status = result.get('status', order.status)
-            if order.status in ('NEW', 'PARTIALLY_FILLED'):
-                self.halted = True
-                raise RuntimeError('Entry cancellation not confirmed')
+            # Venue state can trail the cancel ack by a heartbeat; confirm
+            # twice before declaring a protection failure, but never silently
+            # give up: an uncancelled entry keeps unprotected exposure.
+            for _ in range(2):
+                try:
+                    result = await self.client.cancel(order.intent.symbol, order.client_id)
+                except BinanceError:
+                    result = await self.client.order(order.intent.symbol, order.client_id)
+                # Cancel acknowledgment can include a fill racing with cancellation.
+                order.filled = max(order.filled, float(result.get('executedQty', 0)))
+                order.status = result.get('status', order.status)
+                if order.status not in ('NEW', 'PARTIALLY_FILLED'):
+                    return
+                await asyncio.sleep(0.25)
+            self.halted = True
+            raise RuntimeError(f'Entry cancellation not confirmed: '
+                               f'{order.intent.symbol} {order.client_id} still {order.status}')
 
     async def _flatten(self, order):
         positions = await self.client.positions(order.intent.symbol)

@@ -85,6 +85,30 @@ def atr_bps_value(atr, mid):
     return atr/mid*1e4
 
 
+def spread_block(spread_bps, floor=0.0, ceiling=0.0):
+    """Entry liquidity band on the bid-ask spread: 'TIGHT_SPREAD',
+    'WIDE_SPREAD' or '' to allow.
+
+    The ceiling drops the adverse-selection tail. Wyart, Bouchaud et al.
+    (physics/0603084) measure spread tracking volatility-per-trade with
+    R^2 above 0.9 -- a wide spread is a dislocated market, not an
+    opportunity, and fills there are selected against (live F4 fills on
+    2026-09-08 in 29-41 bps spreads lost -13..-56 bps each). The lab
+    CANNOT adjudicate this region: its assumed-fill entry overstates
+    wide-spread probes (+12.7 bps gross above 15 bps spread), exactly
+    where its 100%-fill assumption fails hardest. The floor keeps
+    entries inside the band the F4 filter family was learned on.
+
+    An unmeasurable spread fails whichever side is configured. Either
+    bound at 0 disables that side of the band.
+    """
+    if floor > 0 and (spread_bps is None or spread_bps < floor):
+        return 'TIGHT_SPREAD'
+    if ceiling > 0 and (spread_bps is None or spread_bps > ceiling):
+        return 'WIDE_SPREAD'
+    return ''
+
+
 def volatility_block(atr_bps, floor=0.0, ceiling=0.0):
     """Entry volatility band: 'LOW_VOLATILITY', 'HIGH_VOLATILITY' or '' to allow.
 
@@ -141,6 +165,8 @@ class Runtime:
         self.maker_exit_grace = float(getattr(args, 'maker_exit_grace', 8.0) or 0.0)
         self.min_atr_bps = float(getattr(args, 'min_atr_bps', 0.0) or 0.0)
         self.max_atr_bps = float(getattr(args, 'max_atr_bps', 0.0) or 0.0)
+        self.min_spread_bps = float(getattr(args, 'min_spread_bps', 0.0) or 0.0)
+        self.max_spread_bps = float(getattr(args, 'max_spread_bps', 0.0) or 0.0)
         self.min_conviction = float(getattr(args, 'min_conviction', 0.0) or 0.0)
         self.edge_regime_start = float(getattr(args, 'edge_regime_start', 0.0) or 0.0)
         self.books, self.filters = {}, {}
@@ -221,6 +247,8 @@ class Runtime:
             'maker_exits': dict(self.gateway.maker_exit_stats) if self.gateway else {},
             'min_atr_bps': self.min_atr_bps,
             'max_atr_bps': self.max_atr_bps,
+            'min_spread_bps': self.min_spread_bps,
+            'max_spread_bps': self.max_spread_bps,
             'min_conviction': self.min_conviction,
             'edge_regime_start': self.edge_regime_start,
             'sizer_outcomes': len(self.sizer.outcomes),
@@ -559,6 +587,9 @@ class Runtime:
             volatility = volatility_block(rows[-1]['atr_bps'], self.min_atr_bps, self.max_atr_bps)
             if volatility:
                 reasons.append(volatility)
+            spread_reason = spread_block(rows[-1].get('spread'), self.min_spread_bps, self.max_spread_bps)
+            if spread_reason:
+                reasons.append(spread_reason)
             if self.min_conviction > 0 and rows[-1]['directional'] < self.min_conviction:
                 reasons.append('LOW_CONVICTION')
             if f.vpin is not None and f.vpin > gate:
@@ -590,6 +621,14 @@ class Runtime:
             volatility = volatility_block(rows[-1].get('atr_bps'), self.min_atr_bps, self.max_atr_bps)
             if volatility:
                 rows[-1]['status'] = volatility
+                continue
+            # Spread band is an ENTRY gate only, like the volatility band: the
+            # lab already recorded the signal above. A wide spread is a
+            # dislocated, adverse-selection-heavy market (see spread_block),
+            # and the lab's assumed-fill entry cannot price that tail.
+            spread_reason = spread_block(rows[-1].get('spread'), self.min_spread_bps, self.max_spread_bps)
+            if spread_reason:
+                rows[-1]['status'] = spread_reason
                 continue
             # Conviction of the three alpha agents with the 0.40 gate weight
             # stripped out, so this reads the swarm's actual directional opinion
@@ -811,6 +850,11 @@ def arguments(mode, argv=None):
                         help='Skip entries when 1m ATR is below this many basis points of price; 0 disables the filter')
     parser.add_argument('--max-atr-bps', type=float, default=0.0,
                         help='Skip entries when 1m ATR is above this many basis points of price; 0 disables the ceiling')
+    parser.add_argument('--min-spread-bps', type=float, default=0.0,
+                        help='Skip entries when the bid-ask spread is below this many basis points; 0 disables the filter')
+    parser.add_argument('--max-spread-bps', type=float, default=0.0,
+                        help='Skip entries when the bid-ask spread is above this many basis points: wide spreads are '
+                             'adverse-selection-heavy and the assumed-fill lab overstates them; 0 disables the ceiling')
     parser.add_argument('--min-conviction', type=float, default=0.0,
                         help='Skip entries when alpha-agent directional conviction is below this (0-1); 0 disables the gate')
     parser.add_argument('--edge-regime-start', type=float, default=0.0,
@@ -840,11 +884,14 @@ def arguments(mode, argv=None):
         parser.error('--bootstrap-fraction must be in (0, 0.25]')
     if not 0 <= args.mission_target <= 1000:
         parser.error('--mission-target must be within [0, 1000]')
-    for name, value in (('--min-atr-bps', args.min_atr_bps), ('--max-atr-bps', args.max_atr_bps)):
+    for name, value in (('--min-atr-bps', args.min_atr_bps), ('--max-atr-bps', args.max_atr_bps),
+                        ('--min-spread-bps', args.min_spread_bps), ('--max-spread-bps', args.max_spread_bps)):
         if not math.isfinite(value) or value < 0:
             parser.error(f'{name} must be a finite, non-negative number')
     if 0 < args.max_atr_bps <= args.min_atr_bps:
         parser.error('--max-atr-bps must exceed --min-atr-bps')
+    if 0 < args.max_spread_bps <= args.min_spread_bps:
+        parser.error('--max-spread-bps must exceed --min-spread-bps')
     if not math.isfinite(args.min_conviction) or not 0 <= args.min_conviction <= 1:
         parser.error('--min-conviction must be within [0, 1]')
     if args.toxic_vpin is not None and not 0 < args.toxic_vpin <= 1:
