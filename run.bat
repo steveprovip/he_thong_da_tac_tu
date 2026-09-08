@@ -12,7 +12,9 @@ echo   [1] CHAY THUC TE  - Giao dich Mainnet truc tiep (Co xac nhan an toan 2 bu
 echo   [2] CHAY GIA LAP  - Phien dai 11 GIO tu dong (demo.binance.com)
 echo                       Tu ngat bot cu > Tu backup > Chay > Tu audit > Tu cham P1-P3
 echo                       (Von ao $4930 USDT - KHONG can nhan gi cho den khi xong)
+echo                       Tu khoi dong them L2 recorder (phan_tich du lieu)
 echo   [3] TAT HE THONG  - KILL SWITCH: Dung bot + dong moi vi the + huy moi lenh
+echo   [6] GHI L2        - Recorder bookTicker+depth mainnet (khong key, khong lenh)
 echo.
 echo   [0] Thoat
 echo.
@@ -24,10 +26,11 @@ if defined choice set "choice=%choice: =%"
 if "%choice%"=="1" goto opt_live
 if "%choice%"=="2" goto opt_demo
 if "%choice%"=="3" goto opt_kill
+if "%choice%"=="6" goto opt_l2
 if "%choice%"=="0" goto opt_exit
 
 echo.
-echo Lua chon khong hop le. Vui long nhap 1, 2, 3 hoac 0.
+echo Lua chon khong hop le. Vui long nhap 1, 2, 3, 6 hoac 0.
 ping 127.0.0.1 -n 2 >nul
 goto menu
 
@@ -88,6 +91,10 @@ copy /Y data\execution-audit.json data\backup-truoc-phien-dai\ >nul
 copy /Y data\testnet-journal.sqlite data\backup-truoc-phien-dai\ >nul
 echo       Da backup 3 file vao data\backup-truoc-phien-dai\
 echo.
+echo       Khoi dong L2 recorder song song (mainnet public, khong key)...
+start "L2-recorder" /min python research\l2_recorder.py --symbols SOLUSDT,BTCUSDT,BNBUSDT,LINKUSDT --seconds 39600
+echo       L2 recorder dang chay o cua so thu nho - data ghi vao data\l2\
+echo.
 
 echo [3/5] Khoi dong phien dai 11 gio... (KHONG nhan gi, cho bot tu chay)
 start http://127.0.0.1:8765
@@ -105,6 +112,25 @@ echo.
 echo ==============================================================================
 echo   XONG. Doc ket qua P1-P3 o tren. Neu ledger_gaps khac rong - bao ngay.
 echo ==============================================================================
+pause
+goto menu
+
+:opt_l2
+cls
+echo ==============================================================================
+echo   GHI DU LIEU L2 THUC (MAINNET PUBLIC WEBSOCKET - KHONG KEY, KHONG LENH)
+echo   * Ghi bookTicker + depth@100ms kem local-timestamp vao data\l2\
+echo   * Muc dich: thay du lieu cong khai khong co L2 de backtest chuan sau 3-7 ngay
+echo   * Chay doc lap voi bot - co the chay dong luc phien dai
+echo ==============================================================================
+echo.
+set "l2sec="
+set /p l2sec="Thoi luong gio [Enter = 11]: "
+if not defined l2sec set "l2sec=11"
+start "L2-recorder" /min python research\l2_recorder.py --symbols SOLUSDT,BTCUSDT,BNBUSDT,LINKUSDT --seconds %l2sec%000
+echo.
+echo   Da khoi dong L2 recorder (%l2sec% gio) trong cua so thu nho "L2-recorder".
+echo   Data ghi vao data\l2\<symbol>\<YYYYMMDD>.jsonl - de dung lai, tat cua so do.
 pause
 goto menu
 
