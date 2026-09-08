@@ -97,8 +97,10 @@ echo       L2 recorder dang chay o cua so thu nho - data ghi vao data\l2\
 echo.
 
 echo [3/5] Khoi dong phien dai 11 gio... (KHONG nhan gi, cho bot tu chay)
+for /f %%i in ('python -c "import time; print(int(time.time()))"') do set EPOCH=%%i
+echo       Cau hinh PHIEN 3 nhanh A: bo loc F4 dong bang, verdict theo regime tu %EPOCH%
 start http://127.0.0.1:8765
-python run_binance_testnet.py --bootstrap --bootstrap-fraction 0.01 --quote-ttl 8 --horizon 300 --seconds 39600 --mission-target 0 --max-atr-bps 20 --maker-exit-grace 8 --flatten-on-exit
+python run_binance_testnet.py --bootstrap --bootstrap-fraction 0.01 --quote-ttl 8 --horizon 300 --seconds 39600 --mission-target 0 --min-atr-bps 6 --max-atr-bps 20 --min-conviction 0.3575 --edge-regime-start %EPOCH% --maker-exit-grace 8 --flatten-on-exit
 
 echo.
 echo [4/5] Phien ket thuc (tu dong flatten). Chay audit doi soat...

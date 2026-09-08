@@ -142,6 +142,7 @@ class Runtime:
         self.min_atr_bps = float(getattr(args, 'min_atr_bps', 0.0) or 0.0)
         self.max_atr_bps = float(getattr(args, 'max_atr_bps', 0.0) or 0.0)
         self.min_conviction = float(getattr(args, 'min_conviction', 0.0) or 0.0)
+        self.edge_regime_start = float(getattr(args, 'edge_regime_start', 0.0) or 0.0)
         self.books, self.filters = {}, {}
         self.tracker = PartialBookTracker()
         self.swarm = GroktopusSwarm(threshold=self.threshold, veto_threshold=self.veto_threshold,
@@ -178,6 +179,11 @@ class Runtime:
         self._mission_start = len(self.ledger.records)
         if not args.offline:
             for row in self.ledger.records:
+                # Regime-scoped verdict: outcomes closed before the current
+                # entry regime went live describe a different strategy, so
+                # they neither grant nor revoke this regime's permission.
+                if self.edge_regime_start and row.get('closed_at', 0) < self.edge_regime_start:
+                    continue
                 self.sizer.record(row['net_return'])
         if (ROOT/'data'/f'{settings.mode}-outcomes.json').exists():
             self.telemetry.event('Legacy Kelly floats excluded: units unverified; use audited settled-v2 ledger')
@@ -216,6 +222,8 @@ class Runtime:
             'min_atr_bps': self.min_atr_bps,
             'max_atr_bps': self.max_atr_bps,
             'min_conviction': self.min_conviction,
+            'edge_regime_start': self.edge_regime_start,
+            'sizer_outcomes': len(self.sizer.outcomes),
             'lab': lab,
         }
 
@@ -256,7 +264,11 @@ class Runtime:
             return
         if not self.args.offline and not self.ledger.append(pnl, notional, time.time(), symbol, trade_id):
             return
-        self.sizer.record(pnl, notional=notional)
+        # Mirror the startup regime filter: an outcome settled under the
+        # current regime counts; under --edge-regime-start the whole point
+        # is that pre-regime history cannot reach the sizing state.
+        if not self.edge_regime_start or time.time() >= self.edge_regime_start:
+            self.sizer.record(pnl, notional=notional)
         if votes and side:
             self.swarm.consensus.record_outcome(votes, side, pnl)
         self.brake.update(self.equity, pnl)
@@ -801,6 +813,10 @@ def arguments(mode, argv=None):
                         help='Skip entries when 1m ATR is above this many basis points of price; 0 disables the ceiling')
     parser.add_argument('--min-conviction', type=float, default=0.0,
                         help='Skip entries when alpha-agent directional conviction is below this (0-1); 0 disables the gate')
+    parser.add_argument('--edge-regime-start', type=float, default=0.0,
+                        help='Count only outcomes closed at/after this epoch into the edge verdict and Kelly sizing; '
+                             '0 = whole ledger. Set when a materially different entry regime goes live (e.g. the '
+                             'conviction gate), so pre-regime losses cannot prove the regime negative.')
     args = parser.parse_args(argv)
     args.symbols = list(dict.fromkeys(s.upper() for s in args.symbols))
     if not args.symbols or len(args.symbols) > 8 or any(not s.isalnum() for s in args.symbols):

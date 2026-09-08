@@ -65,6 +65,30 @@ def test_mission_mode_flag_and_summary():
     assert isinstance(report['kelly_ready'], bool)
 
 
+def test_edge_regime_start_excludes_pre_regime_history():
+    """--edge-regime-start scopes verdict/sizing to the current entry regime.
+
+    The unfiltered-era ledger is proven negative in aggregate; when the F4
+    conviction gate goes live it is a materially different strategy, so its
+    permission must be computed from its own outcomes only -- and the stop
+    rule (n>=120, CI<0 -> stop) must not fire on pre-regime history.
+    """
+    from config.settings import Settings
+    from core.runtime import Runtime, arguments
+    import time as _time
+    args = arguments('testnet', ['--bootstrap', '--edge-regime-start', str(_time.time() + 3600)])
+    assert args.edge_regime_start > 0
+    rt = Runtime(Settings.load('testnet'), args, Telemetry())
+    # The live ledger already holds ~100 pre-regime outcomes; a start stamp
+    # one hour in the future excludes every one of them.
+    assert len(rt.sizer.outcomes) == 0
+    assert rt.sizer.edge_verdict() == 'WARMUP'
+    # Default stays whole-ledger: no flag, no scoping.
+    rt2 = Runtime(Settings.load('testnet'), arguments('testnet', ['--bootstrap']), Telemetry())
+    assert len(rt2.sizer.outcomes) == len(rt2.ledger.records)
+    assert rt2.mission_summary()['edge_regime_start'] == 0.0
+
+
 def test_mission_target_stops_early_with_progress():
     """Mission target counts NEW settled outcomes; progress shows in the status bar."""
     from core.runtime import Runtime, arguments
