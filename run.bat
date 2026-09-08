@@ -10,7 +10,7 @@ echo ===========================================================================
 echo.
 echo   [1] CHAY THUC TE  - Giao dich Mainnet truc tiep (Co xac nhan an toan 2 buoc)
 echo   [2] CHAY GIA LAP  - Phien dai 11 GIO tu dong (demo.binance.com)
-echo                       Tu ngat bot cu > Tu backup > Chay > Tu audit > Tu cham P1-P3
+echo                       Tu ngat bot cu ^> Tu backup ^> Chay ^> Tu audit ^> Tu cham P1-P3
 echo                       (Von ao $4930 USDT - KHONG can nhan gi cho den khi xong)
 echo.
 echo   [0] Thoat
