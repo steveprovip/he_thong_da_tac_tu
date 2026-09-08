@@ -68,3 +68,5 @@ data/*.truoc-backfill.json
 data/testnet-mission-report.json
 mau/
 
+data/npz/ 
+data/raw/ 

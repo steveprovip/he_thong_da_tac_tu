@@ -56,7 +56,12 @@ def test_mission_mode_flag_and_summary():
     # 3.5 bps against a 15.7 bps spread, so the estimate is noise.
     assert report['kelly_target'] == PositionSizer().min_samples == 60
     assert report['kelly_stop_target'] == 120
-    assert report['edge_verdict'] == 'WARMUP'
+    # Verdict moves with the live ledger: WARMUP while n<60, UNDETERMINED
+    # once n>=60 with a CI still crossing zero (the demo ledger crossed 60
+    # on 09/09 and this test broke on the pinned value, not on behaviour).
+    # Pin the wiring -- the report must expose exactly what the runtime's
+    # own sizer computes -- not the mutable value itself.
+    assert report['edge_verdict'] == rt.sizer.edge_verdict()
     assert isinstance(report['kelly_ready'], bool)
 
 

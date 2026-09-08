@@ -9,8 +9,9 @@ echo       GROKTOPUS 2.0 - BANG DIEU KHIEN HE THONG GIAO DICH DA TAC TU
 echo ==============================================================================
 echo.
 echo   [1] CHAY THUC TE  - Giao dich Mainnet truc tiep (Co xac nhan an toan 2 buoc)
-echo   [2] CHAY GIA LAP  - Du lieu that + So lenh that tren san Demo
-echo                       (demo.binance.com - Von ao $4930 USDT)
+echo   [2] CHAY GIA LAP  - Phien dai 11 GIO tu dong (demo.binance.com)
+echo                       Tu ngat bot cu > Tu backup > Chay > Tu audit > Tu cham P1-P3
+echo                       (Von ao $4930 USDT - KHONG can nhan gi cho den khi xong)
 echo   [3] TAT HE THONG  - KILL SWITCH: Dung bot + dong moi vi the + huy moi lenh
 echo.
 echo   [0] Thoat
@@ -63,20 +64,47 @@ goto menu
 :opt_demo
 cls
 echo ==============================================================================
-echo   DANG KHOI CHAY CHAY GIA LAP (BINANCE DEMO - demo.binance.com)
-echo   * Du lieu thi truong THAT + lenh THAT tren san Demo (von ao $4930 USDT)
-echo   * PHIEN DO LUONG (Phien 1 va 2): chay DU 90 phut de lay toi da du lieu.
-echo     Kich thuoc 1%% equity (~49 USDT). Bang ATR: chan duoi tat, tran 20 bps.
-echo     Bao cao ghi vao data\testnet-mission-report.json khi ket thuc.
-echo   * Doc tieu chi PASS/FAIL trong trang tham chieu TRUOC khi bam Enter.
-echo   * Xem tai khoan/lenh tai: https://demo.binance.com/en/futures/BTCUSDT
+echo   PHIEN DAI 11 GIO - CHE DO TU DONG HOAN TOAN (BINANCE DEMO)
+echo   Buoc 1/5: Ngat bot cu neu con dang chay (an toan, co flatten)
+echo   Buoc 2/5: Backup ledger + audit + journal
+echo   Buoc 3/5: Chay phien 11 gio (cau hinh giong het Phien 1, chi doi thoi luong)
+echo             Kich thuoc 1%% equity. Bang ATR: chan duoi tat, tran 20 bps.
+echo   Buoc 4/5: Audit doi soat sau phien (ledger_gaps PHAI rong)
+echo   Buoc 5/5: Cham diem P1-P3 gop du lieu
 echo   * Web Dashboard: http://127.0.0.1:8765
-echo   * TAT NGAY AN TOAN: nhan Q trong cua so nay hoac Ctrl+C - bot se tu
-echo     dong huy lenh + dong moi vi the + go stop tren san truoc khi thoat.
+echo   * TAT GIUA CHUNG: nhan Q trong cua so nay - bot tu dong huy lenh +
+echo     dong vi the + go stop tren san truoc khi thoat.
 echo ==============================================================================
-start http://127.0.0.1:8765
-python run_binance_testnet.py --bootstrap --bootstrap-fraction 0.01 --quote-ttl 8 --horizon 300 --seconds 5400 --mission-target 0 --max-atr-bps 20 --maker-exit-grace 8 --flatten-on-exit
 echo.
+
+echo [1/5] Kiem tra va ngat bot cu (neu co)...
+python tools\shutdown_system.py --mode testnet 2>nul
+timeout /t 3 /nobreak >nul
+
+echo [2/5] Backup du lieu...
+if not exist data\backup-truoc-phien-dai mkdir data\backup-truoc-phien-dai
+copy /Y data\testnet-settled-v2.json data\backup-truoc-phien-dai\ >nul
+copy /Y data\execution-audit.json data\backup-truoc-phien-dai\ >nul
+copy /Y data\testnet-journal.sqlite data\backup-truoc-phien-dai\ >nul
+echo       Da backup 3 file vao data\backup-truoc-phien-dai\
+echo.
+
+echo [3/5] Khoi dong phien dai 11 gio... (KHONG nhan gi, cho bot tu chay)
+start http://127.0.0.1:8765
+python run_binance_testnet.py --bootstrap --bootstrap-fraction 0.01 --quote-ttl 8 --horizon 300 --seconds 39600 --mission-target 0 --max-atr-bps 20 --maker-exit-grace 8 --flatten-on-exit
+
+echo.
+echo [4/5] Phien ket thuc (tu dong flatten). Chay audit doi soat...
+python tools\audit_execution.py
+
+echo.
+echo [5/5] Cham diem P1-P3 gop du lieu...
+python phan_tich\pool_phien.py --since 0
+
+echo.
+echo ==============================================================================
+echo   XONG. Doc ket qua P1-P3 o tren. Neu ledger_gaps khac rong - bao ngay.
+echo ==============================================================================
 pause
 goto menu
 
