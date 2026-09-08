@@ -2,23 +2,22 @@
 <html lang="vi">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GROKTOPUS · Swarm Observatory</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body>
-<header><a class="wordmark" href="/">GROK<span>TOPUS</span><small>QUANTITATIVE SWARM / 01</small></a><div class="connection"><i id="lamp"></i><span id="connection">CONNECTING</span><span id="clock">—</span></div></header>
+<header><a class="wordmark" href="/">GROK<span>TOPUS</span><small>QUANTITATIVE SWARM / 01</small></a><div class="connection"><i id="lamp"></i><span id="connection">CONNECTING</span><span id="mode" class="hero-mode">OFFLINE</span><span id="armed" class="hero-armed">LOCKED</span><span id="clock">—</span></div></header>
 <main>
-<section class="intro"><div><p class="eyebrow">EIGHT PERSPECTIVES. ONE EXECUTION GATE.</p><h1>Swarm observatory<span class="accent">.</span></h1></div><div class="mode"><span id="mode">OFFLINE</span><small id="armed">EXECUTION LOCKED</small></div></section>
 <div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
 
 <section class="metrics" aria-label="Account metrics">
-<article><p>ACCOUNT EQUITY <small>USDT</small></p><h2 id="equity">—</h2><span>Wallet <b id="wallet">—</b></span></article>
-<article><p>SESSION EQUITY CHANGE</p><h2 id="pnl">—</h2><span>Includes unrealized PnL and balance changes</span></article>
-<article><p>EXECUTED NOTIONAL <small>USDT</small></p><h2 id="volume">—</h2><span>Settled fills · fees <b id="fees">—</b></span></article>
-<article><p>CAPITAL GUARD</p><h2 id="drawdown">—</h2><span>Drawdown · Kelly <b id="kelly">WARMUP</b></span></article>
+<article><p>ACCOUNT EQUITY <small>USDT</small></p><h2 id="equity">—</h2><span>W <b id="wallet">—</b></span></article>
+<article><p>SESSION EQUITY CHANGE</p><h2 id="pnl">—</h2><span>unrealized incl.</span></article>
+<article><p>EXECUTED NOTIONAL <small>USDT</small></p><h2 id="volume">—</h2><span>fees <b id="fees">—</b></span></article>
+<article><p>CAPITAL GUARD</p><h2 id="drawdown">—</h2><span>Kelly <b id="kelly">WARMUP</b></span></article>
 </section>
 <section class="panel market-panel"><div class="panel-title"><h3>01 / MARKET MICROSTRUCTURE</h3><span>USDⓈ-M PERPETUALS</span></div><div class="table-scroll"><table><thead><tr><th>MARKET</th><th>MIDPRICE</th><th>SPREAD / BPS</th><th>OBI</th><th>VPIN</th><th>CONSENSUS</th><th>DIRECTIONAL</th><th>BLOCKED BY</th><th>STATE</th></tr></thead><tbody id="markets"><tr><td colspan="7">Waiting for live order books…</td></tr></tbody></table></div></section>
 <div class="bottom-grid"><section class="panel"><div class="panel-title"><h3>02 / POSITION PROTECTION</h3></div><div id="positions" class="positions">No active positions</div></section><section class="panel"><div class="panel-title"><h3>03 / EVENT TAPE</h3></div><ol id="events"></ol></section></div>
 <section class="panel ticker-panel"><div class="panel-title"><h3>04 / MULTI-MARKET TICKER</h3><span>MID · SPREAD · OBI · VPIN · CONSENSUS</span></div>
 <div id="ticker" class="ticker-grid"><p class="ticker-empty">Waiting for live order books…</p></div></section>
 
-<div class="workbench">
+<details class="agent-details"><summary>05-07 / AGENT VIEWS &mdash; ORGANISM · COUNCIL · EQUITY TRACE (nhan de mo rong)</summary><div class="workbench">
 <section class="organism panel"><div class="panel-title"><h3>05 / THE ORGANISM</h3><span id="core-state">STANDBY</span></div>
 <svg id="octopus" viewBox="0 0 600 430" role="img" aria-label="Eight agent voting states surrounding the execution core">
 <defs>
@@ -42,5 +41,7 @@
 <div id="equity-tip" class="chart-tip" hidden></div></div>
 <div class="chart-bottom"><span>ROLLING 600 OBSERVATIONS</span><span>ACTUAL SNAPSHOTS / NO INTERPOLATED RETURNS</span></div></section>
 </div>
+</details>
 <footer><span>LOCAL OBSERVABILITY · 127.0.0.1 · KILL SWITCH ENABLED</span><span>Heuristic research system. Results require independent validation.</span></footer>
+
 </main></body></html>

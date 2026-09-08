@@ -153,3 +153,43 @@ td{padding:7px 12px}
 #octopus{max-height:215px}
 .panel-title{padding:10px 16px}
 footer{padding:14px 0}
+
+/* ============================================================================
+   09 · One-viewport layout (2026-09-08): toan bo giam sat trong 1 man hinh.
+   Hero gop vao header; metrics 1 dong; bang nen; agent views thu gom details.
+   ========================================================================= */
+.hero-mode{color:var(--mint);font-size:11px;padding-left:18px}
+.hero-armed{color:var(--muted);font-size:9px;padding-left:10px}
+.metrics{display:flex;gap:0;padding:8px 0 10px;border-bottom:1px solid var(--line)}
+.metrics article{flex:1;padding:0 16px;border-right:1px solid var(--line)}
+.metrics article:last-child{border-right:0}
+.metrics article p{margin:0}
+.metrics h2{font-size:17px;margin:2px 0 1px;letter-spacing:-.5px}
+.metrics span{font-size:9px}
+table td{padding:4px 12px;font-size:10px}
+table th{padding:5px 12px;font-size:8px}
+.market-panel .table-scroll{max-height:none}
+.panel-title{padding:7px 16px}
+.panel-title h3{font-size:9px}
+.market-panel{margin-top:8px}
+.bottom-grid{margin-top:8px}
+.positions{padding:6px 16px;font:10px/1.6 var(--mono)}
+#events{padding:4px 16px;max-height:74px}
+#events li{padding:2px 0;font-size:9px}
+.ticker-panel{margin-top:8px}
+.tile{padding:5px 9px 4px}
+.tile .mid{font-size:11px;margin:2px 0 3px}
+.tile dl{gap:3px;margin-bottom:3px}
+.tile dt{font-size:6px}
+.tile dd{font-size:8px;margin-top:1px}
+.tile .state{margin-top:3px;font-size:6px}
+.meter{height:2px;margin-bottom:4px}
+.cbar{height:3px}
+.workbench{margin-top:0}
+#octopus{max-height:190px}
+footer{padding:8px 0;font-size:8px}
+.agent-details{border:1px solid var(--line);margin-top:8px;background:var(--panel)}
+.agent-details summary{cursor:pointer;padding:8px 16px;font:9px var(--mono);
+  letter-spacing:1.2px;color:var(--muted);list-style:none}
+.agent-details summary:hover{color:var(--mint)}
+.agent-details[open] summary{border-bottom:1px solid var(--line);color:var(--mint)}
