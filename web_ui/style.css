@@ -203,3 +203,29 @@ footer{padding:8px 0;font-size:8px}
 .organism .footnote{display:none}
 .organism .track{margin:0 16px 8px}
 .organism .panel-title{padding:6px 16px}
+
+/* ============================================================================
+   10 · Readability pass (2026-09-08): bo "tuong do", nang co chu toi thieu.
+   Blocker cung (cost/risk) moi to do; blocker thong tin chi mau mo. Bang ke
+   soc dong de mat theo hang. NET EDGE > 0 moi la loi sau phi.
+   ========================================================================= */
+td{padding:5px 12px;font-size:11px}
+table th{padding:6px 12px;font-size:9px}
+#markets tr:nth-child(even) td{background:#0b141b}
+td.blockers{max-width:460px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blk{display:inline-block;border:1px solid var(--line);color:var(--muted);
+  padding:1px 5px;margin:1px 4px 1px 0;font:9px var(--mono);letter-spacing:.4px;border-radius:2px}
+.blk.hard{color:var(--red);border-color:#8a4a52}
+.blk.more{border-style:dashed}
+td.edge{font-weight:600;white-space:nowrap}
+td.edge.pos{color:var(--buy)}
+td.edge.neg{color:var(--hold)}
+td.edge.unknown{color:var(--muted);font-weight:400}
+.tile .pair{font-size:9px}
+.tile .mid{font-size:14px;margin:3px 0 4px}
+.tile dt{font-size:9px}
+.tile dd{font-size:11px}
+.tile .chip{font-size:9px}
+.tile .state{font-size:9px}
+#events li{font-size:10px}
+.positions{font-size:11px}

@@ -231,21 +231,40 @@ function render(s) {
   renderTicker(markets);
   const tbody = byId('markets');
   tbody.replaceChildren();
+  /* Hard blockers (cost/risk — hành động được) to đỏ; informational blockers
+     (warmup/low-*) chỉ xám nhạt: bảng không còn là "bức tường đỏ". */
+  const HARD_BLOCKERS = new Set(['STALE_DATA', 'TIGHT_SPREAD', 'WIDE_SPREAD',
+    'RISK_OR_FEED_GATE', 'VPIN_TOXIC', 'HALTED']);
   for (const m of markets) {
     const tr = document.createElement('tr');
     const saturated = finite(m.saturation) && m.saturation > 0.5;
+    const blockers = m.reasons ?? m.blockers ?? [];
+    const netEdge = finite(m.edge_bps) && finite(m.cost_bps) ? m.edge_bps - m.cost_bps : null;
     const cells = [m.symbol, number(m.mid), number(m.spread), number(m.obi, 3),
       finite(m.vpin) ? number(m.vpin, 3) + (saturated ? ' SAT' : '') : 'WARMUP',
       number(clamp01(m.score) * 100, 1) + '%', number(clamp01(m.directional) * 100, 1) + '%',
-      (m.reasons ?? m.blockers ?? []).join(', ') || '—', m.status];
+      netEdge === null ? '—' : (netEdge >= 0 ? '+' : '') + number(netEdge, 1), m.status];
     cells.forEach((value, i) => {
-      const td = el('td', i === 4 && saturated ? 'saturated' : i === 7 && (m.blockers ?? []).length ? 'blocked' : null, value);
-      if (i === 7) td.title = `${m.why ?? ''} | ATR ${number(m.atr_bps)}bps | edge ${number(m.edge_bps)} / cost ${number(m.cost_bps)}bps | VPIN buckets ${m.vpin_buckets ?? 0}`;
+      let td;
+      if (i === 7) {
+        td = el('td', 'edge ' + (netEdge === null ? 'unknown' : netEdge >= 0 ? 'pos' : 'neg'), value);
+        td.title = `${m.why ?? ''} | Hòa vốn sau phí: edge ${number(m.edge_bps)} − cost ${number(m.cost_bps)} bps | ATR ${number(m.atr_bps)}bps | VPIN buckets ${m.vpin_buckets ?? 0}`;
+      } else if (i === 8) {
+        td = el('td', 'blockers');
+        if (blockers.length) {
+          for (const b of blockers.slice(0, 2))
+            td.append(el('span', 'blk' + (HARD_BLOCKERS.has(b) ? ' hard' : ''), b));
+          if (blockers.length > 2) td.append(el('span', 'blk more', '+' + (blockers.length - 2)));
+          td.title = blockers.join(' · ');
+        } else td.textContent = '—';
+      } else {
+        td = el('td', i === 4 && saturated ? 'saturated' : null, value);
+      }
       tr.append(td);
     });
     tbody.append(tr);
   }
-  if (!markets.length) { const tr = document.createElement('tr'); const td = el('td', null, 'Waiting for live order books…'); td.colSpan = 9; tr.append(td); tbody.append(tr); }
+  if (!markets.length) { const tr = document.createElement('tr'); const td = el('td', null, 'Waiting for live order books…'); td.colSpan = 10; tr.append(td); tbody.append(tr); }
 
   renderEquity(s.history ?? []);
 
