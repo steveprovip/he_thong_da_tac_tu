@@ -2,12 +2,12 @@
   "environment": "testnet",
   "rest": "https://demo-fapi.binance.com",
   "ws": "wss://demo-fstream.binance.com",
-  "time_offset_ms": 351,
+  "time_offset_ms": -21233,
   "trading_symbols": 601,
   "account": {
-    "totalWalletBalance": "4930.01870706",
-    "totalMarginBalance": "4930.01870706",
-    "availableBalance": "4930.01870706",
+    "totalWalletBalance": "4924.15533060",
+    "totalMarginBalance": "4924.15533060",
+    "availableBalance": "4924.15533060",
     "canTrade": null
   },
   "open_positions": [],
