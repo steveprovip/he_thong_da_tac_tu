@@ -29,6 +29,8 @@ from live.flatten import flatten_venue
 from live.futures_streams import PartialBookTracker, consume_stream, stream_url, user_stream
 from simulation.paper_engine import PaperEngine
 
+POLICY_VERSION = 'strict-2026-09-09'
+
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT']
 DIRECTIONAL = ('NORO', 'LUMEN', 'TIDAL')
 # Calibrated buckets fill slower, so report VPIN from a partial window once it is meaningful.
@@ -146,12 +148,14 @@ class Runtime:
         self.symbols = args.symbols
         self.stop = asyncio.Event()
         self.alpha = {s: AlphaEngine(min_buckets=VPIN_MIN_BUCKETS) for s in self.symbols}
-        # Two-tier policy (explicit owner decision): the demo venue trades
-        # actively so the pipeline can be observed end-to-end; mainnet keeps the
-        # survival gates. CLI flags always override either tier.
+        # Single policy tier (owner decision 2026-09-09): the demo venue must
+        # prove the SAME gates that would guard real money. A weaker testnet
+        # tier manufactures fills that cannot survive the live hurdle, so the
+        # observed population no longer describes the target policy.
+        # Research overrides remain available as explicit CLI flags, and every
+        # intent journals the policy that authorized it (see manage_positions).
         self.simulated = settings.mode == 'testnet'
-        tier = (dict(edge=0.6, vpin=0.65, threshold=0.55, veto=0.45) if self.simulated
-                else dict(edge=1.8, vpin=0.65, threshold=0.768, veto=0.70))
+        tier = dict(edge=1.8, vpin=0.65, threshold=0.768, veto=0.70)
         # Bootstrap changes sample-size handling only; it never weakens risk gates.
         self.simulated_flow = settings.mode == 'testnet' and bool(getattr(args, 'bootstrap', False))
         self._vpin_override = getattr(args, 'toxic_vpin', None)
@@ -161,6 +165,8 @@ class Runtime:
         self.threshold = args.threshold if getattr(args, 'threshold', None) is not None else tier['threshold']
         self.veto_threshold = args.veto_threshold if getattr(args, 'veto_threshold', None) is not None else tier['veto']
         self.trend_floor = self.threshold
+        # Precondition audit: research overrides must stay explicit. A silent
+        # default drift here would recreate the two-tier population split.
         self.bootstrap_fraction = getattr(args, 'bootstrap_fraction', None) or 0.01
         self.maker_exit_grace = float(getattr(args, 'maker_exit_grace', 8.0) or 0.0)
         self.min_atr_bps = float(getattr(args, 'min_atr_bps', 0.0) or 0.0)
@@ -429,6 +435,17 @@ class Runtime:
                 self.session_fees += sum(float(t['commission']) for t in relevant)
                 self.telemetry.event(f'{symbol}: closed net {net:+.4f} USDT')
 
+    def policy_snapshot(self):
+        """Policy/version stamp journaled on every intent (Astra precondition).
+
+        Lets future analysis separate populations by the gates that produced
+        them instead of mixing tiers into one ledger.
+        """
+        return {'policy': 'STRICT', 'policy_version': POLICY_VERSION,
+                'edge_multiple': self.edge_multiple, 'toxic_vpin': self.toxic_vpin,
+                'threshold': self.threshold, 'veto_threshold': self.veto_threshold,
+                'trend_floor': self.trend_floor}
+
     async def manage_positions(self, now, features=None):
         features = features or {s: a.features() for s, a in self.alpha.items()}
         if not self.paper and self.gateway is not None and self.gateway.maker_exits:
@@ -653,6 +670,10 @@ class Runtime:
             if size.quantity == '0':
                 rows[-1]['status'] = size.reason
                 continue
+            policy = {'policy': 'STRICT', 'policy_version': POLICY_VERSION,
+                      'edge_multiple': self.edge_multiple, 'toxic_vpin': self.toxic_vpin,
+                      'threshold': self.threshold, 'veto_threshold': self.veto_threshold,
+                      'trend_floor': self.trend_floor}
             intent = Intent(symbol, decision.side, size.quantity, format(price, 'f'),
                             format(quantize(plan.stop, filters.tick), 'f'),
                             format(quantize(plan.take_profit, filters.tick), 'f'), self.args.horizon, self.settings.mode)
@@ -676,6 +697,11 @@ class Runtime:
                 self.used_margin += size.notional
                 self.available -= size.notional
                 self.telemetry.event(f'{symbol} {intent.side} GTX {size.quantity} @ {price}')
+                if self.gateway is not None and hasattr(self.gateway, 'journal'):
+                    try:
+                        self.gateway.journal.write('POLICY_STAMP', {'client_id': result, **policy})
+                    except Exception:
+                        pass
         # Funding opportunities remain research-only until a hedged strategy and
         # independently validated authorization policy exist.
         positions = [{'symbol': s, 'side': o.intent.side, 'filled': o.filled, 'entry': float(o.intent.price),
@@ -826,13 +852,13 @@ def arguments(mode, argv=None):
     parser.add_argument('--market-data', choices=('mainnet', 'testnet'), default=None,
                         help='Paper feed source; default mainnet. Exchange execution must use its own venue.')
     parser.add_argument('--edge-multiple', type=float, default=None,
-                        help='Edge/cost screening hurdle; default 1.8 live, 0.6 simulated demo')
+                        help='Edge/cost screening hurdle; default 1.8 (single strict tier)')
     parser.add_argument('--toxic-vpin', type=float, default=None,
-                        help='Absolute VPIN veto floor; default .65 everywhere (simulated demo extends it above the rolling baseline)')
+                        help='Absolute VPIN veto floor; default .65 everywhere')
     parser.add_argument('--threshold', type=float, default=None,
-                        help='Consensus threshold; default .768 live, .55 simulated demo')
+                        help='Consensus threshold; default .768 (single strict tier)')
     parser.add_argument('--veto-threshold', type=float, default=None,
-                        help='Consensus veto threshold; default .70 live, .45 simulated demo')
+                        help='Consensus veto threshold; default .70 (single strict tier)')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
     parser.add_argument('--no-lab', action='store_true', help='Disable the counterfactual signal recorder')
     parser.add_argument('--seed-lab', dest='seed_lab', action='store_true', default=None,

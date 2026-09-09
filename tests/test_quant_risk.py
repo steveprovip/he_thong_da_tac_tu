@@ -104,8 +104,9 @@ def test_unknown_flags_are_rejected():
 
 
 def test_two_tier_policy_live_strict_simulated_active():
-    """Owner-approved two-tier policy: live keeps survival gates untouched; the
-    simulated demo venue trades actively so the full pipeline can be observed."""
+    """Single strict tier everywhere (2026-09-09): the demo venue must prove
+    the same gates that guard real money. --bootstrap only changes sizing,
+    never the risk gates. Explicit CLI flags remain for research overrides."""
     from core.web_ui_server import Telemetry
     from config.settings import Settings
     from core.runtime import Runtime
@@ -114,9 +115,9 @@ def test_two_tier_policy_live_strict_simulated_active():
     assert live.edge_multiple == 1.8 and live.toxic_vpin == .65 and live.trend_floor == .768
     sim = Runtime(Settings.load('testnet'), arguments('testnet', ['--bootstrap']), Telemetry())
     assert sim.simulated_flow
-    assert sim.edge_multiple == .6 and sim.trend_floor == .55
-    assert sim.swarm.consensus.threshold_for('CHOP') == pytest.approx(.55)
-    assert sim.swarm.consensus.threshold_for('TREND') == pytest.approx(.55)
+    assert sim.edge_multiple == 1.8 and sim.trend_floor == .768
+    assert sim.swarm.consensus.threshold_for('CHOP') == pytest.approx(.768)
+    assert sim.swarm.consensus.threshold_for('TREND') == pytest.approx(.768)
     override = Runtime(Settings.load('testnet'),
                        arguments('testnet', ['--bootstrap', '--edge-multiple', '1.2']), Telemetry())
     assert override.edge_multiple == 1.2
