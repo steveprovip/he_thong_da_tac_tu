@@ -57,8 +57,31 @@ def make_server(telemetry, host='127.0.0.1', port=8765):
                 return
             path = self.path.split('?')[0]
             if path == '/api/state':
-                payload = json.dumps(telemetry.snapshot(), allow_nan=False).encode()
-                content_type = 'application/json'
+                snap = telemetry.snapshot()
+                if snap.get('status') == 'Waiting for engine' and snap.get('equity') is None:
+                    try:
+                        import urllib.request
+                        with urllib.request.urlopen('http://127.0.0.1:8766/api/state', timeout=0.3) as resp:
+                            payload = resp.read()
+                            content_type = 'application/json'
+                    except Exception:
+                        state_file = ROOT / 'data' / 'telemetry_state.json'
+                        if state_file.exists():
+                            try:
+                                file_data = json.loads(state_file.read_text(encoding='utf-8'))
+                                file_data.setdefault('shutdown', snap.get('shutdown', False))
+                                file_data.setdefault('shutdown_reason', snap.get('shutdown_reason', ''))
+                                payload = json.dumps(file_data, allow_nan=False).encode()
+                                content_type = 'application/json'
+                            except Exception:
+                                payload = json.dumps(snap, allow_nan=False).encode()
+                                content_type = 'application/json'
+                        else:
+                            payload = json.dumps(snap, allow_nan=False).encode()
+                            content_type = 'application/json'
+                else:
+                    payload = json.dumps(snap, allow_nan=False).encode()
+                    content_type = 'application/json'
             elif path in assets:
                 file, content_type = assets[path]
                 payload = (ROOT/'web_ui'/file).read_bytes()
@@ -77,6 +100,11 @@ def make_server(telemetry, host='127.0.0.1', port=8765):
             self.wfile.write(payload)
 
         def do_POST(self):
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                raw_body = self.rfile.read(length) if 0 < length <= 65536 else b''
+            except Exception:
+                raw_body = b''
             if self.headers.get('Host', '').split(':')[0] not in ('127.0.0.1', 'localhost'):
                 self.send_error(403)
                 return
@@ -84,14 +112,10 @@ def make_server(telemetry, host='127.0.0.1', port=8765):
             if path != '/api/shutdown':
                 self.send_error(404)
                 return
-            try:
-                length = int(self.headers.get('Content-Length', '0'))
-            except ValueError:
-                length = 0
             body = {}
-            if 0 < length <= 1024:
+            if raw_body and len(raw_body) <= 1024:
                 try:
-                    body = json.loads(self.rfile.read(length) or b'{}')
+                    body = json.loads(raw_body)
                 except ValueError:
                     body = {}
             if not isinstance(body, dict) or body.get('confirm') != 'SHUTDOWN':

@@ -1,0 +1,37 @@
+Role: Quant researcher. RESEARCH ONLY, NO CODE, NO EDIT, NO CMDS. <800 tokens, VN, table only, no basics.
+Ctx: GROKTOPUS futures-only Binance USD-M. Scalping 5phut KILLED (102 trips, net -6.72 USDT, edge -12.6bps KTC[-15.5,-9.7]). Chuyen sang FUNDING-CARRY theo He-Manela-Ross 2024 + Gupta-Polson 2026.
+Real 10/09 (soi_funding.py, 900 perp, fee MEASURED 6bps=2in+4out): VTHO -162.5bps/8h (net +156.5, ~17100%/yr), IOST -74.8, NEWT -64.2, CXMT -46.1, LA -38.6, URNM +34.2, TEAM +30.3. Tuc la short coin funding am that manh, hoac long coin funding duong.
+Code co san: core/funding_carry.py (FundingCarry+CarryConfig: fee 6.0bps, min_rate 5bps/8h, max_spread 15, stop 2xATR, horizon toi print+120s buffer, single-leg funded directional KHONG PHAI hedge that), runtime.maybe_carry READ-ONLY, phan_tich/carry_lab.py (forecast/settle/UNMATCHED), phan_tich/soi_funding.py, 272 tests pass. Gateway: 1 active/symbol, GTX post-only entry, STOP_MARKET closePosition, PositionSizer bootstrap 0.25 kelly, DrawdownBrake.
+Binance mechanics: rate doi moi interval (8h mac dinh, 1 so symbol 4h/1h); cap ±0.3%/2% tuy symbol; rate duong=short nhan; ky ke tiep khong bao gom rate hien tai.
+Task: spec nang cap FundingCarry thanh carry-harvester don gian, AN TOAN, duoc phep testnet trong phien nay. Tra bang | KL | So | File:Func | Pseudo 2d | Test | Kill |:
+R1: Top-N coin theo |rate| NHUNG loc them: volume>=X, spread<=Y, OI>=Z (chong coin ma cua), max 3 pos dong thoi, notional <=1% equity/coin. N va X/Y/Z nghia la bao nhieu hop ly?
+R2: Timing entry: vao truoc print bao lau? Neu rate flip giua luc vao va print thi sao? Co nen auto-exit khi rate dao dau?
+R3: Risk squeeze: funding am cuc dai (VTHO -162) nghia la short rat dong, gia co the squeeze. Dung stop 2xATR duoc khong, hay can co che khac (max loss/pos, kill-switch theo ngay)?
+R4: Exit: giu qua print roi thoat gap, hay giu nhieu ky neu rate van cao? Chi phi nhap lai 6bps moi ky thi net con bao nhieu khi chi giu 1 ky vs 3 ky?
+R5: Con duong testnet: testnet co funding that khong, hay chi mainnet co? Neu testnet khong co, thu nghiem shadow voi gia mainnet thi do duoc gi va khong do duoc gi?
+Kill-criteria tong: 5 phien lien tiep net_H thu duoc < 50% forecast => dung, bao cao. Cam: ha ZEPHR, ha 76.8, mo hedge gia, vuot 1% equity/coin, goi single-leg la "delta-neutral".
+R6: Envelope sizing theo Gupta-Polson (2026): "stochastic volatility moves the basis only through the carry" — dung y nay de scale notional theo vol regime cu the nao? Cho cong thuc.
+R7: Funding 1h/4h symbol: uu tien interval ngan vi lai quay nhanh, hay interval dai vi it phi re-entry? Tinh diem hoa.
+R8: Chong coin ma cua: nen lay data nao tu /fapi/v1/openInterest + /futures/data (taker buy/sell) de chan pump-dump? Spec 2 dong.
+R9: Chuan do net: thiet ke table carry_cycle voi net_H do tu settlement FUNDING_FEE, hien thi lower95 va chi yeu cau mo live khi lower95 > 0 va stress/hedge dat. Spec schema 2 dong.
+R10: Stress: VTHO funding +200 nhung gia +30% trong 8h: kill-switch theo ngay hoac max-loss/pos cu the nao hop ly? Tinh stop va kill-switch theo drawdown equity.
+R11: Loc them: voi 5 coin VTHO/IOST/NEWT/CXMT/LA, lay them volume 24h + OI de chan ma cua. Spec endpoint va JSON parse 2 dong.
+R12: Giu vi the qua nhieu funding print co tang probability rate flip? Neu co thi dinh ky danh gia lai coin nao, chi phi re-entry va lai ky moi. Tinh EV giu 3 ky vs 1 ky.
+R13: Nang cap FundingCarry.plan() thanh symbol-specific: rate_flip auto-exit, volume floor, OI floor, spread cap theo tung coin. Spec fields va logic 2 dong.
+R14: Neu carry an lien tuc 5-10 phien net_H > 80% forecast: protocol tang notional 1% -> 2% -> 3% the nao? Tang dan hay tang khi co bang chung? Liet ke dieu kien nang cap.
+R15: Basis trade thay the: spot long + perp short can tai khoan spot (he khong co). Neu khong hedge duoc thi chi single-leg co stop. Ghi ro gioi han trong docstring de tranh nham. Spec 2 dong.
+R16: Neu carry thanh cong, co nen mo rong lay funding da san (Bybit, OKX)? Can ket noi API them hay lay tu Binance du?
+R17: Nguyen nhan funding rate flip dot ngot: event nao lam rate dao dau trong vai gio (news, delist, whale) va cach chan truoc? Spec 2 dong.
+R18: Ty le that bai cua carry tren desk chuyen nghiep: ty le squeeze/rate-flip/liquidation. Ket luan thuc te tu quant fund. Liet ke nguon.
+R19: Neu 5 phien net_H < 50% forecast: nguyen nhan pho bien (spread re-entry, rate flip, squeeze, funding bi tinh khac) va cach khac phuc. Bang 2 dong/nguyen nhan.
+R20: Nang cap soi_funding.py lay them volume, OI, spread, taker flow trong 1 lan goi API (khong goi 3 lan). Spec endpoint 2 dong.
+R21: Thu funding tu coin funding AM (short nhan) vs DƯƠNG (long nhan): co can doi code hay chi truyen -rate? 2 dong.
+R22: Kill-switch toan cuc: neu tong drawdown equity > 5% trong 24h thi dong tat ca vi the carry va tat bot. Spec logic 2 dong.
+R23: Thanh khoan: coin funding cuc doan thanh khoan kem. Cap notional theo % volume 24h (0.5%?) hay theo OI? Cong thuc cu the.
+R24: Settle FUNDING_FEE co lan voi fee thuong trong userTrades khong? Spec cach doi soat 2 dong.
+R25: Interval 1h/4h/8h: interval ngan = chot lai nhanh nhung cung chot lo nhanh. Nen uu tien interval nao? Bang so sanh 2 dong.
+R26: Mo rong da san: neu carry thanh cong, trien khai he tuong tu tren Bybit/OKX de lay funding da san? Can code lai hay chi config? 2 dong.
+R27: Coin delist: delist lam funding khong con, vi the bi don. Chan coin co thong bao delist (cach check API?), hoac gioi han thoi gian giu 1-2 ngay. Spec 2 dong.
+R28: Coin moi listing < 30 ngay thuong funding cuc doan nhung gia cuc bien dong. Dung listing date tu /fapi/v1/exchangeInfo de chan? Spec 2 dong.
+R29: Binance auto-deleveraging (ADL): khi ADL kich hoat co the dong vi the. Chan coin OI cuc dai, hoac danh dau priority de tranh ADL? 2 dong.
+R30: Tong ket spec cuoi: neu muon carry-harvester hoan chinh, danh sach file sua va thu tu uu tien la gi? Bang 1 dong/file.

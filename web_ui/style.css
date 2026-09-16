@@ -229,3 +229,90 @@ td.edge.unknown{color:var(--muted);font-weight:400}
 .tile .state{font-size:9px}
 #events li{font-size:10px}
 .positions{font-size:11px}
+
+/* --- 11 · Shadow Branch Benchmark styling -------------------------------- */
+.branch-panel{margin:14px 0 0}
+.branch-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px;background:#081116}
+.branch-card{background:#0e1a22;border:1px solid #1a2a34;border-radius:6px;padding:12px 14px;transition:all .2s}
+.branch-card.lead{border-color:#00e676;box-shadow:inset 0 0 0 1px #00e67644,0 2px 10px #00e67618}
+.branch-card.chop{border-color:#ff525288}
+.branch-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #1a2a34}
+.branch-name{font:bold 12px var(--mono);color:#fff;letter-spacing:.4px}
+.branch-badge{font:8px var(--mono);padding:2px 6px;border-radius:3px;letter-spacing:.6px}
+.branch-badge.lead{background:#00e67622;color:#00e676;border:1px solid #00e67655}
+.branch-badge.warn{background:#ff910022;color:#ff9100;border:1px solid #ff910055}
+.branch-badge.chop{background:#ff525222;color:#ff5252;border:1px solid #ff525255}
+.branch-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font:11px var(--mono);margin:0}
+.bm-item{display:flex;flex-direction:column;gap:1px}
+.bm-item dt{color:#5a7382;font-size:8px;letter-spacing:.7px;text-transform:uppercase}
+.bm-item dd{margin:0;font-size:12px;font-weight:600}
+.bm-item dd.pos{color:#00e676}
+.bm-item dd.neg{color:#ff5252}
+.bm-item dd.zero{color:#90a4ae}
+@media(max-width:900px){.branch-grid{grid-template-columns:1fr}}
+
+/* ============================================================================
+   12 · Shadow benchmark readout + heartbeat (2026-09-15)
+   Three branches on identical entries: the only thing being compared is the
+   stop rule, so every number gets a bar on a fixed scale. Bars share a domain
+   across cards, which is what makes them comparable at a glance; the numbers
+   stay next to them because a bar alone cannot be read to two decimals.
+   ========================================================================= */
+.branch-grid{padding:10px;gap:10px}
+.branch-card{padding:10px 12px}
+.branch-card.lead{border-color:var(--buy);box-shadow:inset 0 0 0 1px #00ffa333,0 0 18px -8px #00ffa3}
+.branch-card.chop{border-color:#ff525288;background:#170f12}
+.branch-name{font-size:10px}
+.branch-metrics{grid-template-columns:1fr;gap:9px}
+.bm-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.bm-item dt{font-size:9px}
+.bm-item dd{font-size:12px;font-variant-numeric:tabular-nums}
+.bm-note{display:block;margin-top:3px;font:8px var(--mono);color:#5a7382;letter-spacing:.3px}
+
+/* Bars: fixed domains so a short bar means a small number, on every card. */
+.bar{position:relative;height:6px;margin-top:5px;background:#101e26;
+  border:1px solid #1a2a34;overflow:hidden}
+.bar b{position:absolute;top:0;height:100%;transition:width .25s ease}
+.bar.diverging .axis{position:absolute;left:50%;top:-2px;width:1px;height:10px;
+  background:#3c525c;z-index:2}
+.bar b.pos{background:var(--buy)}
+.bar b.neg{background:var(--veto)}
+.bar.stacked b{position:relative;display:inline-block;height:100%;vertical-align:top}
+.bar.stacked b.tp{background:var(--buy)}
+.bar.stacked b.protect{background:var(--amber)}
+.bar.stacked b.sl{background:var(--veto)}
+.bar.stacked b.empty{width:100%;background:#16242c}
+.bar.rate b{left:0}
+.bar.rate b.ok{background:#2f5d52}
+.bar.rate b.warn{background:var(--amber)}
+.bar.rate b.danger{background:var(--veto)}
+.bar.rate .gate{position:absolute;top:-2px;width:1px;height:10px;background:var(--red);z-index:2}
+.verdict{font:9px var(--mono);letter-spacing:.8px;color:var(--muted)}
+.verdict.lead{color:var(--buy)}
+
+/* Heartbeat: one beat per new bid, green up / red down. Connection state is a
+   separate lamp — a connected feed that has stopped ticking is the failure
+   this is here to make visible. */
+.tag.tick{display:inline-flex;align-items:center;gap:6px;border-color:#2c4049}
+.tag.tick b{font:10px var(--mono);font-weight:400;color:var(--text);
+  font-variant-numeric:tabular-nums;min-width:52px}
+#tick-dot{width:6px;height:6px;border-radius:50%;background:#3c525c;flex:none}
+#tick-dot.beat{animation:tickbeat .5s ease-out}
+#tick-dot.up{background:var(--buy)}
+#tick-dot.down{background:var(--veto)}
+@keyframes tickbeat{0%{transform:scale(1);box-shadow:0 0 0 0 currentColor;opacity:1}
+  50%{transform:scale(1.9)}100%{transform:scale(1);box-shadow:0 0 0 7px transparent;opacity:.75}}
+
+/* Equity trace against the two levels that actually bound this run. */
+#equity-chart .guide{stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:3 4}
+#equity-chart .guide.start{stroke:#5f828b}
+#equity-chart .guide.kill{stroke:var(--veto);opacity:.75}
+.chart-bottom .key{display:inline-block;width:9px;height:0;border-top:1px dashed #5f828b;
+  margin:0 5px 3px 0;vertical-align:middle}
+.chart-bottom .key.kill{border-top-color:var(--veto)}
+#equity-range.pos{color:var(--buy)}
+#equity-range.neg{color:var(--veto)}
+#equity-range.zero{color:var(--amber)}
+
+@media(max-width:1100px){.branch-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){#tick-dot.beat{animation:none}.bar b{transition:none}}

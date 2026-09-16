@@ -1,28 +1,13 @@
-"""Funding-carry engine: harvest extreme funding with deadline-bound protection.
+"""REST-only spot/perp planning plus the legacy read-only research interface.
 
-Research basis: He, Manela, Ross & von Wachter, "Fundamentals of Perpetual
-Futures" (arXiv:2212.06888). Perpetual prices deviate from no-arbitrage
-value; the funding payment compensates the side that is short the gap,
-deviations are large and co-move across currencies, and the implied carry
-strategy earns high Sharpe ratios out of sample.
-
-A futures-only account has no spot leg, so a textbook delta-neutral carry is
-impossible here. A carry position in this system is therefore an explicitly
-funded directional position whose expected edge IS the funding payment:
-
-  edge_bps(8h) = |funding_rate_bps| - (roundtrip_fee_bps + half_spread_exit)
-  trade only if edge_bps >= edge_multiple * cost_bps   (same hurdle as ZEPHR)
-
-The position is wrapped in the identical safety envelope as every swarm
-intent: GTX passive entry, on-exchange STOP_MARKET protection, a deadline
-exit shortly after the funding print (so the payment is actually collected),
-PositionSizer sizing (bootstrap cap + fractional Kelly), DrawdownBrake and
-the VESKA one-time HMAC token. Carry authorization is fee-hurdle based, not
-vote based: the swarm has no opinion on funding, so a synthetic full-score
-decision is issued locally and the ordinary token/execution gates still apply.
+FundingCarry/CarryConfig are retained for existing research tests. Production
+carry uses SpotPerpCarryPlan and carry_votes below; it never authorizes the
+legacy single-leg plan. Basis is spot minus perp, in USDT per coin.
 """
 from dataclasses import dataclass
 import math
+from core.models import dec
+from core.consensus_engine import ConsensusEngine, Vote
 
 
 INTERVALS_PER_YEAR = 3 * 365  # funding prints every 8 hours
@@ -30,7 +15,10 @@ INTERVALS_PER_YEAR = 3 * 365  # funding prints every 8 hours
 
 @dataclass(frozen=True)
 class CarryConfig:
-    roundtrip_fee_bps: float = 7.0    # maker entry 2 bps + taker exit 5 bps
+    # MEASURED baseline 6.0 bps (2 maker entry + 4 taker exit, reconciled vs
+    # /fapi/v1/userTrades, see core/signal_lab.py). Hedge legs need their own
+    # full fee added — never assume total carry cost = 6.
+    roundtrip_fee_bps: float = 6.0    # was 7.0 (2+5); corrected Q5 handoff
     edge_multiple: float = 1.8        # same fee hurdle the swarm gate uses
     min_rate_bps: float = 5.0         # ignore noise below this per interval
     max_spread_bps: float = 15.0      # entry book must be tight enough to exit
@@ -139,3 +127,120 @@ class FundingCarry:
         reason = f'FUNDING CARRY {rate_bps:+.1f}bps/8h'
         return CarryPlan(symbol, side, rate_bps, cost_bps, edge_bps,
                          stop, take_profit, horizon, reason), 'AUTHORIZED'
+
+
+@dataclass(frozen=True)
+class CarrySnapshot:
+    symbol: str
+    spot_bid: float
+    spot_ask: float
+    perp_bid: float
+    perp_ask: float
+    rate: float
+    interval_hours: int
+    next_funding: float
+    oi_usdt: float
+    observed_at: float
+    funding_history: tuple
+    spot_fee_bps: float = 10.0
+    margin_ratio: float = 0.0
+    bnb_ok: bool = False
+    capacity_ok: bool = False
+    accounts_verified: bool = False
+    futures_fee_bps: float = 6.0
+    futures_taker_fee_bps: float = 4.0
+
+    @property
+    def basis_fraction(self):
+        spot = (self.spot_bid + self.spot_ask) / 2
+        perp = (self.perp_bid + self.perp_ask) / 2
+        return (spot - perp) / spot
+
+
+@dataclass(frozen=True)
+class SpotPerpCarryPlan:
+    symbol: str
+    apr: float
+    horizon_days: float
+    gross_bps: float
+    cost_bps: float
+    net_bps: float
+    basis_fraction: float
+    projected_rate: float
+
+
+def plan_spot_perp(snapshot, now, horizon_days=7.0, slippage_bps=2.0):
+    s = snapshot
+    values = (s.spot_bid, s.spot_ask, s.perp_bid, s.perp_ask, s.rate, s.next_funding,
+              s.oi_usdt, s.observed_at, s.spot_fee_bps, s.futures_fee_bps, horizon_days, slippage_bps)
+    if not all(math.isfinite(x) for x in values):
+        return None, 'NON_FINITE_DATA'
+    if (min(s.spot_bid, s.perp_bid) <= 0 or s.spot_ask < s.spot_bid or s.perp_ask < s.perp_bid
+            or slippage_bps < 0 or s.spot_fee_bps < 0 or s.futures_fee_bps < 0):
+        return None, 'INVALID_QUOTES_OR_COST'
+    if not 0 <= now - s.observed_at < 60 or s.next_funding <= now:
+        return None, 'STALE_DATA'
+    if s.interval_hours not in (1, 4, 8):
+        return None, 'UNKNOWN_FUNDING_INTERVAL'
+    if not 7 <= horizon_days <= 30:
+        return None, 'HORIZON_OUTSIDE_7_30_DAYS'
+    if abs(s.basis_fraction) > .015:
+        return None, 'RUNE_BASIS'
+    spread = (s.spot_ask - s.spot_bid) / ((s.spot_bid + s.spot_ask) / 2) * 10000
+    if spread >= 3:
+        return None, 'SPOT_SPREAD'
+    if s.oi_usdt <= 20_000_000:
+        return None, 'INSUFFICIENT_OI'
+    if len(s.funding_history) < 21 or not all(math.isfinite(r) for r in s.funding_history):
+        return None, 'INSUFFICIENT_FUNDING_HISTORY'
+    rate = min(s.rate, sum(s.funding_history) / len(s.funding_history))
+    apr = rate * 24 / s.interval_hours * 365
+    if apr <= .15:
+        return None, 'APR_BELOW_15_PERCENT'
+    settlements = max(0, 1 + int((now + horizon_days * 86400 - s.next_funding) // (s.interval_hours * 3600)))
+    gross = rate * settlements * 10000
+    perp_spread = (s.perp_ask - s.perp_bid) / ((s.perp_bid + s.perp_ask) / 2) * 10000
+    cost = max(6, s.futures_fee_bps) + 2 * s.spot_fee_bps + spread + perp_spread / 2 + slippage_bps
+    net = gross - cost
+    if net <= 2 * cost:
+        return None, 'ZEPHR_NET_HURDLE'
+    return SpotPerpCarryPlan(s.symbol, apr, horizon_days, gross, cost, net, s.basis_fraction, rate), 'ELIGIBLE'
+
+
+def carry_votes(snapshot, plan, *, gateway_ready, exits_ready, now):
+    """Eight auditable suitability checks; no invented independent alpha scores."""
+    s = snapshot
+    basis_ok = min(s.spot_bid, s.perp_bid) > 0 and abs(s.basis_fraction) <= .015
+    history_ok = (len(s.funding_history) >= 21 and
+                  all(math.isfinite(r) for r in s.funding_history) and
+                  sum(r > 0 for r in s.funding_history) / len(s.funding_history) >= .8)
+    rune_ok = (basis_ok and s.accounts_verified and s.bnb_ok and
+               math.isfinite(s.margin_ratio) and 0 <= s.margin_ratio <= .65)
+    checks = [
+        ('NORO', basis_ok and plan is not None, 'Hedged basis and projected carry'),
+        ('LUMEN', history_ok and 0 <= now - s.observed_at < 60, 'Settled funding persistence and freshness'),
+        ('TIDAL', math.isfinite(s.oi_usdt) and s.oi_usdt > 20_000_000, 'Open-interest capacity'),
+        ('ZEPHR', plan is not None and plan.net_bps > 2 * plan.cost_bps, 'Both-leg net/cost > 2'),
+        ('RUNE', rune_ok, 'Basis <=1.5%, BNB reserve, verified isolated margin <=65%'),
+        ('OKAPI', s.accounts_verified and s.capacity_ok, 'Spot cash plus isolated futures margin'),
+        ('MARIN', exits_ready, 'Both-leg exit and exchange protection ready'),
+        ('VESKA', gateway_ready, 'Both clients and private streams ready'),
+    ]
+    votes = [Vote(name, 'SELL' if ok else 'HOLD', float(bool(ok)), reason,
+                  veto=not ok and name in ('ZEPHR', 'RUNE', 'OKAPI', 'MARIN', 'VESKA'))
+             for name, ok, reason in checks]
+    policy = ConsensusEngine(threshold=.768, veto_threshold=.70, trend_floor=.768)
+    return policy.evaluate(votes, regime='NORMAL'), votes
+
+
+def isolated_margin_ratio(position):
+    """Maintenance / (isolated wallet + unrealized PnL), never account-wide equity."""
+    try:
+        wallet = dec(position['isolatedWallet'])
+        pnl = dec(position.get('unRealizedProfit', position.get('unrealizedProfit')))
+        maintenance = dec(position['maintMargin'])
+        if wallet + pnl <= 0 or maintenance < 0:
+            return math.inf
+        return float(maintenance / (wallet + pnl))
+    except (KeyError, TypeError, ValueError):
+        return math.inf

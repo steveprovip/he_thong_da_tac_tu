@@ -71,4 +71,9 @@ mau/
 data/npz/ 
 data/raw/ 
 data/l2/ 
-cleanup-msg.tmp 
+data/*.json
+data/*.pid
+data/_probe
+data/carry/
+data/carry-scan/
+cleanup-msg.tmp

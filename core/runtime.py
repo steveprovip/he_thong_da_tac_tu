@@ -939,6 +939,11 @@ def arguments(mode, argv=None):
 
 
 def main(mode, argv=None):
+    import sys
+    command = list(sys.argv[1:] if argv is None else argv)
+    if '--carry' in command:
+        from core.carry_runtime import main as carry_main
+        return carry_main(command)
     args = arguments(mode, argv)
     settings = Settings.load(mode, args.arm)
     if mode == 'paper' and args.market_data == 'mainnet':
@@ -984,3 +989,7 @@ def main(mode, argv=None):
         if server:
             server.shutdown()
             server.server_close()
+
+
+if __name__ == '__main__':
+    main('paper')

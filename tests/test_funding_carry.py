@@ -57,7 +57,7 @@ def test_tiny_funding_is_noise():
 
 
 def test_fee_hurdle_rejects_moderate_funding():
-    # 10 bps/8h vs cost 7.5 bps: edge 2.5 < 1.8*7.5 = 13.5 -> refuse.
+    # 10 bps/8h vs cost 6.5 bps (6.0 + 1.0/2): edge 3.5 < 1.8*6.5 = 11.7 -> refuse.
     plan, why = engine('0.001').plan('BTCUSDT', 100.0, 1.0, 0.5, 0.01, NOW)
     assert plan is None and why == 'EDGE_BELOW_HURDLE'
 
@@ -66,8 +66,8 @@ def test_extreme_funding_authorized():
     plan, why = engine('0.005').plan('BTCUSDT', 100.0, 1.0, 0.5, 0.01, NOW)
     assert why == 'AUTHORIZED' and plan is not None
     assert plan.rate_bps == pytest.approx(50.0)
-    assert plan.cost_bps == pytest.approx(7.5)
-    assert plan.edge_bps == pytest.approx(42.5)
+    assert plan.cost_bps == pytest.approx(6.5)
+    assert plan.edge_bps == pytest.approx(43.5)
     assert plan.horizon == pytest.approx(NEXT-NOW+120)
 
 

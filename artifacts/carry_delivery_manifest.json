@@ -1,0 +1,20 @@
+{
+  "baseline_tests": 272,
+  "final_tests": 335,
+  "new_tests": 63,
+  "patch_verified_against_M0": true,
+  "files": {
+    "core/funding_carry.py": "a63de376d6e4f9a5938b8389324bacbb998291621ebe66f4758ad2ded70a8739",
+    "live/execution_gateway.py": "3ff4041eeb9de07f52b6feb42b15d3373e07c3687d2b0535560c43b3eb97c67f",
+    "core/consensus_engine.py": "d7f2fe7d54a82d6a3646ca2d48c16ffd037a46da883991358f54033ab1d26557",
+    "core/models.py": "d61864331aa852c553401ad9bb64f312b17f36eaff07dbcf29cfbf578811f170",
+    "core/runtime.py": "69b3bf4b8083267a19491014bf415c8b2345300e2af7e9140ba6246b7181bdd6",
+    "phan_tich/carry_lab.py": "163c1eb592b632064972cfeb36cfc902d51769568f1687f3309f11d1df994efc",
+    "run_launcher.py": "bab0eba6e9f108341ae96dada2730e82eee9834211477e1c04ba310a2bb940c8",
+    "run.bat": "89cfca579f88a179af3ad602be31bdcb4ff352ccda4071a4035729696e13bb33",
+    "live/binance_spot_client.py": "b5871500e4981d275c1bf4645b3b0bf31dffbacefa1708352c6038e2d0a0276a",
+    "core/carry_runtime.py": "e0f1ae9b7e58b8a8cf201ea281106cd273ac9fea0aec64e7f31a0456cf52d6ae",
+    "tests/test_spot_perp_carry.py": "c673e504d48d5f5fde9a08e86cc959e06750c0b9147764efa02f2ba85b465d0b",
+    "docs/CARRY_MIGRATION.md": "6acf13415eb80a478656eca8a1852528b32d8c939b018479addfc1e31a200e5a"
+  }
+}

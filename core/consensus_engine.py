@@ -134,3 +134,20 @@ class TokenAuthority:
             deadline, digest, expected = issued
             if self.clock() >= deadline or digest != self._digest(intent) or not hmac.compare_digest(mac, expected):
                 raise PermissionError('Expired or tampered token')
+
+    def issue_pair(self, intent, decision):
+        from core.models import PairIntent
+        if not isinstance(intent, PairIntent) or decision.score < .768 or decision.threshold < .768:
+            raise PermissionError('Pair requires the fixed 76.8% policy')
+        return PairAuthToken(self.issue(intent, decision))
+
+    def consume_pair(self, token, intent):
+        from core.models import PairIntent
+        if not isinstance(token, PairAuthToken) or not isinstance(intent, PairIntent):
+            raise PermissionError('Pair-bound authorization required')
+        self.consume(token.value, intent)
+
+
+@dataclass(frozen=True)
+class PairAuthToken:
+    value: str

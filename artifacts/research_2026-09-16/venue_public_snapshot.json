@@ -1,0 +1,1189 @@
+{
+  "binance": {
+    "url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+    "status": 200,
+    "seconds": 0.235,
+    "data": [
+      {
+        "symbol": "BTCUSDT",
+        "pair": "BTCUSDT",
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "onboardDate": 1567965300000,
+        "status": "TRADING",
+        "maintMarginPercent": "2.5000",
+        "requiredMarginPercent": "5.0000",
+        "baseAsset": "BTC",
+        "quoteAsset": "USDT",
+        "marginAsset": "USDT",
+        "pricePrecision": 2,
+        "quantityPrecision": 3,
+        "baseAssetPrecision": 8,
+        "quotePrecision": 8,
+        "underlyingType": "COIN",
+        "underlyingSubType": [
+          "PoW",
+          "Crypto"
+        ],
+        "triggerProtect": "0.0500",
+        "liquidationFee": "0.012500",
+        "marketTakeBound": "0.05",
+        "maxMoveOrderLimit": 10000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "4529764",
+            "tickSize": "0.10",
+            "minPrice": "556.80"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "1000",
+            "stepSize": "0.001",
+            "minQty": "0.001"
+          },
+          {
+            "stepSize": "0.001",
+            "minQty": "0.001",
+            "maxQty": "120",
+            "filterType": "MARKET_LOT_SIZE"
+          },
+          {
+            "limit": 200,
+            "filterType": "MAX_NUM_ORDERS"
+          },
+          {
+            "notional": "50",
+            "filterType": "MIN_NOTIONAL"
+          },
+          {
+            "multiplierDown": "0.9500",
+            "multiplierDecimal": "4",
+            "filterType": "PERCENT_PRICE",
+            "multiplierUp": "1.0500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "timeInForce": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ],
+        "permissionSets": [
+          "GRID",
+          "COPY",
+          "DCA",
+          "PSB"
+        ]
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "pair": "DOGEUSDT",
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "onboardDate": 1594371600000,
+        "status": "TRADING",
+        "maintMarginPercent": "2.5000",
+        "requiredMarginPercent": "5.0000",
+        "baseAsset": "DOGE",
+        "quoteAsset": "USDT",
+        "marginAsset": "USDT",
+        "pricePrecision": 6,
+        "quantityPrecision": 0,
+        "baseAssetPrecision": 8,
+        "quotePrecision": 8,
+        "underlyingType": "COIN",
+        "underlyingSubType": [
+          "Meme",
+          "Crypto"
+        ],
+        "triggerProtect": "0.1000",
+        "liquidationFee": "0.015000",
+        "marketTakeBound": "0.10",
+        "maxMoveOrderLimit": 10000,
+        "filters": [
+          {
+            "minPrice": "0.002440",
+            "maxPrice": "30",
+            "filterType": "PRICE_FILTER",
+            "tickSize": "0.000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "minQty": "1",
+            "maxQty": "300000000",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "30000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "limit": 200,
+            "filterType": "MAX_NUM_ORDERS"
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "multiplierUp": "1.1000",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.9000",
+            "filterType": "PERCENT_PRICE"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "timeInForce": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ],
+        "permissionSets": [
+          "GRID",
+          "COPY",
+          "RPI",
+          "DCA",
+          "PSB"
+        ]
+      },
+      {
+        "symbol": "SOLUSDT",
+        "pair": "SOLUSDT",
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "onboardDate": 1600066800000,
+        "status": "TRADING",
+        "maintMarginPercent": "2.5000",
+        "requiredMarginPercent": "5.0000",
+        "baseAsset": "SOL",
+        "quoteAsset": "USDT",
+        "marginAsset": "USDT",
+        "pricePrecision": 4,
+        "quantityPrecision": 2,
+        "baseAssetPrecision": 8,
+        "quotePrecision": 8,
+        "underlyingType": "COIN",
+        "underlyingSubType": [
+          "Layer-1",
+          "Crypto"
+        ],
+        "triggerProtect": "0.0500",
+        "liquidationFee": "0.015000",
+        "marketTakeBound": "0.05",
+        "maxMoveOrderLimit": 10000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "6857",
+            "minPrice": "0.4200",
+            "tickSize": "0.0100"
+          },
+          {
+            "maxQty": "1000000",
+            "minQty": "0.01",
+            "filterType": "LOT_SIZE",
+            "stepSize": "0.01"
+          },
+          {
+            "minQty": "0.01",
+            "stepSize": "0.01",
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "80000"
+          },
+          {
+            "limit": 200,
+            "filterType": "MAX_NUM_ORDERS"
+          },
+          {
+            "notional": "5",
+            "filterType": "MIN_NOTIONAL"
+          },
+          {
+            "multiplierUp": "1.0500",
+            "filterType": "PERCENT_PRICE",
+            "multiplierDown": "0.9500",
+            "multiplierDecimal": "4"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "timeInForce": [
+          "GTC",
+          "IOC",
+          "FOK",
+          "GTX",
+          "GTD"
+        ],
+        "permissionSets": [
+          "GRID",
+          "COPY",
+          "DCA",
+          "PSB"
+        ]
+      }
+    ]
+  },
+  "bybit_DOGE": {
+    "url": "https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=DOGEUSDT",
+    "status": 200,
+    "seconds": 0.11,
+    "data": {
+      "category": "linear",
+      "list": [
+        {
+          "symbol": "DOGEUSDT",
+          "contractType": "LinearPerpetual",
+          "status": "Trading",
+          "baseCoin": "DOGE",
+          "quoteCoin": "USDT",
+          "launchTime": "1622630640000",
+          "deliveryTime": "0",
+          "deliveryFeeRate": "",
+          "priceScale": "5",
+          "leverageFilter": {
+            "minLeverage": "1",
+            "maxLeverage": "75.00",
+            "leverageStep": "0.01"
+          },
+          "priceFilter": {
+            "minPrice": "0.00001",
+            "maxPrice": "199.99998",
+            "tickSize": "0.00001"
+          },
+          "lotSizeFilter": {
+            "maxOrderQty": "43678900",
+            "minOrderQty": "1",
+            "qtyStep": "1",
+            "postOnlyMaxOrderQty": "43678900",
+            "maxMktOrderQty": "5991100",
+            "minNotionalValue": "5"
+          },
+          "unifiedMarginTrade": true,
+          "fundingInterval": 480,
+          "settleCoin": "USDT",
+          "copyTrading": "both",
+          "upperFundingRate": "0.0058",
+          "lowerFundingRate": "-0.0058",
+          "isPreListing": false,
+          "preListingInfo": null,
+          "riskParameters": {
+            "priceLimitRatioX": "0.05",
+            "priceLimitRatioY": "0.1"
+          },
+          "displayName": "DOGEUSDT",
+          "symbolType": "",
+          "forbidUplWithdrawal": false,
+          "symbolId": 33,
+          "fullName": "Dogecoin",
+          "marketRegion": "",
+          "underlyingTicker": ""
+        }
+      ],
+      "nextPageCursor": ""
+    }
+  },
+  "bybit_SOL": {
+    "url": "https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=SOLUSDT",
+    "status": 200,
+    "seconds": 0.11,
+    "data": {
+      "category": "linear",
+      "list": [
+        {
+          "symbol": "SOLUSDT",
+          "contractType": "LinearPerpetual",
+          "status": "Trading",
+          "baseCoin": "SOL",
+          "quoteCoin": "USDT",
+          "launchTime": "1634256000000",
+          "deliveryTime": "0",
+          "deliveryFeeRate": "",
+          "priceScale": "3",
+          "leverageFilter": {
+            "minLeverage": "1",
+            "maxLeverage": "100.00",
+            "leverageStep": "0.01"
+          },
+          "priceFilter": {
+            "minPrice": "0.010",
+            "maxPrice": "199999.980",
+            "tickSize": "0.010"
+          },
+          "lotSizeFilter": {
+            "maxOrderQty": "96000.0",
+            "minOrderQty": "0.1",
+            "qtyStep": "0.1",
+            "postOnlyMaxOrderQty": "96000.0",
+            "maxMktOrderQty": "12000.0",
+            "minNotionalValue": "5"
+          },
+          "unifiedMarginTrade": true,
+          "fundingInterval": 480,
+          "settleCoin": "USDT",
+          "copyTrading": "both",
+          "upperFundingRate": "0.005",
+          "lowerFundingRate": "-0.005",
+          "isPreListing": false,
+          "preListingInfo": null,
+          "riskParameters": {
+            "priceLimitRatioX": "0.05",
+            "priceLimitRatioY": "0.1"
+          },
+          "displayName": "SOLUSDT",
+          "symbolType": "",
+          "forbidUplWithdrawal": false,
+          "symbolId": 38,
+          "fullName": "Solana",
+          "marketRegion": "",
+          "underlyingTicker": ""
+        }
+      ],
+      "nextPageCursor": ""
+    }
+  },
+  "bybit_BTC": {
+    "url": "https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=BTCUSDT",
+    "status": 200,
+    "seconds": 0.094,
+    "data": {
+      "category": "linear",
+      "list": [
+        {
+          "symbol": "BTCUSDT",
+          "contractType": "LinearPerpetual",
+          "status": "Trading",
+          "baseCoin": "BTC",
+          "quoteCoin": "USDT",
+          "launchTime": "1584230400000",
+          "deliveryTime": "0",
+          "deliveryFeeRate": "",
+          "priceScale": "2",
+          "leverageFilter": {
+            "minLeverage": "1",
+            "maxLeverage": "150.00",
+            "leverageStep": "0.01"
+          },
+          "priceFilter": {
+            "minPrice": "0.10",
+            "maxPrice": "1999999.80",
+            "tickSize": "0.10"
+          },
+          "lotSizeFilter": {
+            "maxOrderQty": "1500.000",
+            "minOrderQty": "0.001",
+            "qtyStep": "0.001",
+            "postOnlyMaxOrderQty": "1500.000",
+            "maxMktOrderQty": "150.000",
+            "minNotionalValue": "5"
+          },
+          "unifiedMarginTrade": true,
+          "fundingInterval": 480,
+          "settleCoin": "USDT",
+          "copyTrading": "both",
+          "upperFundingRate": "0.00333",
+          "lowerFundingRate": "-0.00333",
+          "isPreListing": false,
+          "preListingInfo": null,
+          "riskParameters": {
+            "priceLimitRatioX": "0.01",
+            "priceLimitRatioY": "0.02"
+          },
+          "displayName": "BTCUSDT",
+          "symbolType": "",
+          "forbidUplWithdrawal": false,
+          "symbolId": 5,
+          "fullName": "Bitcoin",
+          "marketRegion": "",
+          "underlyingTicker": ""
+        }
+      ],
+      "nextPageCursor": ""
+    }
+  },
+  "bitget": {
+    "url": "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES",
+    "status": 200,
+    "seconds": 0.532,
+    "data": [
+      {
+        "symbol": "BTCUSDT",
+        "baseCoin": "BTC",
+        "quoteCoin": "USDT",
+        "buyLimitPriceRatio": "0.05",
+        "sellLimitPriceRatio": "0.05",
+        "feeRateUpRatio": "0.005",
+        "makerFeeRate": "0.0002",
+        "takerFeeRate": "0.0006",
+        "openCostUpRatio": "0.01",
+        "supportMarginCoins": [
+          "USDT"
+        ],
+        "minTradeNum": "0.0001",
+        "priceEndStep": "1",
+        "volumePlace": "4",
+        "pricePlace": "1",
+        "sizeMultiplier": "0.0001",
+        "symbolType": "perpetual",
+        "minTradeUSDT": "5",
+        "maxSymbolOrderNum": "200",
+        "maxProductOrderNum": "1000",
+        "maxPositionNum": "200",
+        "symbolStatus": "normal",
+        "offTime": "-1",
+        "limitOpenTime": "-1",
+        "deliveryTime": "",
+        "deliveryStartTime": "",
+        "deliveryPeriod": "",
+        "launchTime": "",
+        "fundInterval": "8",
+        "minLever": "1",
+        "maxLever": "150",
+        "posLimit": "0.2",
+        "maintainTime": "",
+        "openTime": "",
+        "maxMarketOrderQty": "220",
+        "maxOrderQty": "1200",
+        "isRwa": "NO"
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "buyLimitPriceRatio": "0.1",
+        "sellLimitPriceRatio": "0.1",
+        "feeRateUpRatio": "0.005",
+        "makerFeeRate": "0.0002",
+        "takerFeeRate": "0.0006",
+        "openCostUpRatio": "0.01",
+        "supportMarginCoins": [
+          "USDT"
+        ],
+        "minTradeNum": "1",
+        "priceEndStep": "1",
+        "volumePlace": "0",
+        "pricePlace": "5",
+        "sizeMultiplier": "1",
+        "symbolType": "perpetual",
+        "minTradeUSDT": "5",
+        "maxSymbolOrderNum": "200",
+        "maxProductOrderNum": "1000",
+        "maxPositionNum": "200",
+        "symbolStatus": "normal",
+        "offTime": "-1",
+        "limitOpenTime": "-1",
+        "deliveryTime": "",
+        "deliveryStartTime": "",
+        "deliveryPeriod": "",
+        "launchTime": "",
+        "fundInterval": "8",
+        "minLever": "1",
+        "maxLever": "75",
+        "posLimit": "0.15",
+        "maintainTime": "",
+        "openTime": "",
+        "maxMarketOrderQty": "6300000",
+        "maxOrderQty": "51000000",
+        "isRwa": "NO"
+      },
+      {
+        "symbol": "SOLUSDT",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "buyLimitPriceRatio": "0.07",
+        "sellLimitPriceRatio": "0.07",
+        "feeRateUpRatio": "0.005",
+        "makerFeeRate": "0.0002",
+        "takerFeeRate": "0.0006",
+        "openCostUpRatio": "0.01",
+        "supportMarginCoins": [
+          "USDT"
+        ],
+        "minTradeNum": "0.1",
+        "priceEndStep": "1",
+        "volumePlace": "1",
+        "pricePlace": "3",
+        "sizeMultiplier": "0.1",
+        "symbolType": "perpetual",
+        "minTradeUSDT": "5",
+        "maxSymbolOrderNum": "200",
+        "maxProductOrderNum": "1000",
+        "maxPositionNum": "200",
+        "symbolStatus": "normal",
+        "offTime": "-1",
+        "limitOpenTime": "-1",
+        "deliveryTime": "",
+        "deliveryStartTime": "",
+        "deliveryPeriod": "",
+        "launchTime": "",
+        "fundInterval": "8",
+        "minLever": "1",
+        "maxLever": "100",
+        "posLimit": "0.15",
+        "maintainTime": "",
+        "openTime": "",
+        "maxMarketOrderQty": "20000",
+        "maxOrderQty": "100000",
+        "isRwa": "NO"
+      }
+    ]
+  },
+  "mexc": {
+    "url": "https://contract.mexc.com/api/v1/contract/detail",
+    "status": 200,
+    "seconds": 0.344,
+    "data": [
+      {
+        "symbol": "BTC_USDT",
+        "displayName": "BTC_USDT\u6c38\u7eed",
+        "displayNameEn": "BTC_USDT PERPETUAL",
+        "positionOpenType": 3,
+        "baseCoin": "BTC",
+        "quoteCoin": "USDT",
+        "baseCoinName": "BTC",
+        "quoteCoinName": "USDT",
+        "futureType": 1,
+        "settleCoin": "USDT",
+        "contractSize": 0.0001,
+        "minLeverage": 1,
+        "maxLeverage": 500,
+        "countryConfigContractMaxLeverage": 0,
+        "priceScale": 1,
+        "volScale": 0,
+        "amountScale": 4,
+        "priceUnit": 0.1,
+        "volUnit": 1,
+        "minVol": 1,
+        "maxVol": 400000,
+        "bidLimitPriceRate": 0.1,
+        "askLimitPriceRate": 0.1,
+        "takerFeeRate": 0.0002,
+        "makerFeeRate": 0,
+        "maintenanceMarginRate": 0.001,
+        "initialMarginRate": 0.002,
+        "riskBaseVol": 19000000,
+        "riskIncrVol": 0,
+        "riskLongShortSwitch": 0,
+        "riskIncrMmr": 0,
+        "riskIncrImr": 0,
+        "riskLevelLimit": 1,
+        "priceCoefficientVariation": 0.004,
+        "indexOrigin": [
+          "BITGET",
+          "BYBIT",
+          "BINANCE",
+          "HTX",
+          "UPBIT",
+          "OKX",
+          "MEXC",
+          "KUCOIN"
+        ],
+        "state": 0,
+        "isNew": false,
+        "isHot": false,
+        "isHidden": false,
+        "conceptPlate": [
+          "mc-trade-zone-layer2",
+          "mc-trade-zone-pow"
+        ],
+        "conceptPlateId": [
+          5,
+          12
+        ],
+        "riskLimitType": "BY_VOLUME",
+        "maxNumOrders": [
+          200,
+          50
+        ],
+        "marketOrderMaxLevel": 20,
+        "marketOrderPriceLimitRate1": 0.1,
+        "marketOrderPriceLimitRate2": 0.005,
+        "triggerProtect": 0.1,
+        "appraisal": 0,
+        "showAppraisalCountdown": 0,
+        "automaticDelivery": 0,
+        "apiAllowed": true,
+        "depthStepList": [
+          "0.1",
+          "1",
+          "10",
+          "100"
+        ],
+        "limitMaxVol": 2500000,
+        "threshold": 0,
+        "baseCoinIconUrl": "https://public.mocortech.com/coin/F20250612182226438Ba037qttKoGcrm.png",
+        "id": 10,
+        "vid": "128f589271cb4951b03e71e6323eb7be",
+        "baseCoinId": "febc9973be4d4d53bb374476239eb219",
+        "createTime": 1591242684000,
+        "openingTime": 0,
+        "openingCountdownOption": 1,
+        "showBeforeOpen": true,
+        "isMaxLeverage": true,
+        "isZeroFeeRate": false,
+        "riskLimitMode": "CUSTOM",
+        "isZeroFeeSymbol": false,
+        "riskLimitCustom": [
+          {
+            "level": 1,
+            "maxVol": 50000,
+            "mmr": 0.001,
+            "imr": 0.002,
+            "maxLeverage": 500
+          },
+          {
+            "level": 2,
+            "maxVol": 310000,
+            "mmr": 0.004,
+            "imr": 0.005,
+            "maxLeverage": 200
+          },
+          {
+            "level": 3,
+            "maxVol": 480000,
+            "mmr": 0.005,
+            "imr": 0.01,
+            "maxLeverage": 100
+          },
+          {
+            "level": 4,
+            "maxVol": 2800000,
+            "mmr": 0.01,
+            "imr": 0.02,
+            "maxLeverage": 50
+          },
+          {
+            "level": 5,
+            "maxVol": 17500000,
+            "mmr": 0.02,
+            "imr": 0.05,
+            "maxLeverage": 20
+          },
+          {
+            "level": 6,
+            "maxVol": 19000000,
+            "mmr": 0.05,
+            "imr": 0.1,
+            "maxLeverage": 10
+          }
+        ],
+        "liquidationFeeRate": 0.0004,
+        "feeRateMode": "NORMAL",
+        "leverageFeeRates": [],
+        "tieredFeeRates": [],
+        "type": 1,
+        "stopOnlyFair": false,
+        "preMarket": false,
+        "typeLabel": 0,
+        "fn": "BTC_USDT\u6c38\u7eed",
+        "feeRateType": "BASE",
+        "tagIdList": [
+          5,
+          8
+        ],
+        "tempMaxLeverageLimited": false,
+        "regularMaxLeverage": 500
+      },
+      {
+        "symbol": "SOL_USDT",
+        "displayName": "SOL_USDT\u6c38\u7eed",
+        "displayNameEn": "SOL_USDT PERPETUAL",
+        "positionOpenType": 3,
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "baseCoinName": "SOL",
+        "quoteCoinName": "USDT",
+        "futureType": 1,
+        "settleCoin": "USDT",
+        "contractSize": 0.1,
+        "minLeverage": 1,
+        "maxLeverage": 300,
+        "countryConfigContractMaxLeverage": 0,
+        "priceScale": 2,
+        "volScale": 0,
+        "amountScale": 4,
+        "priceUnit": 0.01,
+        "volUnit": 1,
+        "minVol": 1,
+        "maxVol": 1600000,
+        "bidLimitPriceRate": 0.1,
+        "askLimitPriceRate": 0.1,
+        "takerFeeRate": 0.0001,
+        "makerFeeRate": 0,
+        "maintenanceMarginRate": 0.0023,
+        "initialMarginRate": 0.00333333,
+        "riskBaseVol": 1520000,
+        "riskIncrVol": 0,
+        "riskLongShortSwitch": 0,
+        "riskIncrMmr": 0,
+        "riskIncrImr": 0,
+        "riskLevelLimit": 1,
+        "priceCoefficientVariation": 0.4,
+        "indexOrigin": [
+          "BITGET",
+          "BYBIT",
+          "BINANCE",
+          "HTX",
+          "OKX",
+          "MEXC",
+          "KUCOIN"
+        ],
+        "state": 0,
+        "isNew": false,
+        "isHot": false,
+        "isHidden": false,
+        "conceptPlate": [
+          "mc-trade-zone-layer2",
+          "mc-trade-zone-pow"
+        ],
+        "conceptPlateId": [
+          5,
+          12
+        ],
+        "riskLimitType": "BY_VOLUME",
+        "maxNumOrders": [
+          200,
+          50
+        ],
+        "marketOrderMaxLevel": 20,
+        "marketOrderPriceLimitRate1": 0.2,
+        "marketOrderPriceLimitRate2": 0.005,
+        "triggerProtect": 0.1,
+        "appraisal": 0,
+        "showAppraisalCountdown": 0,
+        "automaticDelivery": 0,
+        "apiAllowed": true,
+        "depthStepList": [
+          "0.01",
+          "0.1",
+          "1"
+        ],
+        "limitMaxVol": 1600000,
+        "threshold": 0,
+        "baseCoinIconUrl": "https://public.mocortech.com/coin/F20250215193518264H6zzNm9ofQqCcy.png",
+        "id": 51,
+        "vid": "128f589271cb4951b03e71e6323eb7be",
+        "baseCoinId": "8dedc95886d14867ad9a1668a38666db",
+        "createTime": 1601014066000,
+        "openingTime": 0,
+        "openingCountdownOption": 1,
+        "showBeforeOpen": true,
+        "isMaxLeverage": true,
+        "isZeroFeeRate": false,
+        "riskLimitMode": "CUSTOM",
+        "isZeroFeeSymbol": false,
+        "riskLimitCustom": [
+          {
+            "level": 1,
+            "maxVol": 31000,
+            "mmr": 0.0023,
+            "imr": 0.00333333,
+            "maxLeverage": 300
+          },
+          {
+            "level": 2,
+            "maxVol": 1185000,
+            "mmr": 0.004,
+            "imr": 0.005,
+            "maxLeverage": 200
+          },
+          {
+            "level": 3,
+            "maxVol": 1520000,
+            "mmr": 0.02,
+            "imr": 0.05,
+            "maxLeverage": 20
+          }
+        ],
+        "liquidationFeeRate": 0.0001,
+        "feeRateMode": "NORMAL",
+        "leverageFeeRates": [],
+        "tieredFeeRates": [],
+        "type": 1,
+        "stopOnlyFair": false,
+        "preMarket": false,
+        "typeLabel": 0,
+        "fn": "SOL_USDT\u6c38\u7eed",
+        "feeRateType": "BASE",
+        "tagIdList": [
+          5,
+          8
+        ],
+        "tempMaxLeverageLimited": false,
+        "regularMaxLeverage": 300
+      },
+      {
+        "symbol": "DOGE_USDT",
+        "displayName": "DOGE_USDT\u6c38\u7eed",
+        "displayNameEn": "DOGE_USDT PERPETUAL",
+        "positionOpenType": 3,
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "baseCoinName": "DOGE",
+        "quoteCoinName": "USDT",
+        "futureType": 1,
+        "settleCoin": "USDT",
+        "contractSize": 100,
+        "minLeverage": 1,
+        "maxLeverage": 300,
+        "countryConfigContractMaxLeverage": 0,
+        "priceScale": 5,
+        "volScale": 0,
+        "amountScale": 4,
+        "priceUnit": 1e-05,
+        "volUnit": 1,
+        "minVol": 1,
+        "maxVol": 445000,
+        "bidLimitPriceRate": 0.2,
+        "askLimitPriceRate": 0.2,
+        "takerFeeRate": 0,
+        "makerFeeRate": 0,
+        "maintenanceMarginRate": 0.0023,
+        "initialMarginRate": 0.00333333,
+        "riskBaseVol": 530000,
+        "riskIncrVol": 0,
+        "riskLongShortSwitch": 0,
+        "riskIncrMmr": 0,
+        "riskIncrImr": 0,
+        "riskLevelLimit": 1,
+        "priceCoefficientVariation": 0.4,
+        "indexOrigin": [
+          "BITGET",
+          "BYBIT",
+          "BINANCE",
+          "HTX",
+          "OKX",
+          "MEXC",
+          "KUCOIN"
+        ],
+        "state": 0,
+        "isNew": false,
+        "isHot": false,
+        "isHidden": false,
+        "conceptPlate": [
+          "mc-trade-zone-MEME",
+          "mc-trade-zone-pow",
+          "mc-trade-zone-0fees"
+        ],
+        "conceptPlateId": [
+          29,
+          12,
+          45
+        ],
+        "riskLimitType": "BY_VOLUME",
+        "maxNumOrders": [
+          200,
+          50
+        ],
+        "marketOrderMaxLevel": 20,
+        "marketOrderPriceLimitRate1": 0.2,
+        "marketOrderPriceLimitRate2": 0.005,
+        "triggerProtect": 0.1,
+        "appraisal": 0,
+        "showAppraisalCountdown": 0,
+        "automaticDelivery": 0,
+        "apiAllowed": true,
+        "depthStepList": [
+          "0.00001",
+          "0.0001",
+          "0.001",
+          "0.01"
+        ],
+        "limitMaxVol": 445000,
+        "threshold": 0,
+        "baseCoinIconUrl": "https://public.mocortech.com/coin/F20230701185052663aGiNzu1AGTZxgU.png",
+        "id": 68,
+        "vid": "128f589271cb4951b03e71e6323eb7be",
+        "baseCoinId": "a1001412a8d34b59b4d25dcce9e217d2",
+        "createTime": 1603683981000,
+        "openingTime": 0,
+        "openingCountdownOption": 1,
+        "showBeforeOpen": true,
+        "isMaxLeverage": true,
+        "isZeroFeeRate": true,
+        "riskLimitMode": "CUSTOM",
+        "isZeroFeeSymbol": true,
+        "riskLimitCustom": [
+          {
+            "level": 1,
+            "maxVol": 23000,
+            "mmr": 0.0023,
+            "imr": 0.00333333,
+            "maxLeverage": 300
+          },
+          {
+            "level": 2,
+            "maxVol": 530000,
+            "mmr": 0.004,
+            "imr": 0.005,
+            "maxLeverage": 200
+          }
+        ],
+        "liquidationFeeRate": 0.0002,
+        "feeRateMode": "NORMAL",
+        "leverageFeeRates": [],
+        "tieredFeeRates": [],
+        "type": 1,
+        "stopOnlyFair": false,
+        "preMarket": false,
+        "typeLabel": 0,
+        "fn": "DOGE_USDT\u6c38\u7eed",
+        "feeRateType": "BASE",
+        "tagIdList": [
+          5,
+          8
+        ],
+        "tempMaxLeverageLimited": false,
+        "regularMaxLeverage": 300
+      }
+    ]
+  },
+  "bingx": {
+    "url": "https://open-api.bingx.com/openApi/swap/v2/quote/contracts",
+    "status": 200,
+    "seconds": 0.25,
+    "data": [
+      {
+        "contractId": "100",
+        "symbol": "BTC-USDT",
+        "size": "0.0001",
+        "quantityPrecision": 4,
+        "pricePrecision": 1,
+        "feeRate": 0.0005,
+        "makerFeeRate": 0.0002,
+        "takerFeeRate": 0.0005,
+        "tradeMinLimit": 0,
+        "tradeMinQuantity": 0.0001,
+        "tradeMinUSDT": 2,
+        "currency": "USDT",
+        "asset": "BTC",
+        "status": 1,
+        "apiStateOpen": "true",
+        "apiStateClose": "true",
+        "ensureTrigger": true,
+        "triggerFeeRate": "0.00050000",
+        "brokerState": false,
+        "launchTime": 1586275200000,
+        "maintainTime": 0,
+        "offTime": 0,
+        "displayName": "BTC-USDT"
+      },
+      {
+        "contractId": "100028",
+        "symbol": "SOL-USDT",
+        "size": "1",
+        "quantityPrecision": 2,
+        "pricePrecision": 3,
+        "feeRate": 0.0005,
+        "makerFeeRate": 0.0002,
+        "takerFeeRate": 0.0005,
+        "tradeMinLimit": 0,
+        "tradeMinQuantity": 0.03,
+        "tradeMinUSDT": 2,
+        "currency": "USDT",
+        "asset": "SOL",
+        "status": 1,
+        "apiStateOpen": "true",
+        "apiStateClose": "true",
+        "ensureTrigger": true,
+        "triggerFeeRate": "0.00070000",
+        "brokerState": false,
+        "launchTime": 1635955200000,
+        "maintainTime": 0,
+        "offTime": 0,
+        "displayName": "SOL-USDT"
+      },
+      {
+        "contractId": "100035",
+        "symbol": "DOGE-USDT",
+        "size": "1",
+        "quantityPrecision": 0,
+        "pricePrecision": 5,
+        "feeRate": 0.0005,
+        "makerFeeRate": 0.0002,
+        "takerFeeRate": 0.0005,
+        "tradeMinLimit": 0,
+        "tradeMinQuantity": 25,
+        "tradeMinUSDT": 2,
+        "currency": "USDT",
+        "asset": "DOGE",
+        "status": 1,
+        "apiStateOpen": "true",
+        "apiStateClose": "true",
+        "ensureTrigger": true,
+        "triggerFeeRate": "0.00100000",
+        "brokerState": false,
+        "launchTime": 1636387200000,
+        "maintainTime": 0,
+        "offTime": 0,
+        "displayName": "DOGE-USDT"
+      }
+    ]
+  },
+  "hyperliquid": {
+    "url": "https://api.hyperliquid.xyz/info",
+    "status": 200,
+    "seconds": 0.203,
+    "data": [
+      {
+        "meta": {
+          "szDecimals": 5,
+          "name": "BTC",
+          "maxLeverage": 40,
+          "marginTableId": 56
+        },
+        "ctx": {
+          "funding": "0.0000122801",
+          "openInterest": "36124.5647399999",
+          "prevDayPx": "77941.0",
+          "dayNtlVlm": "5517895143.965877533",
+          "premium": "-0.0003899221",
+          "oraclePx": "75912.6",
+          "markPx": "75882.0",
+          "midPx": "75882.5",
+          "impactPxs": [
+            "75882.0",
+            "75883.0"
+          ],
+          "dayBaseVlm": "72150.0364299999"
+        }
+      },
+      {
+        "meta": {
+          "szDecimals": 2,
+          "name": "SOL",
+          "maxLeverage": 20,
+          "marginTableId": 54
+        },
+        "ctx": {
+          "funding": "-0.0000134999",
+          "openInterest": "5489024.54",
+          "prevDayPx": "102.43",
+          "dayNtlVlm": "360759693.4313411117",
+          "premium": "-0.0006341689",
+          "oraclePx": "97.2927",
+          "markPx": "97.23",
+          "midPx": "97.2305",
+          "impactPxs": [
+            "97.23",
+            "97.231"
+          ],
+          "dayBaseVlm": "3620101.3300000001"
+        }
+      },
+      {
+        "meta": {
+          "szDecimals": 0,
+          "name": "DOGE",
+          "maxLeverage": 10,
+          "marginTableId": 52
+        },
+        "ctx": {
+          "funding": "0.0000063257",
+          "openInterest": "741834356.0",
+          "prevDayPx": "0.083671",
+          "dayNtlVlm": "14767470.367843993",
+          "premium": "-0.0005606219",
+          "oraclePx": "0.080268",
+          "markPx": "0.080222",
+          "midPx": "0.080222",
+          "impactPxs": [
+            "0.080218",
+            "0.080223"
+          ],
+          "dayBaseVlm": "181322899.0"
+        }
+      }
+    ]
+  },
+  "github": {
+    "url": "https://api.github.com/users/groktopus/repos?per_page=100",
+    "status": 200,
+    "seconds": 0.766,
+    "data": [
+      {
+        "name": "artifact-pyramids",
+        "description": "The Artifact Pyramid: progressive disclosure for what agents produce \u2014 a structured methodology for organizing AI agent research outputs across three layers of fidelity.",
+        "html_url": "https://github.com/groktopus/artifact-pyramids",
+        "created_at": "2026-05-31T20:41:34Z"
+      },
+      {
+        "name": "groknotes",
+        "description": "Obsidian plugin bringing semantic context \u2014 vector discovery, gap detection, context bundles, and smart chat \u2014 to your vault",
+        "html_url": "https://github.com/groktopus/groknotes",
+        "created_at": "2026-05-31T18:19:15Z"
+      },
+      {
+        "name": "groktobench",
+        "description": "Hermes Agent Readiness Protocol (HARP) \u2014 evaluate a model's suitability as a main Hermes agent in a clean-room Docker environment, orchestrated via kanban",
+        "html_url": "https://github.com/groktopus/groktobench",
+        "created_at": "2026-05-30T16:47:36Z"
+      },
+      {
+        "name": "groktocrawl",
+        "description": "Self-hosted, API-compatible Firecrawl alternative with Agent endpoint. MIT license. One docker compose up.",
+        "html_url": "https://github.com/groktopus/groktocrawl",
+        "created_at": "2026-05-21T06:33:34Z"
+      },
+      {
+        "name": "groktodash",
+        "description": "Native macOS desktop client for Hermes Agent \u2014 Tahoe Citizen architecture. MIT license.",
+        "html_url": "https://github.com/groktopus/groktodash",
+        "created_at": "2026-05-25T19:34:23Z"
+      },
+      {
+        "name": "groktop.us-2022",
+        "description": "https://groktop.us",
+        "html_url": "https://github.com/groktopus/groktop.us-2022",
+        "created_at": "2022-03-19T00:15:07Z"
+      },
+      {
+        "name": "loop-designer",
+        "description": "Autonomous agent loop design in 10 steps \u2014 from /goal to unattended cron loops with memory, verification, and fail-safe guardrails",
+        "html_url": "https://github.com/groktopus/loop-designer",
+        "created_at": "2026-06-24T21:19:57Z"
+      }
+    ]
+  }
+}

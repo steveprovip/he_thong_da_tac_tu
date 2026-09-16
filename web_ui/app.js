@@ -123,12 +123,19 @@ function renderTicker(markets) {
 
 /* ---------- 03 · equity trace ---------- */
 let trace = [];
+const START_EQUITY = 3.85;   // ~100k VND
+const KILL_EQUITY = 3.80;    // start less the 5-cent hard stop
+
 function renderEquity(history) {
   const points = history.filter(p => finite(p.value));
   const line = byId('equity-line'), area = byId('equity-area');
   if (!points.length) { line.setAttribute('d', ''); area.setAttribute('d', ''); return; }
   trace = points;
   const values = points.map(p => p.value);
+  // The micro-capital run only has two levels that matter: where it started and
+  // where the kill switch fires. Keep both inside the domain so the line is
+  // always read against them, not against an autoscaled window.
+  values.push(START_EQUITY, KILL_EQUITY);
   const min = Math.min(...values), max = Math.max(...values), range = max - min || 1;
   const X = i => points.length < 2 ? 0 : i / (points.length - 1) * 900;
   const Y = v => max === min ? 70 : 125 - (v - min) / range * 110;
@@ -137,6 +144,15 @@ function renderEquity(history) {
   let d;
   if (points.length > 120 || points.length < 3) {
     d = points.map((p, i) => `${i ? 'L' : 'M'} ${X(i).toFixed(2)} ${Y(p.value).toFixed(2)}`).join(' ');
+    const startLine = byId('equity-start'), killLine = byId('equity-kill');
+    if (startLine) { const y = Y(START_EQUITY).toFixed(2); startLine.setAttribute('y1', y); startLine.setAttribute('y2', y); }
+    if (killLine) { const y = Y(KILL_EQUITY).toFixed(2); killLine.setAttribute('y1', y); killLine.setAttribute('y2', y); }
+    const last = values[values.length - 3];
+    const range3 = byId('equity-range');
+    if (range3 && finite(last)) {
+      range3.textContent = `${number(last, 4)} U · VÀO ${START_EQUITY.toFixed(2)} · DỪNG ${KILL_EQUITY.toFixed(2)}`;
+      range3.className = last >= START_EQUITY ? 'pos' : last <= KILL_EQUITY ? 'neg' : 'zero';
+    }
   } else {
     d = `M ${X(0).toFixed(2)} ${Y(values[0]).toFixed(2)}`;
     for (let i = 0; i < points.length - 1; i++) {
@@ -268,11 +284,13 @@ function render(s) {
 
   renderEquity(s.history ?? []);
 
+  renderBranches(s.branches);
+
   const positions = byId('positions');
   positions.replaceChildren();
   if (!(s.positions ?? []).length) positions.textContent = 'No active positions';
   for (const p of s.positions ?? [])
-    positions.append(el('div', 'position', `${p.symbol} / ${p.side} · ${number(p.filled, 4)} · SL ${number(p.stop)} · ${p.protection}`));
+    positions.append(el('div', 'position', `${p.symbol} / ${p.side || 'BUY'} · ${number(p.filled || p.size, 0)} · entry ${number(p.entry, 5)} · pnl ${number(p.pnl_bps, 1)} bps`));
 
   const events = byId('events');
   events.replaceChildren();
@@ -284,6 +302,154 @@ function render(s) {
   }
 }
 
+/* ---------- 00 · shadow branch benchmark ----------
+   Three branches trade the SAME entries; the only difference is the stop rule.
+   So the comparison is only honest if the winner is read off the numbers each
+   tick — pinning "profitable" to one branch name makes the board lie the moment
+   another branch takes the lead. */
+const EV_SCALE = 40;      // bps half-domain: TP net +35.67, SL net -29.44
+const PNL_SCALE = 0.05;   // USDT half-domain: the kill switch fires at 5 cents
+const CHOP_RATE = 0.40;   // premature stopout share that marks a branch as trapped
+
+const BRANCH_LABEL = {
+  baseline: 'BASELINE · FIXED −20.44',
+  be_15_10: 'BE_15_10 · TRIGGER +15 → +10',
+  be_20_10: 'BE_20_10 · TRIGGER +20 → +10',
+};
+
+function diverging(cls, value, scale) {
+  /* Zero sits at the centre; the bar grows left for losses, right for gains. */
+  const row = el('div', 'bar diverging ' + cls);
+  const fill = el('b');
+  const pct = Math.min(1, Math.abs(Number(value) || 0) / scale) * 50;
+  fill.style.width = pct.toFixed(1) + '%';
+  if ((Number(value) || 0) < 0) { fill.style.right = '50%'; fill.classList.add('neg'); }
+  else { fill.style.left = '50%'; fill.classList.add('pos'); }
+  row.append(el('i', 'axis'), fill);
+  return row;
+}
+
+function stacked(tp, protect, sl) {
+  const total = tp + protect + sl;
+  const row = el('div', 'bar stacked');
+  if (!total) { row.append(el('b', 'empty')); return row; }
+  [['tp', tp], ['protect', protect], ['sl', sl]].forEach(([cls, count]) => {
+    if (!count) return;
+    const seg = el('b', cls);
+    seg.style.width = (count / total * 100).toFixed(1) + '%';
+    seg.title = `${cls.toUpperCase()} ${count}`;
+    row.append(seg);
+  });
+  return row;
+}
+
+function rateBar(rate) {
+  const row = el('div', 'bar rate');
+  const fill = el('b', rate >= CHOP_RATE ? 'danger' : rate > 0 ? 'warn' : 'ok');
+  fill.style.width = (Math.min(1, rate) * 100).toFixed(1) + '%';
+  const gate = el('i', 'gate');
+  gate.style.left = (CHOP_RATE * 100) + '%';
+  row.append(fill, gate);
+  return row;
+}
+
+function metric(label, valueText, valueCls, bar, note) {
+  const item = el('div', 'bm-item');
+  const head = el('div', 'bm-head');
+  head.append(el('dt', null, label), el('dd', valueCls, valueText));
+  item.append(head, bar);
+  if (note) item.append(el('small', 'bm-note', note));
+  return item;
+}
+
+function renderBranches(branches) {
+  const container = byId('branch-cards');
+  if (!container || !branches) return;
+  const keys = ['baseline', 'be_20_10', 'be_15_10'].filter(k => branches[k]);
+  if (!keys.length) return;
+  container.replaceChildren();
+
+  // Lead is whichever branch actually has the best positive EV right now.
+  let leadKey = null, best = 0;
+  for (const k of keys) {
+    const ev = Number(branches[k].analytical_ev_bps) || 0;
+    if (ev > best) { best = ev; leadKey = k; }
+  }
+
+  for (const key of keys) {
+    const b = branches[key];
+    const ev = Number(b.analytical_ev_bps) || 0;
+    const pnl = Number(b.cum_pnl_usdt) || 0;
+    const prem = Number(b.premature_rate) || 0;
+    const tp = b.tp_count || 0, pro = b.protect_count || 0, sl = b.sl_count || 0;
+    const trades = b.total_trades || 0;
+    const isLead = key === leadKey;
+    const isChop = prem >= CHOP_RATE && pro > 0;
+
+    const card = el('div', 'branch-card' + (isLead ? ' lead' : isChop ? ' chop' : ''));
+    const head = el('div', 'branch-head');
+    head.append(el('span', 'branch-name', BRANCH_LABEL[key] || key.toUpperCase()));
+    head.append(el('span',
+      'branch-badge ' + (isLead ? 'lead' : isChop ? 'chop' : 'warn'),
+      isLead ? '★ DẪN ĐẦU' : isChop ? '⚠ QUÉT NON' : trades ? 'ĐANG ĐO' : 'CHỜ MẪU'));
+    card.append(head);
+
+    const dl = el('dl', 'branch-metrics');
+    dl.append(metric('NET EV',
+      `${ev > 0 ? '+' : ''}${number(ev, 2)} bps`,
+      ev > 0 ? 'pos' : ev < 0 ? 'neg' : 'zero',
+      diverging('ev', ev, EV_SCALE),
+      `L95 ${number(b.lower95_ev_bps, 1)} · n=${trades}`));
+
+    dl.append(metric('PNL LŨY KẾ',
+      `${pnl > 0 ? '+' : ''}${number(pnl, 4)} U`,
+      pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'zero',
+      diverging('pnl', pnl, PNL_SCALE),
+      `thang đo ±${PNL_SCALE.toFixed(2)} U = ngưỡng kill`));
+
+    dl.append(metric('TP / PROTECT / SL',
+      `${tp} / ${pro} / ${sl}`, 'zero',
+      stacked(tp, pro, sl),
+      trades ? `${number(tp / trades * 100, 0)}% chạm TP` : 'chưa có lệnh'));
+
+    dl.append(metric('QUÉT NON',
+      `${b.premature_count || 0} (${number(prem * 100, 0)}%)`,
+      prem >= CHOP_RATE ? 'neg' : prem > 0 ? 'zero' : 'pos',
+      rateBar(prem),
+      `vạch cảnh báo ${CHOP_RATE * 100}%`));
+
+    card.append(dl);
+    container.append(card);
+  }
+
+  const verdict = byId('branch-verdict');
+  if (verdict) {
+    verdict.textContent = leadKey
+      ? `${(BRANCH_LABEL[leadKey] || leadKey).split(' ·')[0]} DẪN ĐẦU · EV ${number(best, 2)} bps`
+      : 'CHƯA NHÁNH NÀO CÓ EV DƯƠNG';
+    verdict.className = leadKey ? 'verdict lead' : 'verdict';
+  }
+}
+
+/* A new bid from Binance is the one signal that the board is alive rather than
+   merely connected, so it gets its own beat instead of hiding inside a number. */
+let lastMid = null;
+function beat(markets) {
+  const dot = byId('tick-dot');
+  if (!dot) return;
+  const mid = Array.isArray(markets) && markets.length ? Number(markets[0].mid) : null;
+  if (!finite(mid)) return;
+  if (lastMid !== null && mid !== lastMid) {
+    dot.classList.remove('beat');
+    void dot.offsetWidth;                    // restart the animation
+    dot.classList.add('beat', mid > lastMid ? 'up' : 'down');
+    dot.classList.remove(mid > lastMid ? 'down' : 'up');
+  }
+  lastMid = mid;
+  const px = byId('tick-price');
+  if (px) px.textContent = mid.toFixed(5);
+}
+
 async function poll() {
   if (document.hidden) { setTimeout(poll, 2000); return; }
   try {
@@ -291,7 +457,9 @@ async function poll() {
     if (!response.ok) throw new Error('HTTP');
     const s = await response.json();
     render(s);
-    const fresh = s.updated_at && Date.now() / 1000 - s.updated_at < 5;
+    beat(s.markets);
+    const ts = s.timestamp || s.updated_at || 0;
+    const fresh = ts > 0 && Math.abs(Date.now() / 1000 - ts) < 8;
     set('connection', fresh ? 'TELEMETRY CONNECTED' : 'ENGINE IDLE / STALE');
     byId('lamp').className = fresh ? 'online' : '';
     set('clock', new Date().toLocaleTimeString());

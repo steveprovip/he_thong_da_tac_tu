@@ -1,0 +1,2506 @@
+diff --git a/core/funding_carry.py b/core/funding_carry.py
+--- a/core/funding_carry.py
++++ b/core/funding_carry.py
+@@ -1,29 +1,13 @@
+-"""Funding-carry engine: harvest extreme funding with deadline-bound protection.
+-
+-Research basis: He, Manela, Ross & von Wächter, "Fundamentals of Perpetual
+-Futures" (arXiv:2212.06888). Perpetual prices deviate from no-arbitrage
+-value; the funding payment compensates the side that is short the gap,
+-deviations are large and co-move across currencies, and the implied carry
+-strategy earns high Sharpe ratios out of sample.
+-
+-HONEST STATUS (Q5 handoff 09/09): single-leg FUNDED DIRECTIONAL only — a
+-futures-only account has no spot leg, so textbook delta-neutral carry is
+-impossible here. Do NOT call this hedged. A carry position is an explicitly
+-funded directional position whose expected edge IS the funding payment:
+-
+-  edge_bps(8h) = |funding_rate_bps| - (roundtrip_fee_bps + half_spread_exit)
+-  trade only if edge_bps >= edge_multiple * cost_bps   (same hurdle as ZEPHR)
+-
+-The position is wrapped in the identical safety envelope as every swarm
+-intent: GTX passive entry, on-exchange STOP_MARKET protection, a deadline
+-exit shortly after the funding print (so the payment is actually collected),
+-PositionSizer sizing (bootstrap cap + fractional Kelly), DrawdownBrake and
+-the VESKA one-time HMAC token. Carry authorization is fee-hurdle based, not
+-vote based: the swarm has no opinion on funding, so a synthetic full-score
+-decision is issued locally and the ordinary token/execution gates still apply.
++"""REST-only spot/perp planning plus the legacy read-only research interface.
++
++FundingCarry/CarryConfig are retained for existing research tests. Production
++carry uses SpotPerpCarryPlan and carry_votes below; it never authorizes the
++legacy single-leg plan. Basis is spot minus perp, in USDT per coin.
+ """
+ from dataclasses import dataclass
+ import math
++from core.models import dec
++from core.consensus_engine import ConsensusEngine, Vote
+ 
+ 
+ INTERVALS_PER_YEAR = 3 * 365  # funding prints every 8 hours
+@@ -142,4 +126,121 @@
+             stop, take_profit = price-distance, price+cfg.tp_multiple*distance
+         reason = f'FUNDING CARRY {rate_bps:+.1f}bps/8h'
+         return CarryPlan(symbol, side, rate_bps, cost_bps, edge_bps,
+-                         stop, take_profit, horizon, reason), 'AUTHORIZED'
+\ No newline at end of file
++                         stop, take_profit, horizon, reason), 'AUTHORIZED'
++
++
++@dataclass(frozen=True)
++class CarrySnapshot:
++    symbol: str
++    spot_bid: float
++    spot_ask: float
++    perp_bid: float
++    perp_ask: float
++    rate: float
++    interval_hours: int
++    next_funding: float
++    oi_usdt: float
++    observed_at: float
++    funding_history: tuple
++    spot_fee_bps: float = 10.0
++    margin_ratio: float = 0.0
++    bnb_ok: bool = False
++    capacity_ok: bool = False
++    accounts_verified: bool = False
++    futures_fee_bps: float = 6.0
++    futures_taker_fee_bps: float = 4.0
++
++    @property
++    def basis_fraction(self):
++        spot = (self.spot_bid + self.spot_ask) / 2
++        perp = (self.perp_bid + self.perp_ask) / 2
++        return (spot - perp) / spot
++
++
++@dataclass(frozen=True)
++class SpotPerpCarryPlan:
++    symbol: str
++    apr: float
++    horizon_days: float
++    gross_bps: float
++    cost_bps: float
++    net_bps: float
++    basis_fraction: float
++    projected_rate: float
++
++
++def plan_spot_perp(snapshot, now, horizon_days=7.0, slippage_bps=2.0):
++    s = snapshot
++    values = (s.spot_bid, s.spot_ask, s.perp_bid, s.perp_ask, s.rate, s.next_funding,
++              s.oi_usdt, s.observed_at, s.spot_fee_bps, s.futures_fee_bps, horizon_days, slippage_bps)
++    if not all(math.isfinite(x) for x in values):
++        return None, 'NON_FINITE_DATA'
++    if (min(s.spot_bid, s.perp_bid) <= 0 or s.spot_ask < s.spot_bid or s.perp_ask < s.perp_bid
++            or slippage_bps < 0 or s.spot_fee_bps < 0 or s.futures_fee_bps < 0):
++        return None, 'INVALID_QUOTES_OR_COST'
++    if not 0 <= now - s.observed_at < 60 or s.next_funding <= now:
++        return None, 'STALE_DATA'
++    if s.interval_hours not in (1, 4, 8):
++        return None, 'UNKNOWN_FUNDING_INTERVAL'
++    if not 7 <= horizon_days <= 30:
++        return None, 'HORIZON_OUTSIDE_7_30_DAYS'
++    if abs(s.basis_fraction) > .015:
++        return None, 'RUNE_BASIS'
++    spread = (s.spot_ask - s.spot_bid) / ((s.spot_bid + s.spot_ask) / 2) * 10000
++    if spread >= 3:
++        return None, 'SPOT_SPREAD'
++    if s.oi_usdt <= 20_000_000:
++        return None, 'INSUFFICIENT_OI'
++    if len(s.funding_history) < 21 or not all(math.isfinite(r) for r in s.funding_history):
++        return None, 'INSUFFICIENT_FUNDING_HISTORY'
++    rate = min(s.rate, sum(s.funding_history) / len(s.funding_history))
++    apr = rate * 24 / s.interval_hours * 365
++    if apr <= .15:
++        return None, 'APR_BELOW_15_PERCENT'
++    settlements = max(0, 1 + int((now + horizon_days * 86400 - s.next_funding) // (s.interval_hours * 3600)))
++    gross = rate * settlements * 10000
++    perp_spread = (s.perp_ask - s.perp_bid) / ((s.perp_bid + s.perp_ask) / 2) * 10000
++    cost = max(6, s.futures_fee_bps) + 2 * s.spot_fee_bps + spread + perp_spread / 2 + slippage_bps
++    net = gross - cost
++    if net <= 2 * cost:
++        return None, 'ZEPHR_NET_HURDLE'
++    return SpotPerpCarryPlan(s.symbol, apr, horizon_days, gross, cost, net, s.basis_fraction, rate), 'ELIGIBLE'
++
++
++def carry_votes(snapshot, plan, *, gateway_ready, exits_ready, now):
++    """Eight auditable suitability checks; no invented independent alpha scores."""
++    s = snapshot
++    basis_ok = min(s.spot_bid, s.perp_bid) > 0 and abs(s.basis_fraction) <= .015
++    history_ok = (len(s.funding_history) >= 21 and
++                  all(math.isfinite(r) for r in s.funding_history) and
++                  sum(r > 0 for r in s.funding_history) / len(s.funding_history) >= .8)
++    rune_ok = (basis_ok and s.accounts_verified and s.bnb_ok and
++               math.isfinite(s.margin_ratio) and 0 <= s.margin_ratio <= .65)
++    checks = [
++        ('NORO', basis_ok and plan is not None, 'Hedged basis and projected carry'),
++        ('LUMEN', history_ok and 0 <= now - s.observed_at < 60, 'Settled funding persistence and freshness'),
++        ('TIDAL', math.isfinite(s.oi_usdt) and s.oi_usdt > 20_000_000, 'Open-interest capacity'),
++        ('ZEPHR', plan is not None and plan.net_bps > 2 * plan.cost_bps, 'Both-leg net/cost > 2'),
++        ('RUNE', rune_ok, 'Basis <=1.5%, BNB reserve, verified isolated margin <=65%'),
++        ('OKAPI', s.accounts_verified and s.capacity_ok, 'Spot cash plus isolated futures margin'),
++        ('MARIN', exits_ready, 'Both-leg exit and exchange protection ready'),
++        ('VESKA', gateway_ready, 'Both clients and private streams ready'),
++    ]
++    votes = [Vote(name, 'SELL' if ok else 'HOLD', float(bool(ok)), reason,
++                  veto=not ok and name in ('ZEPHR', 'RUNE', 'OKAPI', 'MARIN', 'VESKA'))
++             for name, ok, reason in checks]
++    policy = ConsensusEngine(threshold=.768, veto_threshold=.70, trend_floor=.768)
++    return policy.evaluate(votes, regime='NORMAL'), votes
++
++
++def isolated_margin_ratio(position):
++    """Maintenance / (isolated wallet + unrealized PnL), never account-wide equity."""
++    try:
++        wallet = dec(position['isolatedWallet'])
++        pnl = dec(position.get('unRealizedProfit', position.get('unrealizedProfit')))
++        maintenance = dec(position['maintMargin'])
++        if wallet + pnl <= 0 or maintenance < 0:
++            return math.inf
++        return float(maintenance / (wallet + pnl))
++    except (KeyError, TypeError, ValueError):
++        return math.inf
+diff --git a/live/execution_gateway.py b/live/execution_gateway.py
+--- a/live/execution_gateway.py
++++ b/live/execution_gateway.py
+@@ -7,6 +7,8 @@
+ import uuid
+ from core.models import Intent, dec
+ from live.binance_futures_client import BinanceError
++from live.binance_spot_client import received_coins, gross_buy_quantity
++from core.models import PairIntent, quantize
+ 
+ 
+ class Journal:
+@@ -375,3 +377,373 @@
+                 self.active.pop(symbol, None)
+                 self.journal.write('POSITION_CLOSED',
+                                    {'symbol': symbol, 'client_id': order.client_id, 'reason': 'shutdown'})
++
++
++@dataclass
++class PairState:
++    pair_id: str
++    intent: PairIntent
++    state: str = 'PENDING_LEG1'
++    perp_filled: str = '0'
++    perp_closed: str = '0'
++    spot_owned: str = '0'
++    entry_status: str = 'NEW'
++    stop_id: str = ''
++    opened: float = 0.0
++    error: str = ''
++    hedge_dispatch_ms: float = 0.0
++    pending_spot: str = ''
++    closed_at: float = 0.0
++    pending_spot_sell: str = ''
++
++    @property
++    def short_quantity(self):
++        return dec(self.perp_filled) - dec(self.perp_closed)
++
++
++class PairExecutionGateway:
++    """VESKA pair coordinator. Own fills only; unknown POSTs never retried.
++
++    Recovery reconstructs owned inventory from order IDs and closes it before
++    accepting new entries. Journals contain execution/account data only.
++    """
++    TERMINAL = {'FILLED', 'CANCELED', 'EXPIRED', 'EXPIRED_IN_MATCH', 'REJECTED'}
++
++    def __init__(self, futures, spot, authority, journal, hedge_deadline=5.0):
++        self.futures, self.spot = futures, spot
++        self.authority, self.journal = authority, journal
++        self.pairs = {}
++        self.lock = asyncio.Lock()
++        self.halted = False
++        self.hedge_deadline = min(5.0, hedge_deadline)
++        if self.hedge_deadline <= 0:
++            raise ValueError('Invalid hedge deadline')
++
++    def save(self, pair):
++        self.journal.write('PAIR_STATE', asdict(pair))
++
++    def check_armed(self, intent):
++        if intent.mode == 'shadow' or any(not c.settings.armed or c.settings.mode != intent.mode
++                                         for c in (self.futures, self.spot)):
++            raise PermissionError('Both carry venues must be armed and match the intent')
++
++    async def operation(self, pair, role, call, client=None, symbol=None, client_id=None):
++        client_id = client_id or 'cp-' + uuid.uuid4().hex[:28]
++        self.journal.write('PAIR_ORDER_INTENT', {'pair_id': pair.pair_id, 'role': role,
++                           'client_id': client_id, 'symbol': symbol})
++        try:
++            result = await call(client_id)
++        except BinanceError as error:
++            if not error.uncertain:
++                self.journal.write('PAIR_ORDER_REJECTED', {'client_id': client_id, 'code': error.code})
++                raise
++            # An unknown POST may have filled. Query this ID, never send another.
++            try:
++                result = await client.order(symbol, client_id)
++            except Exception:
++                self.halted = True
++                pair.error = 'UNKNOWN_ORDER:' + client_id
++                self.save(pair)
++                raise RuntimeError(pair.error) from None
++        self.journal.write('PAIR_ORDER_ACK', {'client_id': client_id, 'result': result})
++        return result
++
++    async def settle_spot_order(self, pair, row, client_id):
++        if row.get('status') not in self.TERMINAL:
++            row = await self.spot.cancel(pair.intent.spot_symbol, client_id)
++            if row.get('status') not in self.TERMINAL:
++                raise RuntimeError('Spot cancellation not confirmed')
++        return await self.spot.fill_details(pair.intent.spot_symbol, row)
++
++    async def submit(self, intent, token):
++        async with self.lock:
++            self.check_armed(intent)
++            if self.halted or any(p.state != 'CLOSED' and p.intent.perp_symbol == intent.perp_symbol
++                                  for p in self.pairs.values()):
++                raise PermissionError('Carry halted or pair already active')
++            self.authority.consume_pair(token, intent)
++            pair = PairState('cp-' + uuid.uuid4().hex[:28], intent, opened=time.time())
++            self.pairs[pair.pair_id] = pair
++            self.save(pair)
++            try:
++                row = await self.operation(pair, 'PERP_ENTRY', lambda cid: self.futures.request(
++                    'POST', '/fapi/v1/order', {'symbol': intent.perp_symbol, 'side': 'SELL',
++                    'type': 'LIMIT', 'timeInForce': 'GTX', 'quantity': intent.quantity,
++                    'price': intent.perp_price, 'positionSide': 'BOTH',
++                    'newClientOrderId': cid}, signed=True), self.futures, intent.perp_symbol, pair.pair_id)
++                await self.apply_entry(pair, row)
++            except (Exception, asyncio.CancelledError) as error:
++                pair.error = type(error).__name__
++                self.save(pair)
++                await self.unwind_locked(pair, 'ENTRY_FAILURE')
++                raise
++            return pair
++
++    async def on_user_event(self, event):
++        if event.get('e') != 'ORDER_TRADE_UPDATE':
++            return
++        row = event['o']
++        async with self.lock:
++            pair = self.pairs.get(row.get('c'))
++            if pair and pair.state != 'CLOSED':
++                await self.apply_entry(pair, row)
++            elif row.get('x') == 'TRADE':
++                # Stops, manual reductions, and ADL can remove one leg.
++                for pair in self.pairs.values():
++                    if pair.state != 'CLOSED' and pair.intent.perp_symbol == row.get('s'):
++                        await self.reconcile_pair(pair)
++
++    async def apply_entry(self, pair, row):
++        received_at = time.monotonic()
++        previous = dec(pair.perp_filled)
++        cumulative = dec(row.get('executedQty', row.get('z', 0)))
++        pair.perp_filled = str(max(previous, cumulative))
++        pair.entry_status = row.get('status', row.get('X', pair.entry_status))
++        self.save(pair)
++        if cumulative > previous:
++            try:
++                await asyncio.wait_for(self.hedge(pair, received_at), self.hedge_deadline)
++                if not pair.stop_id:
++                    sid = 'cs-' + uuid.uuid4().hex[:28]
++                    # Persist the ID first so recovery can find/cancel an unknown stop.
++                    pair.stop_id = sid
++                    self.save(pair)
++                    try:
++                        response = await self.futures.protect(pair.intent.perp_symbol, 'BUY', pair.intent.stop, sid)
++                    except BinanceError as error:
++                        if not error.uncertain:
++                            raise
++                        response = await self.futures.algo(sid)
++                    if response.get('algoStatus', 'NEW') not in ('NEW', 'WORKING', 'ACCEPTED'):
++                        raise RuntimeError('Pair protection rejected')
++            except Exception as error:
++                self.halted = True
++                pair.error = 'HEDGE_OR_STOP:' + type(error).__name__
++                self.save(pair)
++                await self.unwind_locked(pair, pair.error)
++                return
++        if pair.short_quantity > 0:
++            delta = pair.short_quantity - dec(pair.spot_owned)
++            if delta != 0:
++                self.halted = True
++                await self.unwind_locked(pair, 'DELTA_MISMATCH')
++                return
++            pair.state = 'FULLY_HEDGED' if pair.entry_status in self.TERMINAL else 'PARTIAL_HEDGED'
++        elif pair.entry_status in self.TERMINAL:
++            pair.state = 'CLOSED'
++            pair.closed_at = time.time()
++        self.save(pair)
++
++    async def hedge(self, pair, received_at):
++        intent = pair.intent
++        # Initial market order plus at most three bounded IOC attempts.
++        for attempt in range(4):
++            missing = pair.short_quantity - dec(pair.spot_owned)
++            if missing <= 0:
++                break
++            quantity = gross_buy_quantity(missing, intent.spot_fee_rate, intent.fee_in_bnb, intent.spot_step)
++            if quantity * dec(intent.spot_price) < dec(intent.spot_min_notional):
++                raise RuntimeError('Partial fill below spot minimum notional')
++            price = None
++            if attempt:
++                top = await self.spot.book_ticker(intent.spot_symbol)
++                # IOC bounded at the executable REST ask; no unbounded chasing.
++                price = top['askPrice']
++            # Record the request before transmitting; fsync latency is measured.
++            pair.pending_spot = 'cb-' + uuid.uuid4().hex[:28]
++            self.save(pair)
++            try:
++                async def dispatch(cid):
++                    if not attempt:
++                        pair.hedge_dispatch_ms = (time.monotonic() - received_at) * 1000
++                    return await self.spot.create_order(intent.spot_symbol, 'BUY', quantity, cid, price=price)
++                row = await self.operation(pair, 'SPOT_BUY', dispatch, self.spot, intent.spot_symbol,
++                    pair.pending_spot)
++                row = await self.settle_spot_order(pair, row, pair.pending_spot)
++                pair.spot_owned = str(dec(pair.spot_owned) + received_coins(row, intent.base_asset))
++                pair.pending_spot = ''
++                self.save(pair)
++            except BinanceError as error:
++                if error.uncertain:
++                    raise
++                pair.pending_spot = ''
++                self.save(pair)
++                continue
++        # A base commission can leave dust or rounding can produce extra coins.
++        # Exact neutrality is required: if grids prevent it, unwind, never mask it.
++        if pair.short_quantity != dec(pair.spot_owned):
++            raise RuntimeError('Unhedged residual after bounded hedge attempts')
++        self.journal.write('PAIR_HEDGE_LATENCY', {'pair_id': pair.pair_id,
++                           'dispatch_ms': pair.hedge_dispatch_ms,
++                           'within_100ms': pair.hedge_dispatch_ms < 100})
++
++    async def reconcile_pair(self, pair):
++        rows = await self.futures.positions(pair.intent.perp_symbol)
++        position = sum((dec(r['positionAmt']) for r in rows), dec(0))
++        if position > 0 or -position > pair.short_quantity:
++            self.halted = True
++            raise RuntimeError('Unattributed futures exposure; manual reconciliation required')
++        if -position != pair.short_quantity:
++            pair.perp_closed = str(dec(pair.perp_filled) + position)
++            self.save(pair)
++            await self.unwind_locked(pair, 'EXTERNAL_REDUCTION_OR_ADL')
++
++    async def unwind(self, pair_id, reason):
++        async with self.lock:
++            await self.unwind_locked(self.pairs[pair_id], reason)
++
++    async def unwind_locked(self, pair, reason):
++        if pair.state == 'CLOSED':
++            return
++        pair.state = 'UNWINDING'
++        pair.error = reason
++        self.save(pair)
++        try:
++            # Cancel first, and use its cumulative fill to catch cancel/fill races.
++            try:
++                row = await self.futures.cancel(pair.intent.perp_symbol, pair.pair_id)
++            except BinanceError as error:
++                if error.code == -2011 and dec(pair.perp_filled) == 0:
++                    try:
++                        row = await self.futures.order(pair.intent.perp_symbol, pair.pair_id)
++                    except BinanceError as lookup:
++                        if lookup.code != -2013:
++                            raise
++                        row = {'status': 'REJECTED', 'executedQty': '0'}
++                else:
++                    row = await self.futures.order(pair.intent.perp_symbol, pair.pair_id)
++            if row.get('status') not in self.TERMINAL:
++                raise RuntimeError('Entry cancellation not confirmed')
++            pair.perp_filled = str(max(dec(pair.perp_filled), dec(row.get('executedQty', 0))))
++            pair.entry_status = row['status']
++            self.save(pair)
++            # Repeated emergency attempts must use current exposure; a previous
++            # reduce-only POST may have succeeded before a lost response.
++            positions = await self.futures.positions(pair.intent.perp_symbol)
++            actual = -sum((dec(p['positionAmt']) for p in positions), dec(0))
++            if actual < 0 or actual > pair.short_quantity:
++                raise RuntimeError('Unattributed exposure during unwind')
++            pair.perp_closed = str(dec(pair.perp_filled) - actual)
++            self.save(pair)
++            if pair.short_quantity > 0:
++                cid = 'cx-' + uuid.uuid4().hex[:28]
++                row = await self.operation(pair, 'PERP_CLOSE', lambda ident: self.futures.reduce_position(
++                    pair.intent.perp_symbol, 'BUY', pair.short_quantity, ident),
++                    self.futures, pair.intent.perp_symbol, cid)
++                if 'executedQty' not in row or row.get('status') != 'FILLED':
++                    row = await self.futures.order(pair.intent.perp_symbol, cid)
++                pair.perp_closed = str(dec(pair.perp_closed) + dec(row.get('executedQty', 0)))
++                self.save(pair)
++                if pair.short_quantity != 0:
++                    raise RuntimeError('Futures emergency close incomplete')
++            if pair.pending_spot:
++                # Timeout may mean a successful buy with a lost response.
++                try:
++                    row = await self.spot.order(pair.intent.spot_symbol, pair.pending_spot)
++                except BinanceError as error:
++                    if error.code != -2013:
++                        raise
++                    # A single not-found is not proof that an in-flight POST failed.
++                    raise RuntimeError('Unknown spot hedge; reconciliation required') from None
++                row = await self.settle_spot_order(pair, row, pair.pending_spot)
++                pair.spot_owned = str(dec(pair.spot_owned) + received_coins(row, pair.intent.base_asset))
++                pair.pending_spot = ''
++                self.save(pair)
++            if dec(pair.spot_owned) > 0:
++                quantity = quantize(pair.spot_owned, pair.intent.spot_step)
++                if quantity != dec(pair.spot_owned):
++                    raise RuntimeError('Spot dust requires explicit reconciliation')
++                if pair.pending_spot_sell:
++                    row = await self.spot.order(pair.intent.spot_symbol, pair.pending_spot_sell)
++                else:
++                    pair.pending_spot_sell = 'ce-' + uuid.uuid4().hex[:28]
++                    self.save(pair)
++                    try:
++                        row = await self.operation(pair, 'SPOT_SELL', lambda cid: self.spot.create_order(
++                            pair.intent.spot_symbol, 'SELL', quantity, cid), self.spot, pair.intent.spot_symbol,
++                            pair.pending_spot_sell)
++                    except BinanceError as error:
++                        if not error.uncertain:
++                            pair.pending_spot_sell = ''
++                            self.save(pair)
++                        raise
++                row = await self.settle_spot_order(pair, row, pair.pending_spot_sell)
++                base_fee = sum((dec(f['commission']) for f in row.get('fills', [])
++                                if f['commissionAsset'] == pair.intent.base_asset), dec(0))
++                pair.spot_owned = str(dec(pair.spot_owned) - dec(row.get('executedQty', 0)) - base_fee)
++                pair.pending_spot_sell = ''
++                self.save(pair)
++                if dec(pair.spot_owned) != 0:
++                    raise RuntimeError('Spot close incomplete')
++            if pair.stop_id:
++                try:
++                    await self.futures.cancel_algo(pair.stop_id)
++                except BinanceError as error:
++                    if error.uncertain or error.code not in (-2011, -2013):
++                        raise
++                pair.stop_id = ''
++            pair.state = 'CLOSED'
++            pair.closed_at = time.time()
++            self.save(pair)
++        except Exception:
++            self.halted = True
++            self.save(pair)
++            raise
++
++    async def recover(self):
++        """Recover post-crash inventory, including POST-before-ACK crash windows."""
++        events = [(kind, json.loads(payload)) for kind, payload in self.journal.db.execute(
++            'SELECT kind,payload FROM events ORDER BY id')]
++        operations, rejected = [], set()
++        for kind, data in events:
++            if kind == 'PAIR_STATE':
++                data['intent'] = PairIntent(**data['intent'])
++                self.pairs[data['pair_id']] = PairState(**data)
++            elif kind == 'PAIR_ORDER_INTENT':
++                operations.append(data)
++            elif kind == 'PAIR_ORDER_REJECTED':
++                rejected.add(data['client_id'])
++        for pair in self.pairs.values():
++            if pair.state == 'CLOSED':
++                continue
++            self.check_armed(pair.intent)
++            pair.perp_filled = pair.perp_closed = pair.spot_owned = '0'
++            for op in operations:
++                if op['pair_id'] != pair.pair_id or op['client_id'] in rejected:
++                    continue
++                client = self.spot if op['role'].startswith('SPOT') else self.futures
++                # Missing/expired exchange history is a hard block, not zero fills.
++                row = await client.order(op['symbol'], op['client_id'])
++                q = dec(row.get('executedQty', 0))
++                if op['role'] == 'PERP_ENTRY':
++                    pair.perp_filled = str(q)
++                elif op['role'] == 'PERP_CLOSE':
++                    pair.perp_closed = str(dec(pair.perp_closed) + q)
++                else:
++                    row = await self.spot.fill_details(op['symbol'], row)
++                    net = received_coins(row, pair.intent.base_asset)
++                    if op['role'] == 'SPOT_BUY':
++                        pair.spot_owned = str(dec(pair.spot_owned) + net)
++                    else:
++                        pair.spot_owned = str(dec(pair.spot_owned) - (2 * q - net))
++            rows = await self.futures.positions(pair.intent.perp_symbol)
++            actual = -sum((dec(r['positionAmt']) for r in rows), dec(0))
++            if actual < 0 or actual > pair.short_quantity:
++                raise RuntimeError('Recovery found unattributed futures exposure')
++            pair.perp_closed = str(dec(pair.perp_filled) - actual)
++            pair.pending_spot = ''  # reconstructed from the complete operation list
++            pair.pending_spot_sell = ''
++            self.save(pair)
++            await self.unwind_locked(pair, 'RESTART_RECOVERY')
++
++    async def shutdown(self):
++        self.halted = True
++        failures = []
++        for pair in list(self.pairs.values()):
++            if pair.state != 'CLOSED':
++                try:
++                    await self.unwind(pair.pair_id, 'SHUTDOWN')
++                except Exception as error:
++                    failures.append((pair.pair_id, type(error).__name__))
++        if failures:
++            raise RuntimeError('Unresolved pair exits: ' + str(failures))
+diff --git a/core/consensus_engine.py b/core/consensus_engine.py
+--- a/core/consensus_engine.py
++++ b/core/consensus_engine.py
+@@ -134,3 +134,20 @@
+             deadline, digest, expected = issued
+             if self.clock() >= deadline or digest != self._digest(intent) or not hmac.compare_digest(mac, expected):
+                 raise PermissionError('Expired or tampered token')
++
++    def issue_pair(self, intent, decision):
++        from core.models import PairIntent
++        if not isinstance(intent, PairIntent) or decision.score < .768 or decision.threshold < .768:
++            raise PermissionError('Pair requires the fixed 76.8% policy')
++        return PairAuthToken(self.issue(intent, decision))
++
++    def consume_pair(self, token, intent):
++        from core.models import PairIntent
++        if not isinstance(token, PairAuthToken) or not isinstance(intent, PairIntent):
++            raise PermissionError('Pair-bound authorization required')
++        self.consume(token.value, intent)
++
++
++@dataclass(frozen=True)
++class PairAuthToken:
++    value: str
+diff --git a/core/models.py b/core/models.py
+--- a/core/models.py
++++ b/core/models.py
+@@ -90,3 +90,44 @@
+         q, p, sl, tp = map(dec, (self.quantity, self.price, self.stop, self.take_profit))
+         if min(q, p, sl, tp) <= 0 or not (sl < p < tp if self.side == 'BUY' else tp < p < sl):
+             raise ValueError("Invalid brackets/size")
++
++
++@dataclass(frozen=True)
++class PairIntent:
++    spot_symbol: str
++    perp_symbol: str
++    base_asset: str
++    quantity: str
++    perp_price: str
++    spot_price: str
++    stop: str
++    spot_step: str
++    perp_step: str
++    spot_min_notional: str
++    horizon: float
++    mode: str
++    leverage: int = 1
++    spot_fee_rate: str = '0.00075'
++    fee_in_bnb: bool = True
++    futures_taker_fee_bps: str = '4'
++
++    @property
++    def side(self):
++        return 'SELL'
++
++    def __post_init__(self):
++        if self.mode not in ('shadow', 'testnet', 'mainnet') or self.leverage not in (1, 2):
++            raise ValueError('Invalid carry mode/leverage')
++        if not self.base_asset.isalnum() or self.spot_symbol != self.base_asset + 'USDT' or self.perp_symbol != self.spot_symbol:
++            raise ValueError('Carry requires the same linear USDT underlying')
++        if not math.isfinite(self.horizon) or self.horizon < 7 * 86400:
++            raise ValueError('Carry horizon must be at least seven days')
++        if any(dec(v) <= 0 for v in (self.quantity, self.perp_price, self.spot_price,
++                                     self.stop, self.spot_step, self.perp_step, self.spot_min_notional)):
++            raise ValueError('Invalid pair quantities/prices')
++        if dec(self.stop) <= dec(self.perp_price) or not 0 <= dec(self.spot_fee_rate) < 1:
++            raise ValueError('Invalid pair stop/commission')
++        if dec(self.futures_taker_fee_bps) < 4:
++            raise ValueError('Futures exit fee below verified baseline')
++        if quantize(self.quantity, self.perp_step) != dec(self.quantity):
++            raise ValueError('Perp quantity not on lot grid')
+diff --git a/core/runtime.py b/core/runtime.py
+--- a/core/runtime.py
++++ b/core/runtime.py
+@@ -939,6 +939,11 @@
+ 
+ 
+ def main(mode, argv=None):
++    import sys
++    command = list(sys.argv[1:] if argv is None else argv)
++    if '--carry' in command:
++        from core.carry_runtime import main as carry_main
++        return carry_main(command)
+     args = arguments(mode, argv)
+     settings = Settings.load(mode, args.arm)
+     if mode == 'paper' and args.market_data == 'mainnet':
+@@ -984,3 +989,7 @@
+         if server:
+             server.shutdown()
+             server.server_close()
++
++
++if __name__ == '__main__':
++    main('paper')
+diff --git a/phan_tich/carry_lab.py b/phan_tich/carry_lab.py
+--- a/phan_tich/carry_lab.py
++++ b/phan_tich/carry_lab.py
+@@ -14,6 +14,9 @@
+ import json
+ import math
+ import time
++from collections import defaultdict
++from datetime import datetime, timezone
++from core.models import dec
+ 
+ 
+ STATUSES = ('FORECAST', 'SETTLED', 'INCOMPLETE', 'UNMATCHED')
+@@ -77,3 +80,251 @@
+ def encode(row):
+     """One JSONL line for the carry-lab file."""
+     return json.dumps(row, sort_keys=True, allow_nan=False)
++
++
++def wallet_totals(account):
++    return {r['asset']: dec(r['free']) + dec(r['locked']) for r in account['balances']}
++
++
++def wallet_reconciliation(before, after, spot_trades, base_by_symbol, tolerance='0.00000001'):
++    """Conserve each asset, including BNB. External transfers stay unmatched."""
++    flows = defaultdict(lambda: dec(0))
++    seen = set()
++    for trade in spot_trades:
++        key = (trade['symbol'], trade['id'])
++        if key in seen:
++            continue
++        seen.add(key)
++        base = base_by_symbol[trade['symbol']]
++        sign = 1 if trade['isBuyer'] else -1
++        flows[base] += sign * dec(trade['qty'])
++        flows['USDT'] -= sign * dec(trade['quoteQty'])
++        flows[trade['commissionAsset']] -= dec(trade['commission'])
++    assets = set(before) | set(after) | set(flows)
++    residual = {asset: dec(after.get(asset, 0)) - dec(before.get(asset, 0)) - flows[asset] for asset in assets}
++    mismatches = {a: str(v) for a, v in residual.items() if abs(v) > dec(tolerance)}
++    return {'status': 'UNMATCHED' if mismatches else 'RECONCILED', 'residuals': mismatches}
++
++
++def pair_cashflow(pair_id, spot_trades, futures_trades, incomes, *, base_asset,
++                  spot_bid, perp_ask, fee_prices, expected_settlements=(), exit_fee_bps=14.0,
++                  complete=True):
++    """Attributed net liquidation value and cash PnL, no assumed fills.
++
++    fee_prices[(asset, minute)] must be a historical REST price for third-asset
++    commissions. Missing pricing, fills or settlement pages produce INCOMPLETE.
++    Basis sign is implicit in long spot / short futures cash flows.
++    """
++    spot_cash, spot_qty, future_realized, fees = (dec(0) for _ in range(4))
++    funding = dec(0)
++    short_qty, entry_value = dec(0), dec(0)
++    issues, seen = [], set()
++    trades = sorted([dict(t, venue='spot') for t in spot_trades] +
++                    [dict(t, venue='futures') for t in futures_trades], key=lambda t: (int(t['time']), str(t['id'])))
++    for t in trades:
++        key = (t['venue'], t['symbol'], t['id'])
++        if key in seen:
++            continue
++        seen.add(key)
++        q, price, commission = dec(t['qty']), dec(t['price']), dec(t['commission'])
++        if min(q, price) <= 0 or commission < 0:
++            raise ValueError('Invalid trade quantity/price/commission')
++        buyer = t['isBuyer'] if t['venue'] == 'spot' else t['side'] == 'BUY'
++        if t['venue'] == 'spot':
++            spot_cash += (-1 if buyer else 1) * dec(t['quoteQty'])
++            spot_qty += (1 if buyer else -1) * q
++        elif not buyer:
++            short_qty += q
++            entry_value += q * price
++        else:
++            if q > short_qty:
++                issues.append('FUTURES_CLOSE_EXCEEDS_OWNED_SHORT')
++            if short_qty > 0:
++                entry_value -= entry_value / short_qty * q
++            short_qty -= q
++            future_realized += dec(t['realizedPnl'])
++        asset = t['commissionAsset']
++        if asset == 'USDT':
++            conversion = dec(1)
++        elif asset == base_asset:
++            conversion = price
++        else:
++            conversion = fee_prices.get((asset, int(t['time']) // 60000))
++        if conversion is None:
++            issues.append('MISSING_COMMISSION_FX:' + asset)
++        else:
++            fees += commission * dec(conversion)
++        if t['venue'] == 'spot' and asset == base_asset:
++            spot_qty -= commission
++            # Fee-valued units are removed from inventory; add cost basis back
++            # before subtracting the explicit fee once, avoiding double charge.
++            spot_cash += commission * price
++    seen_income = set()
++    actual_times = []
++    for income in incomes:
++        key = (income['incomeType'], str(income['tranId']))
++        if key in seen_income:
++            continue
++        seen_income.add(key)
++        if income['incomeType'] != 'FUNDING_FEE' or income['asset'] != 'USDT':
++            issues.append('UNSUPPORTED_INCOME')
++            continue
++        stamp = int(income['time'])
++        exposure = sum((dec(t['qty']) * (1 if t['side'] == 'SELL' else -1)
++                        for t in futures_trades if int(t['time']) < stamp), dec(0))
++        if exposure <= 0:
++            issues.append('UNATTRIBUTED_FUNDING')
++            continue
++        funding += dec(income['income'])
++        actual_times.append(stamp)
++    for settlement in expected_settlements:
++        stamp = int(settlement['fundingTime'])
++        exposure = sum((dec(t['qty']) * (1 if t['side'] == 'SELL' else -1)
++                        for t in futures_trades if int(t['time']) < stamp), dec(0))
++        if exposure > 0 and dec(settlement['fundingRate']) != 0 and not any(abs(t - stamp) <= 10000 for t in actual_times):
++            issues.append('MISSING_FUNDING_SETTLEMENT')
++    if not complete:
++        issues.append('TRUNCATED_HISTORY')
++    if short_qty < 0 or spot_qty < 0 or spot_qty != short_qty:
++        issues.append('DELTA_MISMATCH')
++    spot_value = spot_qty * dec(spot_bid)
++    unrealized_future = entry_value - short_qty * dec(perp_ask)
++    liquidation_cost = max(dec(0), short_qty) * dec(perp_ask) * dec(exit_fee_bps) / 10000
++    basis_pnl = spot_cash + spot_value + future_realized + unrealized_future
++    net = funding + basis_pnl - fees - liquidation_cost
++    return {'pair_id': pair_id, 'status': 'INCOMPLETE' if issues else 'RECONCILED',
++            'issues': sorted(set(issues)), 'funding_usdt': str(funding), 'basis_pnl_usdt': str(basis_pnl),
++            'fee_usdt': str(fees), 'exit_cost_reserve_usdt': str(liquidation_cost), 'net_usdt': str(net),
++            'spot_qty': str(spot_qty), 'short_qty': str(short_qty),
++            'closed': spot_qty == 0 and short_qty == 0, 'trade_count': len(seen)}
++
++
++def weekly_report(rows):
++    """Realized whole-cycle PnL grouped by closing week; open MTM is separate."""
++    weeks = defaultdict(lambda: {'cycles': 0, 'funding': dec(0), 'basis': dec(0), 'fees': dec(0), 'net': dec(0)})
++    lines = ['# Carry weekly reconciliation', '',
++             'Realized complete cycles, grouped by UTC closing week. Open positions are liquidation MTM.', '',
++             '| Week UTC | Cycles | Funding USDT | Basis PnL USDT | Fees USDT | Net USDT |',
++             '|---|---:|---:|---:|---:|---:|']
++    open_rows, incomplete = [], []
++    for row in rows:
++        if row['status'] != 'RECONCILED':
++            incomplete.append(row['pair_id'])
++        elif not row['closed']:
++            open_rows.append(row)
++        else:
++            week = datetime.fromtimestamp(row['closed_at'], timezone.utc).strftime('%G-W%V')
++            w = weeks[week]
++            w['cycles'] += 1
++            for field, key in [('funding', 'funding_usdt'), ('basis', 'basis_pnl_usdt'),
++                               ('fees', 'fee_usdt'), ('net', 'net_usdt')]:
++                w[field] += dec(row[key])
++    for week, w in sorted(weeks.items()):
++        lines.append(f"| {week} | {w['cycles']} | {w['funding']} | {w['basis']} | {w['fees']} | {w['net']} |")
++    if not weeks:
++        lines.append('| No reconciled closed cycles | 0 | — | — | — | — |')
++    lines.extend(['', '## Open liquidation MTM', ''])
++    lines.extend(f"- {r['pair_id']}: {r['net_usdt']} USDT after estimated exit costs" for r in open_rows)
++    lines.extend(['', 'Incomplete/unmatched cycles: ' + (', '.join(incomplete) or 'none'), ''])
++    return '\n'.join(lines)
++
++
++class PairReconciler:
++    """Exchange order IDs anchor all attribution; REST only, bounded pagination."""
++    def __init__(self, futures, spot, journal):
++        self.futures, self.spot, self.journal = futures, spot, journal
++        self.fx_cache = {}
++
++    async def fee_price(self, asset, stamp):
++        if asset == 'USDT':
++            return dec(1)
++        minute = int(stamp) // 60000
++        key = (asset, minute)
++        if key not in self.fx_cache:
++            rows = await self.spot.request('GET', '/api/v3/klines',
++                {'symbol': asset + 'USDT', 'interval': '1m', 'startTime': minute * 60000, 'limit': 1}, weight=2)
++            if not rows or int(rows[0][0]) != minute * 60000:
++                raise RuntimeError('Missing commission valuation candle')
++            self.fx_cache[key] = dec(rows[0][1])
++        return self.fx_cache[key]
++
++    async def income_window(self, symbol, start_ms, end_ms):
++        rows = []
++        for start in range(start_ms, end_ms + 1, 7 * 86400000):
++            end = min(end_ms, start + 7 * 86400000 - 1)
++            for page in range(1, 21):
++                result = await self.futures.request('GET', '/fapi/v1/income',
++                    {'symbol': symbol, 'incomeType': 'FUNDING_FEE', 'startTime': start,
++                     'endTime': end, 'limit': 1000, 'page': page}, signed=True, weight=30)
++                rows.extend(result)
++                if len(result) < 1000:
++                    break
++            else:
++                return rows, False
++        return rows, True
++
++    async def pair_report(self, pair, spot_bid, perp_ask, end_ms=None):
++        end_ms = int(time.time() * 1000) if end_ms is None else end_ms
++        events = [(kind, json.loads(payload)) for kind, payload in self.journal.db.execute(
++            'SELECT kind,payload FROM events WHERE kind IN (?,?,?) ORDER BY id',
++            ('PAIR_ORDER_INTENT', 'PAIR_ORDER_REJECTED', 'PAIR_STATE'))]
++        rejected = {data['client_id'] for kind, data in events if kind == 'PAIR_ORDER_REJECTED'}
++        operations = [data for kind, data in events if kind == 'PAIR_ORDER_INTENT'
++                      and data['pair_id'] == pair.pair_id and data['client_id'] not in rejected]
++        spot_trades, futures_trades = [], []
++        complete = True
++        start_ms = int(pair.opened * 1000)
++        future_history, full = await self.futures.history_since(pair.intent.perp_symbol, start_ms)
++        future_history = [t for t in future_history if int(t['time']) <= end_ms]
++        complete &= full
++        for op in operations:
++            client = self.spot if op['role'].startswith('SPOT') else self.futures
++            row = await client.order(op['symbol'], op['client_id'])
++            if dec(row.get('executedQty', 0)) == 0:
++                continue
++            if op['role'].startswith('SPOT'):
++                fills = await self.spot.my_trades(op['symbol'], row['orderId'])
++                fills = [t for t in fills if int(t['time']) <= end_ms]
++                complete &= len(fills) < 1000
++                spot_trades.extend(dict(t, symbol=op['symbol']) for t in fills)
++            else:
++                fills = [t for t in future_history if str(t['orderId']) == str(row['orderId'])]
++                futures_trades.extend(dict(t, symbol=op['symbol']) for t in fills)
++            complete &= sum((dec(t['qty']) for t in fills), dec(0)) == dec(row['executedQty'])
++        # Exchange-side stop execution belongs to this pair too. Algo IDs are
++        # retained in state history even after successful cancellation/closure.
++        stop_ids = {data['stop_id'] for kind, data in events if kind == 'PAIR_STATE'
++                    and data['pair_id'] == pair.pair_id and data.get('stop_id')}
++        known_ids = {str(t['id']) for t in futures_trades}
++        for stop_id in stop_ids:
++            algo = await self.futures.algo(stop_id)
++            actual_id = algo.get('actualOrderId')
++            if actual_id and str(actual_id) != '0':
++                for t in future_history:
++                    if str(t['orderId']) == str(actual_id) and str(t['id']) not in known_ids:
++                        futures_trades.append(dict(t, symbol=pair.intent.perp_symbol))
++                        known_ids.add(str(t['id']))
++        # Unknown manual/ADL executions must be visible, never silently ignored.
++        if any(str(t['id']) not in known_ids for t in future_history):
++            complete = False
++        incomes, full = await self.income_window(pair.intent.perp_symbol, start_ms, end_ms)
++        complete &= full
++        settled = await self.futures.request('GET', '/fapi/v1/fundingRate',
++            {'symbol': pair.intent.perp_symbol, 'startTime': start_ms, 'endTime': end_ms, 'limit': 1000})
++        complete &= len(settled) < 1000
++        fx = {}
++        for trade in spot_trades + futures_trades:
++            asset = trade['commissionAsset']
++            if asset not in ('USDT', pair.intent.base_asset):
++                fx[(asset, int(trade['time']) // 60000)] = await self.fee_price(asset, trade['time'])
++        report = pair_cashflow(pair.pair_id, spot_trades, futures_trades, incomes,
++            base_asset=pair.intent.base_asset, spot_bid=spot_bid, perp_ask=perp_ask,
++            fee_prices=fx, expected_settlements=[s for s in settled if int(s['fundingTime']) < end_ms - 60000],
++            exit_fee_bps=float(pair.intent.spot_fee_rate) * 10000 + float(pair.intent.futures_taker_fee_bps), complete=complete)
++        report['closed_at'] = pair.closed_at or end_ms / 1000
++        report['reported_at'] = time.time()
++        report['fee_fx_method'] = 'USDT exact; third-asset commissions valued at REST 1m open'
++        if (dec(report['spot_qty']) != dec(pair.spot_owned) or dec(report['short_qty']) != pair.short_quantity):
++            report['status'] = 'INCOMPLETE'
++            report['issues'].append('VENUE_TRADES_DISAGREE_WITH_PAIR_STATE')
++        return report, spot_trades
+diff --git a/run_launcher.py b/run_launcher.py
+--- a/run_launcher.py
++++ b/run_launcher.py
+@@ -1,10 +1,8 @@
+ """GROKTOPUS control panel — the single entry point.
+ 
+-Policy 09/09/2026: scalping is KILLED (net -6.72 USDT / edge -12.6 bps over
+-102 verified trips). This launcher offers MEASUREMENT only: paper runs, L2
+-recording, and the testnet kill switch. Live mainnet and testnet scalping
+-sessions are intentionally NOT offered — re-enabling them is a code change,
+-not a menu click.
++Carry migration: default public Shadow and explicit Testnet pair execution.
++Legacy paper measurement remains accessible. Mainnet requires the carry CLI's
++two explicit arming arguments; there is no Mainnet menu entry.
+ 
+ Everything runs through sys.executable (absolute path), so no PATH, no
+ nested cmd, no start-quirks: the whole class of 'cannot find the file'
+@@ -57,16 +55,23 @@
+     return run_python(['tools/shutdown_system.py', '--mode', 'testnet'])
+ 
+ 
++def carry(mode='shadow') -> int:
++    if mode not in ('shadow', 'testnet'):
++        raise ValueError('Launcher only supports Shadow and Testnet carry')
++    print(f'\n[Carry] {mode.upper()} - REST 60s, isolated watchdog 30s, Ctrl+C closes both legs.\n')
++    return run_python(['-m', 'core.runtime', '--carry', '--mode', mode])
++
++
+ MENU = f"""
+ ==============================================================================
+-      GROKTOPUS 2.0 - DO LUONG PAPER + L2 (LIVE KHOA 09/09/2026)
+-      Scalping KILL: net -6.72 / edge -12.6 bps tren 102 trips da xac minh.
+-      Mo lai live la thay doi CODE, khong phai lua chon menu.
++      GROKTOPUS 2.0 - DELTA-NEUTRAL SPOT-PERP FUNDING HARVESTER
++      Carry REST 60s / Margin watchdog 30s / Khong stream L2
++      Mainnet khong co trong menu. Shadow khong dat lenh.
+ ==============================================================================
+ 
+-  [1] DO LUONG PAPER - mainnet public, khong lenh that, tu audit sau phien
+-  [2] GHI L2 THAT    - {L2_DEFAULT_HOURS}h mac dinh, de backtest queue/latency
+-  [3] TAT KHAN       - huy lenh + dong vi the testnet
++  [1] [Carry] Shadow Spot-Perp Harvester
++  [2] [Carry] Testnet Harvester - can API key Spot + Futures testnet
++  [3] LEGACY PAPER - do luong pipeline cu
+ 
+   [0] Thoat
+ ==============================================================================
+@@ -78,11 +83,11 @@
+         print(MENU)
+         choice = input('Nhap lua chon [1, 2, 3, 0]: ').strip()
+         if choice == '1':
++            carry('shadow')
++        elif choice == '2':
++            carry('testnet')
++        elif choice == '3':
+             measure_paper()
+-        elif choice == '2':
+-            record_l2()
+-        elif choice == '3':
+-            kill_switch()
+         elif choice == '0':
+             return 0
+         else:
+@@ -91,4 +96,3 @@
+ 
+ if __name__ == '__main__':
+     raise SystemExit(main())
+-
+diff --git a/run.bat b/run.bat
+--- a/run.bat
++++ b/run.bat
+@@ -1,7 +1,7 @@
+ @echo off
+-rem Thin shim only - all logic lives in run_launcher.py (single entry point).
++rem Carry Shadow/Testnet menu. No Mainnet order is armed by this launcher.
+ set "PY=%LocalAppData%\Programs\Python\Python310\python.exe"
+ if not exist "%PY%" set "PY=python"
+ cd /d "%~dp0"
+ "%PY%" run_launcher.py
+-pause
+\ No newline at end of file
++pause
+diff --git a/live/binance_spot_client.py b/live/binance_spot_client.py
+new file mode 100644
+--- /dev/null
++++ b/live/binance_spot_client.py
+@@ -0,0 +1,124 @@
++"""Spot REST and authenticated account WebSocket; no market stream recorder."""
++import asyncio
++import hashlib
++import hmac
++import json
++import time
++from urllib.parse import urlencode
++
++import websockets
++
++from core.models import dec, quantize
++from live.binance_futures_client import BinanceFuturesClient, BinanceError
++
++
++class BinanceSpotClient(BinanceFuturesClient):
++    async def request(self, method, path, params=None, **kwargs):
++        if method != 'GET' and not self.settings.armed:
++            raise PermissionError('Spot mutations require an armed execution mode')
++        return await super().request(method, path, params, **kwargs)
++
++    async def sync_time(self):
++        start = time.time() * 1000
++        row = await self.request('GET', '/api/v3/time')
++        self.offset_ms = row['serverTime'] - (start + time.time() * 1000) / 2
++
++    async def exchange_info(self):
++        return await self.request('GET', '/api/v3/exchangeInfo', weight=20)
++
++    async def ticker(self, symbol):
++        return await self.request('GET', '/api/v3/ticker/price', {'symbol': symbol}, weight=2)
++
++    async def book_ticker(self, symbol):
++        return await self.request('GET', '/api/v3/ticker/bookTicker', {'symbol': symbol}, weight=2)
++
++    async def account(self):
++        return await self.request('GET', '/api/v3/account', signed=True, weight=20)
++
++    async def balances(self):
++        return {r['asset']: dec(r['free']) for r in (await self.account())['balances']}
++
++    async def commission(self, symbol):
++        return await self.request('GET', '/api/v3/account/commission', {'symbol': symbol}, signed=True, weight=20)
++
++    async def my_trades(self, symbol, order_id=None, start_ms=None, from_id=None):
++        params = {'symbol': symbol, 'limit': 1000}
++        if order_id is not None:
++            params['orderId'] = order_id
++        if start_ms is not None:
++            params['startTime'] = int(start_ms)
++        if from_id is not None:
++            params['fromId'] = int(from_id)
++        return await self.request('GET', '/api/v3/myTrades', params, signed=True, weight=20)
++
++    async def order(self, symbol, client_id):
++        return await self.request('GET', '/api/v3/order',
++                                  {'symbol': symbol, 'origClientOrderId': client_id}, signed=True, weight=4)
++
++    async def cancel(self, symbol, client_id):
++        return await self.request('DELETE', '/api/v3/order',
++                                  {'symbol': symbol, 'origClientOrderId': client_id}, signed=True)
++
++    async def create_order(self, symbol, side, quantity, client_id, *, price=None):
++        params = {'symbol': symbol, 'side': side, 'quantity': str(quantity),
++                  'newClientOrderId': client_id, 'newOrderRespType': 'FULL',
++                  'type': 'MARKET' if price is None else 'LIMIT'}
++        if price is not None:
++            params.update(price=str(price), timeInForce='IOC')
++        return await self.request('POST', '/api/v3/order', params, signed=True)
++
++    async def fill_details(self, symbol, response):
++        if dec(response.get('executedQty', 0)) > 0 and not response.get('fills'):
++            trades = await self.my_trades(symbol, response['orderId'])
++            if sum((dec(t['qty']) for t in trades), dec(0)) != dec(response['executedQty']):
++                raise RuntimeError('Spot trade history incomplete')
++            return dict(response, fills=trades)
++        return response
++
++    async def user_events(self, callback, ready, disconnected, stop):
++        """HMAC subscription, memory only; reconnection is fail-closed upstream."""
++        while not stop.is_set():
++            try:
++                async with websockets.connect(self.settings.ws, ping_interval=20,
++                                              close_timeout=2, max_queue=128) as ws:
++                    params = {'apiKey': self.settings.api_key,
++                              'timestamp': int(time.time() * 1000 + self.offset_ms)}
++                    payload = urlencode(sorted(params.items()))
++                    params['signature'] = hmac.new(self.settings.secret.encode(), payload.encode(),
++                                                   hashlib.sha256).hexdigest()
++                    await ws.send(json.dumps({'id': 'carry-user',
++                                              'method': 'userDataStream.subscribe.signature', 'params': params}))
++                    ack = json.loads(await asyncio.wait_for(ws.recv(), 10))
++                    if ack.get('status') != 200:
++                        raise BinanceError('SPOT_WS_SUBSCRIPTION')
++                    ready.set()
++                    while not stop.is_set():
++                        event = json.loads(await ws.recv())
++                        if 'event' in event:
++                            await callback(event['event'])
++            except asyncio.CancelledError:
++                raise
++            except (OSError, ValueError, RuntimeError, asyncio.TimeoutError,
++                    websockets.exceptions.WebSocketException):
++                ready.clear()
++                await disconnected('spot')
++                await asyncio.sleep(1)
++
++
++def received_coins(response, base_asset):
++    """Use actual commission asset, including BNB-disabled/fallback fills."""
++    gross = dec(response.get('executedQty', 0))
++    fills = response.get('fills', [])
++    if gross > 0 and sum((dec(f['qty']) for f in fills), dec(0)) != gross:
++        raise ValueError('Missing or incomplete spot commissions')
++    fee = sum((dec(f['commission']) for f in fills if f['commissionAsset'] == base_asset), dec(0))
++    if fee < 0 or fee > gross:
++        raise ValueError('Invalid base commission')
++    return gross - fee
++
++
++def gross_buy_quantity(net_quantity, fee_rate, fee_in_bnb, step):
++    fee = dec(0) if fee_in_bnb else dec(fee_rate)
++    if not 0 <= fee < 1:
++        raise ValueError('Invalid spot commission rate')
++    return quantize(dec(net_quantity) / (1 - fee), step, up=True)
+diff --git a/core/carry_runtime.py b/core/carry_runtime.py
+new file mode 100644
+--- /dev/null
++++ b/core/carry_runtime.py
+@@ -0,0 +1,568 @@
++"""Independent funding harvester. REST snapshots, private fills, no L2 dependency."""
++import argparse
++import asyncio
++from contextlib import AsyncExitStack
++from dataclasses import replace
++import json
++import math
++import os
++from pathlib import Path
++import signal
++import time
++
++from config.settings import ROOT, Settings, read_env
++from core.consensus_engine import TokenAuthority
++from core.funding_carry import CarrySnapshot, plan_spot_perp, carry_votes, isolated_margin_ratio
++from core.models import PairIntent, dec, quantize
++from live.binance_futures_client import BinanceFuturesClient, BinanceError
++from live.binance_spot_client import BinanceSpotClient
++from live.execution_gateway import PairExecutionGateway, Journal
++from live.futures_streams import user_stream
++from phan_tich.carry_lab import PairReconciler, wallet_totals, wallet_reconciliation, weekly_report
++
++
++CONFIRMATION = 'I UNDERSTAND SPOT PERP MAINNET RISK'
++
++
++class CarryProcessLock:
++    """OS-released lock prevents two local carry runtimes sharing an account mode."""
++    def __init__(self, path):
++        self.path, self.file = path, None
++
++    def __enter__(self):
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        self.file = self.path.open('a+b')
++        self.file.seek(0, 2)
++        if self.file.tell() == 0:
++            self.file.write(b'0')
++            self.file.flush()
++        self.file.seek(0)
++        try:
++            if os.name == 'nt':
++                import msvcrt
++                msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
++            else:
++                import fcntl
++                fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except OSError:
++            self.file.close()
++            raise RuntimeError('Another carry runtime already owns this mode') from None
++        return self
++
++    def __exit__(self, *args):
++        self.file.close()  # Closing releases the OS lock, including after crashes.
++
++
++def arguments(argv=None):
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--carry', action='store_true')
++    parser.add_argument('--mode', choices=('shadow', 'testnet', 'mainnet'), default='shadow')
++    parser.add_argument('--symbols', nargs='+', default=['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])
++    parser.add_argument('--seconds', type=float, default=0, help='0 runs until Ctrl+C')
++    parser.add_argument('--notional', type=float, default=100, help='Maximum USDT per pair')
++    parser.add_argument('--leverage', type=int, choices=(1, 2), default=1)
++    parser.add_argument('--horizon-days', type=float, default=7)
++    parser.add_argument('--profit-target-bps', type=float, default=100)
++    parser.add_argument('--arm', action='store_true')
++    parser.add_argument('--confirm', default='')
++    parser.add_argument('--journal', type=Path)
++    args = parser.parse_args(argv)
++    args.symbols = list(dict.fromkeys(s.upper() for s in args.symbols))
++    if not 1 <= len(args.symbols) <= 8 or any(not s.isalnum() or not s.endswith('USDT') for s in args.symbols):
++        parser.error('Choose 1–8 USDT symbols')
++    if (not all(math.isfinite(v) for v in (args.seconds, args.notional, args.horizon_days, args.profit_target_bps))
++            or args.seconds < 0 or args.notional <= 0 or not 7 <= args.horizon_days <= 30
++            or args.profit_target_bps <= 0):
++        parser.error('Invalid carry duration/capital/target')
++    if args.mode == 'mainnet' and (not args.arm or args.confirm != CONFIRMATION):
++        parser.error('Mainnet requires --arm and --confirm "' + CONFIRMATION + '"')
++    if args.mode == 'shadow' and args.arm:
++        parser.error('Shadow cannot be armed')
++    args.journal = args.journal or ROOT / 'data' / 'carry' / (args.mode + '.sqlite')
++    return args
++
++
++def venue_settings(args, env=None):
++    env = read_env() if env is None else env
++    mode = args.mode
++    # Ignore ARM_LIVE_EXECUTION: the pair CLI requires an explicit double opt-in.
++    armed = mode == 'testnet' or (mode == 'mainnet' and args.arm and args.confirm == CONFIRMATION)
++    futures = Settings.load('testnet' if mode == 'testnet' else 'mainnet', env=env)
++    futures = replace(futures, mode=mode, armed=armed,
++                      api_key=futures.api_key if armed else '', secret=futures.secret if armed else '')
++    prefix = 'BINANCE_SPOT_' + ('TESTNET_' if mode == 'testnet' else 'MAINNET_')
++    spot = Settings(mode, 'https://testnet.binance.vision' if mode == 'testnet' else 'https://api.binance.com',
++                    'wss://ws-api.testnet.binance.vision/ws-api/v3' if mode == 'testnet'
++                    else 'wss://ws-api.binance.com:443/ws-api/v3',
++                    env.get(prefix + 'API_KEY', '') if armed else '',
++                    env.get(prefix + 'SECRET_KEY', '') if armed else '', armed)
++    return futures, spot
++
++
++def common_step(*steps):
++    values = [dec(s) for s in steps if dec(s) > 0]
++    places = max(-v.as_tuple().exponent for v in values)
++    scale = 10 ** places
++    return dec(math.lcm(*(int(v * scale) for v in values))) / scale
++
++
++def normalized_funding(history, interval):
++    normalized = []
++    for previous, current in zip(history, history[1:]):
++        gap_ms = int(current['fundingTime']) - int(previous['fundingTime'])
++        hours = min((1, 4, 8), key=lambda h: abs(gap_ms - h * 3600000))
++        # Published settlement timestamps have millisecond jitter. Missing
++        # whole periods remain errors; timestamp tolerance is only one second.
++        if abs(gap_ms - hours * 3600000) > 1000:
++            raise ValueError('Funding history has an unsupported interval or gap')
++        normalized.append(float(current['fundingRate']) * interval / hours)
++    return tuple(normalized)
++
++
++def exchange_filters(row):
++    fs = {f['filterType']: f for f in row['filters']}
++    lot = fs['LOT_SIZE']
++    market = fs.get('MARKET_LOT_SIZE', lot)
++    step = common_step(lot['stepSize'], market['stepSize'])
++    notional = fs.get('NOTIONAL', fs.get('MIN_NOTIONAL', {}))
++    return {'step': step, 'tick': dec(fs['PRICE_FILTER']['tickSize']),
++            'min_qty': max(dec(lot['minQty']), dec(market['minQty'])),
++            'max_qty': min(dec(lot['maxQty']), dec(market['maxQty'])) if dec(market['maxQty']) else dec(lot['maxQty']),
++            'min_notional': dec(notional.get('minNotional', notional.get('notional', '5')))}
++
++
++def commission_bps(row, side='buyer'):
++    """BNB discount applies only to standard commission, not tax/special."""
++    discount = row.get('discount', {})
++    enabled = (discount.get('enabledForAccount') is True and discount.get('enabledForSymbol') is True
++               and discount.get('discountAsset') == 'BNB')
++    standard = row['standardCommission']
++    base = dec(standard['taker']) + dec(standard.get(side, 0))
++    if enabled:
++        base *= dec(discount['discount'])
++    extra = sum((dec(row.get(k, {}).get('taker', 0)) + dec(row.get(k, {}).get(side, 0))
++                 for k in ('taxCommission', 'specialCommission')), dec(0))
++    # Conservative retail floor: never budget less than the verified 7.5bps
++    # BNB baseline, even if a symbol's current API discount is more generous.
++    return max(7.5 if enabled else 10.0, float((base + extra) * 10000)), enabled
++
++
++async def futures_account(client):
++    """V3 balances omit permissions/leverage; join their documented endpoints."""
++    account, config, symbols = await asyncio.gather(
++        client.account(), client.request('GET', '/fapi/v1/accountConfig', signed=True, weight=5),
++        client.request('GET', '/fapi/v1/symbolConfig', signed=True, weight=5))
++    by_symbol = {r['symbol']: r for r in symbols}
++    positions = [dict(p, isolated=by_symbol.get(p['symbol'], {}).get('marginType') == 'ISOLATED',
++                      leverage=by_symbol.get(p['symbol'], {}).get('leverage', 99))
++                 for p in account.get('positions', [])]
++    return dict(account, positions=positions, canTrade=config.get('canTrade') is True,
++                symbol_config=by_symbol, dualSidePosition=config.get('dualSidePosition'),
++                multiAssetsMargin=config.get('multiAssetsMargin'))
++
++
++class CarryRuntime:
++    def __init__(self, args, futures, spot, journal):
++        self.args, self.futures, self.spot, self.journal = args, futures, spot, journal
++        self.gateway = PairExecutionGateway(futures, spot, TokenAuthority(), journal)
++        self.stop = asyncio.Event()
++        self.futures_ready, self.spot_ready = asyncio.Event(), asyncio.Event()
++        self.market = {}
++        self.semaphore = asyncio.Semaphore(6)
++        self.margin_topups = {}
++        self.funding_seen = {}
++        self.negative_periods = {}
++        self.start_ms = int(time.time() * 1000)
++        self.latest_accounts = None
++        self.reconciler = PairReconciler(futures, spot, journal)
++        self.reconciled = {}
++        self.owned_spot_trades = {}
++        self.wallet_before = None
++        self.wallet_status = 'NOT_CHECKED'
++
++    def report(self, kind, **data):
++        print(json.dumps({'event': kind, 'mode': self.args.mode, **data}, ensure_ascii=False,
++                         allow_nan=False), flush=True)
++
++    async def initialize(self):
++        await asyncio.gather(self.futures.sync_time(), self.spot.sync_time())
++        f, s = await asyncio.gather(self.futures.exchange_info(), self.spot.exchange_info())
++        self.futures_info = {r['symbol']: r for r in f['symbols']}
++        self.spot_info = {r['symbol']: r for r in s['symbols']}
++        for symbol in self.args.symbols:
++            if (symbol not in self.futures_info or symbol not in self.spot_info
++                    or self.futures_info[symbol]['status'] != 'TRADING'
++                    or self.futures_info[symbol].get('contractType') != 'PERPETUAL'
++                    or self.spot_info[symbol]['status'] != 'TRADING'):
++                raise ValueError('Unavailable matching spot/perpetual: ' + symbol)
++        if self.args.mode != 'shadow':
++            if any(not c.settings.api_key or not c.settings.secret for c in (self.futures, self.spot)):
++                raise PermissionError('Separate Spot and Futures credentials are required')
++            side, multi = await asyncio.gather(
++                self.futures.request('GET', '/fapi/v1/positionSide/dual', signed=True),
++                self.futures.request('GET', '/fapi/v1/multiAssetsMargin', signed=True))
++            if side['dualSidePosition'] or multi['multiAssetsMargin']:
++                raise PermissionError('Carry requires one-way, single-asset futures mode')
++            await self.gateway.recover()
++            for symbol in self.args.symbols:
++                rows, orders = await asyncio.gather(self.futures.positions(symbol), self.futures.open_orders(symbol))
++                if any(dec(r['positionAmt']) != 0 for r in rows) or orders:
++                    raise PermissionError('Existing unattributed futures exposure on ' + symbol)
++                try:
++                    await self.futures.request('POST', '/fapi/v1/marginType',
++                                               {'symbol': symbol, 'marginType': 'ISOLATED'}, signed=True)
++                except BinanceError as error:
++                    if error.code != -4046:
++                        raise
++                result = await self.futures.request('POST', '/fapi/v1/leverage',
++                                                   {'symbol': symbol, 'leverage': self.args.leverage}, signed=True)
++                if int(result['leverage']) != self.args.leverage:
++                    raise RuntimeError('Futures leverage not confirmed')
++            self.wallet_before = wallet_totals(await self.spot.account())
++            self.start_ms = int(time.time() * 1000)
++            self.journal.write('CARRY_WALLET_BASELINE', {'start_ms': self.start_ms,
++                               'balances': {k: str(v) for k, v in self.wallet_before.items()}})
++
++    async def symbol_snapshot(self, symbol, premium, interval):
++        async with self.semaphore:
++            spot, perp, oi, history = await asyncio.gather(
++                self.spot.book_ticker(symbol),
++                self.futures.request('GET', '/fapi/v1/ticker/bookTicker', {'symbol': symbol}, weight=2),
++                self.futures.request('GET', '/fapi/v1/openInterest', {'symbol': symbol}),
++                self.futures.request('GET', '/fapi/v1/fundingRate', {'symbol': symbol, 'limit': 90}))
++            now = time.time() + self.futures.offset_ms / 1000
++            observed_at = min(now, int(premium['time']) / 1000, int(perp['time']) / 1000)
++            settled = [r for r in history if int(r['fundingTime']) / 1000 <= now]
++            normalized = normalized_funding(settled, interval)
++            self.market[symbol] = {'spot': spot, 'perp': perp, 'history': settled}
++            return CarrySnapshot(symbol, float(spot['bidPrice']), float(spot['askPrice']),
++                                 float(perp['bidPrice']), float(perp['askPrice']),
++                                 float(premium['lastFundingRate']), interval, int(premium['nextFundingTime']) / 1000,
++                                 float(oi['openInterest']) * float(premium['markPrice']), observed_at,
++                                 tuple(normalized))
++
++    async def collect(self):
++        started = time.monotonic()
++        premium, info = await asyncio.gather(self.futures.premium_index(),
++                                             self.futures.request('GET', '/fapi/v1/fundingInfo'))
++        rates = {r['symbol']: r for r in premium}
++        intervals = {r['symbol']: int(r['fundingIntervalHours']) for r in info}
++        # fundingInfo lists adjustments; unlisted contracts have the default 8h.
++        snapshots = await asyncio.gather(*(self.symbol_snapshot(s, rates[s], intervals.get(s, 8))
++                                          for s in self.args.symbols))
++        self.report('REST_BATCH', seconds=round(time.monotonic() - started, 3), symbols=len(snapshots))
++        return snapshots
++
++    async def account_snapshot(self, snapshot):
++        spot_account, future_account, fee, bnb, future_fee = await asyncio.gather(
++            self.spot.account(), futures_account(self.futures), self.spot.commission(snapshot.symbol),
++            self.spot.ticker('BNBUSDT'), self.futures.request('GET', '/fapi/v1/commissionRate',
++                {'symbol': snapshot.symbol}, signed=True, weight=20))
++        balances = {r['asset']: dec(r['free']) for r in spot_account['balances']}
++        buy_fee, buy_bnb = commission_bps(fee)
++        sell_fee, sell_bnb = commission_bps(fee, 'seller')
++        reserve = dec(self.args.notional * len(self.args.symbols) * (buy_fee + sell_fee) / 10000) * 2
++        bnb_ok = buy_bnb and sell_bnb and balances.get('BNB', dec(0)) * dec(bnb['price']) >= reserve
++        positions = [p for p in future_account.get('positions', []) if dec(p.get('positionAmt', 0)) != 0]
++        ratio = max((isolated_margin_ratio(p) for p in positions), default=0)
++        active_notional = sum(float(p.intent.quantity) * float(p.intent.perp_price)
++                              for p in self.gateway.pairs.values() if p.state != 'CLOSED')
++        reserved_spot = sum((max(dec(0), dec(p.intent.quantity) - dec(p.spot_owned)) * dec(p.intent.spot_price)
++                             for p in self.gateway.pairs.values() if p.state != 'CLOSED'), dec(0))
++        capacity = (balances.get('USDT', dec(0)) - reserved_spot * dec('1.02') >= dec(self.args.notional * 1.02)
++                    and dec(future_account['availableBalance']) >= dec(self.args.notional / self.args.leverage * 1.1)
++                    and active_notional + self.args.notional <= self.args.notional * len(self.args.symbols) + .001)
++        verified = (spot_account.get('canTrade') is True and future_account.get('canTrade') is True
++                    and future_account['dualSidePosition'] is False and future_account['multiAssetsMargin'] is False
++                    and future_account['symbol_config'].get(snapshot.symbol, {}).get('marginType') == 'ISOLATED'
++                    and int(future_account['symbol_config'].get(snapshot.symbol, {}).get('leverage', 99)) in (1, 2)
++                    and all(p.get('isolated') is True and int(p.get('leverage', 99)) <= 2 for p in positions))
++        self.latest_accounts = (spot_account, future_account)
++        return replace(snapshot, spot_fee_bps=max(buy_fee, sell_fee), bnb_ok=bnb_ok,
++                       accounts_verified=verified, capacity_ok=capacity, margin_ratio=ratio,
++                       futures_fee_bps=max(6, float(dec(future_fee['makerCommissionRate']) + dec(future_fee['takerCommissionRate'])) * 10000),
++                       futures_taker_fee_bps=max(4, float(future_fee['takerCommissionRate']) * 10000))
++
++    def make_intent(self, snapshot, plan):
++        sf = exchange_filters(self.spot_info[snapshot.symbol])
++        ff = exchange_filters(self.futures_info[snapshot.symbol])
++        step = common_step(sf['step'], ff['step'])
++        price = quantize(snapshot.perp_ask, ff['tick'], up=True)
++        q = quantize(dec(self.args.notional) / price, step)
++        if (q < max(sf['min_qty'], ff['min_qty']) or q > min(sf['max_qty'], ff['max_qty'])
++                or q * dec(snapshot.spot_bid) < sf['min_notional'] or q * price < ff['min_notional']):
++            raise ValueError('Capital cap does not meet both venues minimum lot/notional')
++        return PairIntent(snapshot.symbol, snapshot.symbol, self.spot_info[snapshot.symbol]['baseAsset'],
++                          str(q), str(price), str(snapshot.spot_ask), str(quantize(price * dec('1.30'), ff['tick'], up=True)),
++                          str(sf['step']), str(ff['step']), str(sf['min_notional']), plan.horizon_days * 86400,
++                          self.args.mode, self.args.leverage, str(snapshot.spot_fee_bps / 10000), True,
++                          str(snapshot.futures_taker_fee_bps))
++
++    def count_negative_settlements(self, pair, history):
++        seen = self.funding_seen.get(pair.pair_id, int(pair.opened * 1000))
++        count = self.negative_periods.get(pair.pair_id, 0)
++        for row in sorted(history, key=lambda r: int(r['fundingTime'])):
++            if int(row['fundingTime']) > seen:
++                count = count + 1 if dec(row['fundingRate']) < 0 else 0
++                seen = int(row['fundingTime'])
++        self.funding_seen[pair.pair_id] = seen
++        self.negative_periods[pair.pair_id] = count
++        return count
++
++    async def scan(self):
++        snapshots = await asyncio.wait_for(self.collect(), timeout=50)
++        for snapshot in snapshots:
++            if self.args.mode != 'shadow':
++                snapshot = await asyncio.wait_for(self.account_snapshot(snapshot), timeout=8)
++            now = time.time() + self.futures.offset_ms / 1000
++            plan, reason = plan_spot_perp(snapshot, now, self.args.horizon_days)
++            decision, votes = carry_votes(snapshot, plan,
++                gateway_ready=self.futures_ready.is_set() and self.spot_ready.is_set() and not self.gateway.halted,
++                exits_ready=self.futures_ready.is_set() and self.spot_ready.is_set(), now=now)
++            self.report('PAIR_SNAPSHOT', symbol=snapshot.symbol, spot=snapshot.spot_ask, perp=snapshot.perp_bid,
++                        basis_bps=round(snapshot.basis_fraction * 10000, 3), funding_bps=snapshot.rate * 10000,
++                        interval_hours=snapshot.interval_hours, plan=reason,
++                        net_bps=round(plan.net_bps, 3) if plan else None, allowed=decision.allowed,
++                        votes={v.agent: v.reason for v in votes if v.side == 'HOLD'})
++            active = next((p for p in self.gateway.pairs.values()
++                           if p.intent.perp_symbol == snapshot.symbol and p.state != 'CLOSED'), None)
++            if active:
++                history = self.market[snapshot.symbol]['history']
++                if self.count_negative_settlements(active, history) >= 3:
++                    await self.gateway.unwind(active.pair_id, 'THREE_NEGATIVE_SETTLEMENTS')
++                elif abs(snapshot.basis_fraction) > .015:
++                    await self.gateway.unwind(active.pair_id, 'BASIS_LIMIT')
++                elif now - active.opened >= active.intent.horizon:
++                    await self.gateway.unwind(active.pair_id, 'HORIZON')
++                elif now - active.opened > 60 and active.entry_status not in self.gateway.TERMINAL:
++                    await self.gateway.unwind(active.pair_id, 'ENTRY_TTL')
++            elif decision.allowed and self.args.mode != 'shadow':
++                pair = self.make_intent(snapshot, plan)
++                self.journal.write('PAIR_VOTES', {'intent': pair.__dict__,
++                                   'votes': [v.__dict__ for v in votes], 'score': decision.score})
++                token = self.gateway.authority.issue_pair(pair, decision)
++                await self.gateway.submit(pair, token)
++        if self.args.mode != 'shadow':
++            await self.reconcile_accounts()
++
++    async def reconcile_accounts(self):
++        for pair in list(self.gateway.pairs.values()):
++            old = self.reconciled.get(pair.pair_id, {})
++            if (pair.state == 'CLOSED' and old.get('status') == 'RECONCILED'
++                    and old.get('reported_at', 0) > pair.closed_at + 120):
++                continue
++            top = self.market.get(pair.intent.spot_symbol)
++            if top is None:
++                spot, perp = await asyncio.gather(self.spot.book_ticker(pair.intent.spot_symbol),
++                    self.futures.request('GET', '/fapi/v1/ticker/bookTicker', {'symbol': pair.intent.perp_symbol}, weight=2))
++                top = {'spot': spot, 'perp': perp}
++            report, trades = await self.reconciler.pair_report(pair, top['spot']['bidPrice'], top['perp']['askPrice'],
++                end_ms=int(pair.closed_at * 1000) if pair.closed_at else None)
++            self.reconciled[pair.pair_id] = report
++            self.owned_spot_trades[pair.pair_id] = trades
++            self.report('PAIR_PNL', **report)
++        before_seq = self.journal.db.execute('SELECT MAX(id) FROM events').fetchone()[0]
++        current = wallet_totals(await self.spot.account())
++        after_seq = self.journal.db.execute('SELECT MAX(id) FROM events').fetchone()[0]
++        if before_seq != after_seq:
++            self.report('WALLET_RETRY', reason='Execution changed during wallet snapshot')
++            return
++        trades = [t for rows in self.owned_spot_trades.values() for t in rows if int(t['time']) >= self.start_ms]
++        wallet = wallet_reconciliation(self.wallet_before, current, trades,
++                    {p.intent.spot_symbol: p.intent.base_asset for p in self.gateway.pairs.values()})
++        self.wallet_status = wallet['status']
++        self.journal.write('CARRY_WALLET_RECONCILIATION', wallet)
++        self.report('WALLET_RECONCILIATION', **wallet)
++        if wallet['status'] != 'RECONCILED':
++            self.gateway.halted = True
++        for pair_id, report in self.reconciled.items():
++            report['wallet_status'] = wallet['status']
++            self.journal.write('PAIR_RECONCILIATION', report)
++            pair = self.gateway.pairs[pair_id]
++            if report['status'] == 'RECONCILED' and wallet['status'] == 'RECONCILED' and not report['closed']:
++                notional = dec(pair.intent.quantity) * dec(pair.intent.perp_price)
++                if dec(report['net_usdt']) / notional * 10000 >= dec(self.args.profit_target_bps):
++                    await self.gateway.unwind(pair_id, 'NET_PROFIT_TARGET')
++        self.write_weekly_report()
++
++    def write_weekly_report(self):
++        rows = []
++        for _, payload in self.journal.db.execute("SELECT kind,payload FROM events WHERE kind='PAIR_RECONCILIATION' ORDER BY id"):
++            row = json.loads(payload)
++            rows.append(row)
++        latest = {r['pair_id']: r for r in rows}
++        for row in latest.values():
++            if row.get('wallet_status') != 'RECONCILED':
++                row = latest[row['pair_id']] = dict(row, status='UNMATCHED')
++        path = self.args.journal.with_name(self.args.mode + '-weekly.md')
++        path.write_text(weekly_report(latest.values()) + '\nSpot wallet check: ' + self.wallet_status + '\n', encoding='utf-8')
++
++    async def watchdog_once(self):
++        if self.args.mode == 'shadow':
++            self.report('WATCHDOG', status='SHADOW_NO_PRIVATE_ACCOUNT')
++            return
++        account = await futures_account(self.futures)
++        positions = {p['symbol']: p for p in account.get('positions', []) if dec(p.get('positionAmt', 0)) != 0}
++        available = dec(account['availableBalance'])
++        for pair in self.gateway.pairs.values():
++            if pair.state == 'CLOSED':
++                continue
++            if pair.state == 'UNWINDING':
++                await self.gateway.unwind(pair.pair_id, 'RETRY_UNWIND_RECONCILED')
++                continue
++            async with self.gateway.lock:
++                if pair.entry_status not in self.gateway.TERMINAL:
++                    row = await self.futures.order(pair.intent.perp_symbol, pair.pair_id)
++                    await self.gateway.apply_entry(pair, row)
++                if pair.short_quantity > 0:
++                    await self.gateway.reconcile_pair(pair)
++                    if pair.state != 'CLOSED' and pair.stop_id:
++                        algo = await self.futures.algo(pair.stop_id)
++                        if algo.get('algoStatus') not in ('NEW', 'WORKING', 'ACCEPTED'):
++                            self.gateway.halted = True
++                            await self.gateway.unwind_locked(pair, 'EXCHANGE_STOP_INACTIVE')
++            if pair.state == 'CLOSED':
++                continue
++            position = positions.get(pair.intent.perp_symbol)
++            if not position:
++                continue
++            ratio = isolated_margin_ratio(position)
++            if position.get('isolated') is not True or int(position.get('leverage', 99)) > 2:
++                ratio = math.inf
++            if ratio > .65:
++                self.report('MARGIN_ALERT', pair=pair.pair_id, ratio=ratio if math.isfinite(ratio) else None)
++                # Rebalance only from free futures cash, with a 25% notional lifetime cap.
++                used = self.margin_topups.get(pair.pair_id, dec(0))
++                cap = dec(pair.intent.quantity) * dec(pair.intent.perp_price) * dec('.25') - used
++                needed = dec(0)
++                if math.isfinite(ratio):
++                    needed = (dec(position['maintMargin']) / dec('.50') - dec(position['isolatedWallet'])
++                              - dec(position.get('unrealizedProfit', position.get('unRealizedProfit', 0))))
++                if 0 < needed <= min(available, cap):
++                    # Unknown transfer outcomes are never retried; verify margin instead.
++                    self.journal.write('PAIR_MARGIN_INTENT', {'pair_id': pair.pair_id, 'amount': str(needed)})
++                    self.margin_topups[pair.pair_id] = used + needed
++                    try:
++                        await self.futures.request('POST', '/fapi/v1/positionMargin',
++                            {'symbol': pair.intent.perp_symbol, 'amount': str(needed), 'type': 1,
++                             'positionSide': 'BOTH'}, signed=True)
++                    except BinanceError as error:
++                        self.report('MARGIN_REBALANCE_ERROR', code=str(error.code))
++                    fresh = await futures_account(self.futures)
++                    updated = next((p for p in fresh['positions'] if p['symbol'] == pair.intent.perp_symbol), {})
++                    if isolated_margin_ratio(updated) <= .65:
++                        available -= needed
++                        self.report('MARGIN_REBALANCED', pair=pair.pair_id, added=str(needed))
++                        continue
++                self.gateway.halted = True
++                await self.gateway.unwind(pair.pair_id, 'MARGIN_RATIO_OVER_65_PERCENT')
++
++    async def disconnected(self, label):
++        self.futures_ready.clear() if label == 'private' else self.spot_ready.clear()
++        self.gateway.halted = True
++        self.report('STREAM_DISCONNECTED', stream=label)
++        await self.gateway.shutdown()
++
++    async def futures_event(self, event):
++        if event.get('e') == '_CONNECTED':
++            self.futures_ready.set()
++        else:
++            await self.gateway.on_user_event(event)
++
++    async def spot_event(self, event):
++        if event.get('e') in ('executionReport', 'outboundAccountPosition', 'balanceUpdate'):
++            # Persist execution identity only, never market ticks or credentials.
++            self.journal.write('SPOT_ACCOUNT_EVENT', {k: event[k] for k in ('e', 'E', 's', 'i', 'c', 'X') if k in event})
++
++    async def watchdog(self):
++        while not self.stop.is_set():
++            try:
++                # Transport reads have finite timeouts; don't cancel mutations.
++                await self.watchdog_once()
++            except Exception as error:
++                self.gateway.halted = True
++                self.report('WATCHDOG_FAILURE', error=type(error).__name__)
++                await self.gateway.shutdown()
++            try:
++                await asyncio.wait_for(self.stop.wait(), 30)
++            except asyncio.TimeoutError:
++                continue
++
++    async def run(self):
++        await asyncio.wait_for(self.initialize(), timeout=50)
++        tasks = [asyncio.create_task(self.watchdog())]
++        if self.args.mode != 'shadow':
++            tasks.extend([asyncio.create_task(user_stream(self.futures, self.futures_event, self.disconnected, self.stop)),
++                          asyncio.create_task(self.spot.user_events(self.spot_event, self.spot_ready, self.disconnected, self.stop))])
++        started = time.monotonic()
++        try:
++            while not self.stop.is_set():
++                cycle = time.monotonic()
++                try:
++                    # Only reads have batch timeouts. Never cancel an order POST
++                    # because a scanning deadline expired.
++                    await self.scan()
++                except (BinanceError, ValueError, RuntimeError, KeyError, asyncio.TimeoutError, PermissionError) as error:
++                    self.report('SCAN_BLOCKED', error=type(error).__name__, detail=str(error))
++                    if self.args.mode != 'shadow':
++                        self.gateway.halted = True
++                for task in tasks:
++                    if task.done():
++                        task.result()
++                        raise RuntimeError('Carry background task stopped')
++                remaining = self.args.seconds - (time.monotonic() - started) if self.args.seconds else math.inf
++                if remaining <= 0:
++                    break
++                wait = min(max(0, 60 - (time.monotonic() - cycle)), remaining)
++                try:
++                    await asyncio.wait_for(self.stop.wait(), wait)
++                except asyncio.TimeoutError:
++                    if self.args.seconds and time.monotonic() - started >= self.args.seconds:
++                        break
++        finally:
++            self.stop.set()
++            try:
++                if self.args.mode != 'shadow':
++                    await self.gateway.shutdown()
++                    await self.reconcile_accounts()
++                else:
++                    self.write_weekly_report()
++            finally:
++                for task in tasks:
++                    task.cancel()
++                await asyncio.gather(*tasks, return_exceptions=True)
++            self.report('CARRY_STOPPED', seconds=round(time.monotonic() - started, 2),
++                        pairs=len(self.gateway.pairs), halted=self.gateway.halted)
++
++
++async def run(args):
++    futures_settings, spot_settings = venue_settings(args)
++    args.journal.parent.mkdir(parents=True, exist_ok=True)
++    journal = Journal(args.journal)
++    try:
++        async with AsyncExitStack() as stack:
++            futures = await stack.enter_async_context(BinanceFuturesClient(futures_settings))
++            spot = await stack.enter_async_context(BinanceSpotClient(spot_settings))
++            runtime = CarryRuntime(args, futures, spot, journal)
++            loop = asyncio.get_running_loop()
++            previous = signal.signal(signal.SIGINT, lambda *_: loop.call_soon_threadsafe(runtime.stop.set))
++            try:
++                await runtime.run()
++            finally:
++                signal.signal(signal.SIGINT, previous)
++    finally:
++        journal.close()
++
++
++def main(argv=None):
++    args = arguments(argv)
++    try:
++        with CarryProcessLock(ROOT / 'data' / 'carry' / (args.mode + '.lock')):
++            asyncio.run(run(args))
++    except (ValueError, RuntimeError, PermissionError, BinanceError, asyncio.TimeoutError) as error:
++        print(json.dumps({'event': 'CARRY_FAILED', 'error': type(error).__name__, 'detail': str(error)}), flush=True)
++        raise SystemExit(1) from None
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/tests/test_spot_perp_carry.py b/tests/test_spot_perp_carry.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_spot_perp_carry.py
+@@ -0,0 +1,667 @@
++"""Deterministic venue ledger tests: actual quantities, commissions and faults."""
++import asyncio
++from dataclasses import replace
++from types import SimpleNamespace
++
++import pytest
++
++from core.models import PairIntent, dec
++from core.consensus_engine import TokenAuthority, ConsensusEngine, Vote
++from live.binance_futures_client import BinanceError
++from live.binance_spot_client import received_coins, gross_buy_quantity
++from live.execution_gateway import PairExecutionGateway, Journal
++from core.funding_carry import CarrySnapshot, plan_spot_perp, carry_votes, isolated_margin_ratio
++from core.carry_runtime import CarryRuntime, arguments, venue_settings, futures_account, commission_bps
++from phan_tich.carry_lab import pair_cashflow, wallet_reconciliation, weekly_report
++
++
++def intent(**overrides):
++    return replace(PairIntent('BTCUSDT', 'BTCUSDT', 'BTC', '1', '100', '100', '140',
++                              '.001', '.001', '5', 7 * 86400, 'testnet'), **overrides)
++
++
++def authorize(authority, pair):
++    policy = ConsensusEngine(trend_floor=.768)
++    decision = policy.evaluate([Vote(a, 'SELL', 1, 'verified fixture') for a in policy.weights])
++    return authority.issue_pair(pair, decision)
++
++
++class SpotVenue:
++    """In-memory matching ledger with controllable rejection/transport faults."""
++    def __init__(self):
++        self.settings = SimpleNamespace(mode='testnet', armed=True)
++        self.orders, self.calls = {}, []
++        self.failures = 0
++        self.lose_response = False
++        self.delay = 0
++        self.fee_asset = 'BNB'
++
++    async def create_order(self, symbol, side, quantity, client_id, price=None):
++        self.calls.append((side, quantity, price))
++        if self.failures:
++            self.failures -= 1
++            raise BinanceError(-1013)
++        q = dec(quantity)
++        row = {'orderId': len(self.orders) + 1, 'status': 'FILLED', 'executedQty': str(q),
++               'fills': [{'qty': str(q), 'price': '100', 'commission': str(q * dec('.001')),
++                          'commissionAsset': self.fee_asset}]}
++        self.orders[client_id] = row
++        if self.delay:
++            await asyncio.sleep(self.delay)
++        if self.lose_response:
++            self.lose_response = False
++            raise BinanceError('TRANSPORT', uncertain=True)
++        return row
++
++    async def order(self, symbol, cid):
++        return self.orders[cid]
++
++    async def fill_details(self, symbol, row):
++        return row
++
++    async def book_ticker(self, symbol):
++        return {'askPrice': '100', 'bidPrice': '99.99'}
++
++
++class FuturesVenue:
++    def __init__(self):
++        self.settings = SimpleNamespace(mode='testnet', armed=True)
++        self.orders = {}
++        self.entry_id = ''
++        self.closed = dec(0)
++        self.stop_calls = []
++
++    async def request(self, method, path, params, **kwargs):
++        self.entry_id = params['newClientOrderId']
++        self.orders[self.entry_id] = {'status': 'NEW', 'executedQty': '0'}
++        return self.orders[self.entry_id]
++
++    def fill(self, quantity, status='PARTIALLY_FILLED'):
++        self.orders[self.entry_id] = {'status': status, 'executedQty': str(quantity)}
++        return {'e': 'ORDER_TRADE_UPDATE', 'o': {'c': self.entry_id, 's': 'BTCUSDT',
++                'z': str(quantity), 'X': status}}
++
++    async def order(self, symbol, cid):
++        return self.orders[cid]
++
++    async def cancel(self, symbol, cid):
++        self.orders[cid]['status'] = 'CANCELED'
++        return self.orders[cid]
++
++    async def protect(self, symbol, side, stop, cid):
++        self.stop_calls.append(cid)
++        return {'algoStatus': 'NEW'}
++
++    async def algo(self, cid):
++        return {'algoStatus': 'NEW' if cid in self.stop_calls else 'CANCELED'}
++
++    async def cancel_algo(self, cid):
++        self.stop_calls.remove(cid)
++        return {'status': 'CANCELED'}
++
++    async def reduce_position(self, symbol, side, quantity, cid):
++        self.closed += dec(quantity)
++        self.orders[cid] = {'status': 'FILLED', 'executedQty': str(quantity)}
++        return self.orders[cid]
++
++    async def positions(self, symbol):
++        return [{'positionAmt': str(self.closed - dec(self.orders[self.entry_id]['executedQty']))}]
++
++
++@pytest.fixture
++def venues(tmp_path):
++    journal = Journal(tmp_path / 'pairs.sqlite')
++    f, s, authority = FuturesVenue(), SpotVenue(), TokenAuthority()
++    gateway = PairExecutionGateway(f, s, authority, journal)
++    yield f, s, authority, gateway
++    journal.close()
++
++
++def test_base_fee_coin_matching():
++    row = {'executedQty': '1', 'fills': [{'qty': '1', 'commission': '.001', 'commissionAsset': 'BTC'}]}
++    assert received_coins(row, 'BTC') == dec('.999')
++    assert gross_buy_quantity('.999', '.001', False, '.001') == 1
++
++
++def test_bnb_does_not_reduce_received_coin():
++    row = {'executedQty': '1', 'fills': [{'qty': '1', 'commission': '.001', 'commissionAsset': 'BNB'}]}
++    assert received_coins(row, 'BTC') == 1
++
++
++def test_missing_commissions_not_treated_as_zero():
++    with pytest.raises(ValueError):
++        received_coins({'executedQty': '1'}, 'BTC')
++
++
++async def test_perp_first_no_spot_before_fill(venues):
++    f, s, a, g = venues
++    pair = intent()
++    state = await g.submit(pair, authorize(a, pair))
++    assert state.state == 'PENDING_LEG1' and not s.calls
++
++
++async def test_partial_then_full_hedge_and_duplicate_event(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    event = f.fill('.4')
++    await g.on_user_event(event)
++    await g.on_user_event(event)
++    assert state.state == 'PARTIAL_HEDGED' and len(s.calls) == 1
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    assert state.state == 'FULLY_HEDGED' and dec(state.spot_owned) == 1
++    assert [q for _, q, _ in s.calls] == [dec('.4'), dec('.6')]
++
++
++async def test_three_ioc_retries_then_emergency_close(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    s.failures = 4
++    await g.on_user_event(f.fill('.4'))
++    assert len(s.calls) == 4 and s.calls[0][2] is None
++    assert all(c[2] == '100' for c in s.calls[1:])
++    assert state.state == 'CLOSED' and f.closed == dec('.4') and g.halted
++
++
++async def test_unknown_spot_post_reconciled_no_duplicate(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    s.lose_response = True
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    assert state.state == 'FULLY_HEDGED' and len(s.calls) == 1
++
++
++async def test_hedge_timeout_closes_both_even_if_buy_filled(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    g.hedge_deadline = .01
++    s.delay = .02
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    assert g.halted and state.state == 'CLOSED' and f.closed == 1
++    assert [c[0] for c in s.calls] == ['BUY', 'SELL']
++
++
++async def test_shutdown_cancels_and_closes_both_legs(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('.4'))
++    await g.shutdown()
++    assert state.state == 'CLOSED' and dec(state.spot_owned) == 0 and not f.stop_calls
++
++
++async def test_recovery_uses_venue_ledger_not_assumed_fills(venues):
++    f, s, a, g = venues
++    p = intent()
++    state = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('.4'))
++    recovered = PairExecutionGateway(f, s, a, g.journal)
++    await recovered.recover()
++    assert recovered.pairs[state.pair_id].state == 'CLOSED'
++    assert [c[0] for c in s.calls] == ['BUY', 'SELL']
++
++
++def test_pair_token_binds_both_symbols():
++    a, p = TokenAuthority(), intent()
++    token = authorize(a, p)
++    with pytest.raises(PermissionError):
++        a.consume_pair(token, replace(p, base_asset='ETH', spot_symbol='ETHUSDT', perp_symbol='ETHUSDT'))
++
++
++def test_pair_token_replay_denied():
++    a, p = TokenAuthority(), intent()
++    token = authorize(a, p)
++    a.consume_pair(token, p)
++    with pytest.raises(PermissionError):
++        a.consume_pair(token, p)
++
++
++async def test_shadow_gateway_never_submits(venues):
++    f, s, a, g = venues
++    p = intent(mode='shadow')
++    with pytest.raises(PermissionError):
++        await g.submit(p, authorize(a, p))
++    assert not f.orders and not s.calls
++
++
++def snapshot(**changes):
++    return replace(CarrySnapshot('BTCUSDT', 100, 100.01, 100.1, 100.11,
++                   .0005, 8, 3600, 30_000_000, 0, (.0005,) * 21,
++                   bnb_ok=True, capacity_ok=True, accounts_verified=True), **changes)
++
++
++@pytest.mark.parametrize('hours', [1, 4, 8])
++def test_actual_funding_interval_and_full_costs(hours):
++    s = snapshot(interval_hours=hours)
++    plan, reason = plan_spot_perp(s, 1)
++    assert reason == 'ELIGIBLE' and plan.apr == pytest.approx(.0005 * 24 / hours * 365)
++    assert plan.cost_bps > 26 and plan.net_bps == plan.gross_bps - plan.cost_bps
++
++
++def test_basis_over_1_5_percent_veto():
++    s = snapshot(perp_bid=102, perp_ask=102.01)
++    assert plan_spot_perp(s, 1)[1] == 'RUNE_BASIS'
++    decision, votes = carry_votes(s, None, gateway_ready=True, exits_ready=True, now=1)
++    assert decision.veto and next(v for v in votes if v.agent == 'RUNE').veto
++
++
++@pytest.mark.parametrize('changes', [{'bnb_ok': False}, {'margin_ratio': .651}, {'accounts_verified': False}])
++def test_rune_blocks_unfunded_or_unsafe_account(changes):
++    s = snapshot(**changes)
++    plan, _ = plan_spot_perp(s, 1)
++    decision, votes = carry_votes(s, plan, gateway_ready=True, exits_ready=True, now=1)
++    assert decision.veto and next(v for v in votes if v.agent == 'RUNE').veto
++
++
++def test_eight_votes_strict_policy():
++    s = snapshot()
++    plan, _ = plan_spot_perp(s, 1)
++    decision, votes = carry_votes(s, plan, gateway_ready=True, exits_ready=True, now=1)
++    assert len(votes) == 8 and decision.allowed and decision.threshold == .768
++
++
++def test_margin_uses_isolated_wallet_not_total_account():
++    assert isolated_margin_ratio({'isolatedWallet': '100', 'unRealizedProfit': '-90',
++                                  'maintMargin': '7', 'totalWalletBalance': '100000'}) == .7
++    assert isolated_margin_ratio({}) == float('inf')
++
++
++def test_no_funding_lookahead_or_short_horizon():
++    assert plan_spot_perp(snapshot(observed_at=2), 1)[1] == 'STALE_DATA'
++    assert plan_spot_perp(snapshot(), 1, horizon_days=1)[1] == 'HORIZON_OUTSIDE_7_30_DAYS'
++
++
++@pytest.mark.parametrize('kwargs,reason', [({'rate': .00001}, 'APR_BELOW_15_PERCENT'),
++    ({'oi_usdt': 20_000_000}, 'INSUFFICIENT_OI'),
++    ({'spot_ask': 100.04}, 'SPOT_SPREAD'), ({'interval_hours': 2}, 'UNKNOWN_FUNDING_INTERVAL')])
++def test_plan_filters(kwargs, reason):
++    assert plan_spot_perp(snapshot(**kwargs), 1)[1] == reason
++
++
++def test_net_hurdle_is_stricter_than_gross_hurdle():
++    s = snapshot(rate=.00014, funding_history=(.00014,) * 21)
++    assert plan_spot_perp(s, 1)[1] == 'ZEPHR_NET_HURDLE'
++
++
++def test_pair_authority_rejects_lowered_policy():
++    from core.consensus_engine import Decision
++    with pytest.raises(PermissionError):
++        TokenAuthority(threshold=.7).issue_pair(intent(), Decision('SELL', .72, True, False, '', .7))
++
++
++@pytest.mark.parametrize('argv', [['--mode', 'mainnet'], ['--mode', 'mainnet', '--arm'],
++                               ['--mode', 'shadow', '--arm']])
++def test_mainnet_double_optin_and_shadow_immutable(argv):
++    with pytest.raises(SystemExit):
++        arguments(argv)
++
++
++def test_shadow_credentials_and_environment_arm_ignored():
++    f, s = venue_settings(arguments([]), {'ARM_LIVE_EXECUTION': 'true', 'BINANCE_MAINNET_API_KEY': 'secret'})
++    assert not f.armed and not s.armed and f.api_key == s.api_key == ''
++
++
++async def test_v3_account_schema_join():
++    class Client:
++        async def account(self):
++            return {'positions': [{'symbol': 'BTCUSDT', 'isolatedWallet': '100', 'maintMargin': '2',
++                                   'unrealizedProfit': '-10', 'positionAmt': '-1'}]}
++
++        async def request(self, method, path, **kwargs):
++            return {'canTrade': True} if path.endswith('accountConfig') else [
++                {'symbol': 'BTCUSDT', 'marginType': 'ISOLATED', 'leverage': 2}]
++    result = await futures_account(Client())
++    assert result['canTrade'] and result['positions'][0]['isolated']
++    assert result['positions'][0]['leverage'] == 2
++    assert isolated_margin_ratio(result['positions'][0]) == pytest.approx(2 / 90)
++
++
++async def test_watchdog_over_65_percent_unwinds(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    async def account():
++        return {'availableBalance': '0', 'positions': [{'symbol': 'BTCUSDT', 'positionAmt': '-1',
++                'isolatedWallet': '100', 'unrealizedProfit': '-90', 'maintMargin': '7'}]}
++    original = f.request
++    async def request(method, path, params=None, **kwargs):
++        if path.endswith('accountConfig'):
++            return {'canTrade': True}
++        if path.endswith('symbolConfig'):
++            return [{'symbol': 'BTCUSDT', 'marginType': 'ISOLATED', 'leverage': 1}]
++        return await original(method, path, params, **kwargs)
++    f.account, f.request = account, request
++    runtime = CarryRuntime(arguments(['--mode', 'testnet']), f, s, g.journal)
++    runtime.gateway = g
++    await runtime.watchdog_once()
++    assert g.halted and pair.state == 'CLOSED' and f.closed == 1
++
++
++def test_negative_funding_counts_settlements_not_polls(venues):
++    f, s, a, g = venues
++    from live.execution_gateway import PairState
++    pair = PairState('p', intent(), opened=1)
++    r = CarryRuntime(arguments([]), f, s, g.journal)
++    history = [{'fundingTime': t, 'fundingRate': '-.001'} for t in (2000, 3000, 4000)]
++    assert r.count_negative_settlements(pair, history[:1]) == 1
++    assert r.count_negative_settlements(pair, history[:1]) == 1
++    assert r.count_negative_settlements(pair, history) == 3
++
++
++def test_commission_budget_includes_tax_and_never_understates_baseline():
++    row = {'standardCommission': {'taker': '.001'}, 'taxCommission': {'taker': '.001'},
++           'discount': {'enabledForAccount': True, 'enabledForSymbol': True,
++                        'discountAsset': 'BNB', 'discount': '.75'}}
++    assert commission_bps(row) == (17.5, True)
++
++
++def test_runtime_carry_dispatch_avoids_legacy_runtime(monkeypatch):
++    import core.runtime
++    import core.carry_runtime
++    calls = []
++    monkeypatch.setattr(core.carry_runtime, 'main', lambda argv: calls.append(argv))
++    core.runtime.main('paper', ['--carry', '--seconds', '1'])
++    assert calls == [['--carry', '--seconds', '1']]
++
++
++def trade(ident, price, buyer, venue='spot', stamp=1000, commission='0.1', asset='USDT'):
++    return {'id': ident, 'orderId': ident, 'symbol': 'BTCUSDT', 'qty': '1', 'price': str(price),
++            'quoteQty': str(price), 'isBuyer': buyer, 'side': 'BUY' if buyer else 'SELL',
++            'realizedPnl': '2' if venue == 'futures' and buyer else '0', 'time': stamp,
++            'commission': commission, 'commissionAsset': asset}
++
++
++def income(ident=1, stamp=2000):
++    return {'tranId': ident, 'incomeType': 'FUNDING_FEE', 'asset': 'USDT', 'time': stamp, 'income': '.5'}
++
++
++def test_real_pair_pnl_basis_sign_fees_and_funding():
++    spot = [trade(1, 100, True), trade(2, 101, False, stamp=3000)]
++    futures = [trade(1, 103, False, 'futures'), trade(2, 101, True, 'futures', 3000)]
++    report = pair_cashflow('pair', spot, futures, [income(), income()], base_asset='BTC',
++                          spot_bid=101, perp_ask=101, fee_prices={})
++    # basis: entry 100-103=-3, exit 101-101=0: +3; funding .5; four fees .4.
++    assert report['status'] == 'RECONCILED' and report['closed']
++    assert dec(report['net_usdt']) == dec('3.1') and dec(report['funding_usdt']) == dec('.5')
++
++
++def test_open_net_includes_liquidation_fee_reserve():
++    report = pair_cashflow('p', [trade(1, 100, True)], [trade(1, 103, False, 'futures')],
++                          [income()], base_asset='BTC', spot_bid=101, perp_ask=101, fee_prices={})
++    assert report['status'] == 'RECONCILED' and not report['closed']
++    assert dec(report['net_usdt']) == dec('3.3') - dec('101') * dec('.0014')
++
++
++def test_missing_commission_fx_blocks_profit_claim():
++    report = pair_cashflow('p', [trade(1, 100, True, asset='BNB')],
++                          [trade(1, 103, False, 'futures')], [], base_asset='BTC',
++                          spot_bid=100, perp_ask=103, fee_prices={})
++    assert report['status'] == 'INCOMPLETE' and 'MISSING_COMMISSION_FX:BNB' in report['issues']
++
++
++def test_unattributed_funding_is_not_profit():
++    report = pair_cashflow('p', [], [], [income()], base_asset='BTC',
++                          spot_bid=100, perp_ask=100, fee_prices={})
++    assert report['status'] == 'INCOMPLETE' and dec(report['funding_usdt']) == 0
++
++
++def test_missing_expected_settlement_blocks_reconciliation():
++    report = pair_cashflow('p', [trade(1, 100, True)], [trade(1, 100, False, 'futures')], [],
++                          base_asset='BTC', spot_bid=100, perp_ask=100, fee_prices={},
++                          expected_settlements=[{'fundingTime': 2000, 'fundingRate': '.001'}])
++    assert 'MISSING_FUNDING_SETTLEMENT' in report['issues']
++
++
++def test_spot_wallet_bnb_fee_and_external_deposit():
++    t = trade(1, 100, True, commission='.001', asset='BNB')
++    before = {'USDT': '1000', 'BNB': '1'}
++    after = {'USDT': '900', 'BNB': '.999', 'BTC': '1'}
++    assert wallet_reconciliation(before, after, [t, t], {'BTCUSDT': 'BTC'})['status'] == 'RECONCILED'
++    after['USDT'] = '901'
++    result = wallet_reconciliation(before, after, [t], {'BTCUSDT': 'BTC'})
++    assert result == {'status': 'UNMATCHED', 'residuals': {'USDT': '1'}}
++
++
++def test_weekly_only_reports_reconciled_realized_cycles():
++    rows = [{'pair_id': 'p', 'status': 'RECONCILED', 'closed': True, 'closed_at': 1789430000,
++             'funding_usdt': '2', 'basis_pnl_usdt': '3', 'fee_usdt': '1', 'net_usdt': '4'},
++            {'pair_id': 'bad', 'status': 'INCOMPLETE'}]
++    report = weekly_report(rows)
++    assert '| 1 | 2 | 3 | 1 | 4 |' in report and 'bad' in report
++
++
++def test_base_commission_not_double_counted_in_pnl():
++    s = trade(1, 100, True, commission='.001', asset='BTC')
++    f = dict(trade(1, 100, False, 'futures', commission='0'), qty='.999')
++    report = pair_cashflow('p', [s], [f], [], base_asset='BTC', spot_bid=100,
++                          perp_ask=100, fee_prices={}, exit_fee_bps=0)
++    assert report['status'] == 'RECONCILED' and dec(report['net_usdt']) == dec('-.1')
++
++
++async def test_unknown_spot_sell_reconciled_before_retry(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    original = s.order
++    fail_lookup = True
++    async def lookup(symbol, cid):
++        nonlocal fail_lookup
++        if fail_lookup:
++            fail_lookup = False
++            raise BinanceError('TRANSPORT')
++        return await original(symbol, cid)
++    s.order = lookup
++    s.lose_response = True
++    with pytest.raises(RuntimeError):
++        await g.unwind(pair.pair_id, 'EXIT')
++    assert pair.pending_spot_sell and pair.state == 'UNWINDING'
++    await g.unwind(pair.pair_id, 'RETRY')
++    assert pair.state == 'CLOSED' and [c[0] for c in s.calls] == ['BUY', 'SELL']
++
++
++async def test_tiny_partial_fill_closes_perp_without_invalid_spot_order(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('.001'))
++    assert not s.calls and pair.state == 'CLOSED' and f.closed == dec('.001')
++
++
++async def test_cancel_fill_race_closes_late_perp_fill(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('.4'))
++    f.fill('.6')  # fill arrives at the venue before the cancel ACK, not yet on WS
++    await g.unwind(pair.pair_id, 'EXIT')
++    assert pair.state == 'CLOSED' and f.closed == dec('.6')
++    assert [c[1] for c in s.calls] == [dec('.4'), dec('.4')]
++
++
++async def test_external_stop_reduction_closes_remaining_spot(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    f.closed = dec('1')
++    await g.on_user_event({'e': 'ORDER_TRADE_UPDATE', 'o': {'c': 'exchange-stop', 's': 'BTCUSDT', 'x': 'TRADE'}})
++    assert pair.state == 'CLOSED' and [c[0] for c in s.calls] == ['BUY', 'SELL']
++
++
++@pytest.mark.parametrize('mode', ['shadow', 'testnet'])
++def test_launcher_carry_commands(mode, monkeypatch):
++    import run_launcher
++    calls = []
++    monkeypatch.setattr(run_launcher, 'run_python', lambda argv: calls.append(argv) or 0)
++    assert run_launcher.carry(mode) == 0
++    assert calls == [['-m', 'core.runtime', '--carry', '--mode', mode]]
++    assert 'GHI L2' not in run_launcher.MENU
++
++
++def test_launcher_cannot_arm_mainnet():
++    import run_launcher
++    with pytest.raises(ValueError):
++        run_launcher.carry('mainnet')
++
++
++async def test_spot_rest_routes_and_ioc_params():
++    from live.binance_spot_client import BinanceSpotClient
++    class Client(BinanceSpotClient):
++        def __init__(self):
++            self.calls = []
++        async def request(self, method, path, params=None, **kwargs):
++            self.calls.append((method, path, params, kwargs))
++            return {'orderId': 12, 'status': 'FILLED', 'executedQty': '0'}
++    c = Client()
++    await c.create_order('BTCUSDT', 'BUY', '.01', 'c1')
++    await c.create_order('BTCUSDT', 'BUY', '.01', 'c2', price='100')
++    await c.cancel('BTCUSDT', 'c2')
++    await c.my_trades('BTCUSDT', 12)
++    assert c.calls[0][2]['type'] == 'MARKET' and 'timeInForce' not in c.calls[0][2]
++    assert c.calls[1][2]['timeInForce'] == 'IOC' and c.calls[1][2]['newOrderRespType'] == 'FULL'
++    assert c.calls[2][0:2] == ('DELETE', '/api/v3/order')
++    assert c.calls[3][2]['orderId'] == 12
++
++
++async def test_spot_mutations_blocked_unarmed():
++    from live.binance_spot_client import BinanceSpotClient
++    c = BinanceSpotClient(SimpleNamespace(armed=False))
++    with pytest.raises(PermissionError):
++        await c.create_order('BTCUSDT', 'BUY', '.01', 'c1')
++
++
++def test_bat_resolves_workspace_and_launcher():
++    from pathlib import Path
++    text = (Path(__file__).parents[1] / 'run.bat').read_text()
++    assert 'cd /d "%~dp0"' in text and '"%PY%" run_launcher.py' in text
++    assert '--arm' not in text
++
++
++def test_funding_timestamp_jitter_and_interval_changes():
++    from core.carry_runtime import normalized_funding
++    history = [{'fundingTime': 0, 'fundingRate': '.001'},
++               {'fundingTime': 28800003, 'fundingRate': '.001'},
++               {'fundingTime': 32400001, 'fundingRate': '.0002'}]
++    assert normalized_funding(history, 1) == (.000125, .0002)
++    with pytest.raises(ValueError):
++        normalized_funding([history[0], {'fundingTime': 57600000, 'fundingRate': '.001'}], 8)
++
++
++async def test_hedge_dispatch_latency_recorded_after_journaling(venues):
++    import json
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    event = json.loads(g.journal.db.execute("SELECT payload FROM events WHERE kind='PAIR_HEDGE_LATENCY'").fetchone()[0])
++    assert event['pair_id'] == pair.pair_id and event['dispatch_ms'] >= 0
++    assert event['within_100ms'] == (event['dispatch_ms'] < 100)
++
++
++def test_process_lock_excludes_duplicate_and_releases(tmp_path):
++    from core.carry_runtime import CarryProcessLock
++    path = tmp_path / 'carry.lock'
++    with CarryProcessLock(path):
++        with pytest.raises(RuntimeError):
++            with CarryProcessLock(path):
++                pytest.fail('Duplicate lock was acquired')
++    with CarryProcessLock(path):
++        assert path.exists()
++
++
++def test_future_account_fee_above_baseline_used():
++    plan, _ = plan_spot_perp(snapshot(futures_fee_bps=10), 1)
++    baseline, _ = plan_spot_perp(snapshot(), 1)
++    assert plan.cost_bps - baseline.cost_bps == pytest.approx(4)
++
++
++async def test_full_reconciler_fetches_owned_orders_funding_and_trades(tmp_path):
++    from phan_tich.carry_lab import PairReconciler
++    from live.execution_gateway import PairState
++    spot_rows = [trade(11, 100, True), trade(12, 101, False, stamp=3000)]
++    future_rows = [trade(21, 103, False, 'futures'), trade(22, 101, True, 'futures', 3000)]
++    class Spot:
++        async def order(self, symbol, cid):
++            return {'orderId': int(cid), 'executedQty': '1'}
++        async def my_trades(self, symbol, order_id):
++            return [t for t in spot_rows if t['orderId'] == order_id]
++    class Future:
++        async def order(self, symbol, cid):
++            return {'orderId': int(cid), 'executedQty': '1'}
++        async def history_since(self, symbol, stamp):
++            return future_rows, True
++        async def request(self, method, path, params, **kwargs):
++            if path.endswith('/income'):
++                return [income()]
++            assert path.endswith('/fundingRate')
++            return [{'fundingTime': 2000, 'fundingRate': '.005', 'markPrice': '100'}]
++    journal = Journal(tmp_path / 'reconcile.sqlite')
++    try:
++        pair = PairState('p', intent(), state='CLOSED', opened=.5, closed_at=4,
++                         perp_filled='1', perp_closed='1')
++        for role, cid in [('SPOT_BUY', '11'), ('SPOT_SELL', '12'), ('PERP_ENTRY', '21'), ('PERP_CLOSE', '22')]:
++            journal.write('PAIR_ORDER_INTENT', {'pair_id': 'p', 'client_id': cid, 'role': role, 'symbol': 'BTCUSDT'})
++        report, trades = await PairReconciler(Future(), Spot(), journal).pair_report(pair, 101, 101, end_ms=4000)
++        assert report['status'] == 'RECONCILED' and dec(report['net_usdt']) == dec('3.1')
++        assert len(trades) == 2
++    finally:
++        journal.close()
++
++
++async def test_watchdog_rebalances_only_bounded_free_futures_cash(venues):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    wallet = dec('100')
++    transfers = []
++    async def account():
++        return {'availableBalance': '10', 'positions': [{'symbol': 'BTCUSDT', 'positionAmt': '-1',
++                'isolatedWallet': str(wallet), 'unrealizedProfit': '-90', 'maintMargin': '7'}]}
++    async def request(method, path, params=None, **kwargs):
++        nonlocal wallet
++        if path.endswith('accountConfig'):
++            return {'canTrade': True}
++        if path.endswith('symbolConfig'):
++            return [{'symbol': 'BTCUSDT', 'marginType': 'ISOLATED', 'leverage': 1}]
++        assert path.endswith('positionMargin') and params['type'] == 1
++        transfers.append(dec(params['amount']))
++        wallet += transfers[-1]
++        return {'code': 200}
++    f.account, f.request = account, request
++    r = CarryRuntime(arguments(['--mode', 'testnet']), f, s, g.journal)
++    r.gateway = g
++    await r.watchdog_once()
++    assert transfers == [dec('4')]
++    assert pair.state == 'FULLY_HEDGED' and not g.halted
++
++
++async def test_runtime_profit_target_requires_wallet_reconciliation(venues, tmp_path):
++    f, s, a, g = venues
++    p = intent()
++    pair = await g.submit(p, authorize(a, p))
++    await g.on_user_event(f.fill('1', 'FILLED'))
++    r = CarryRuntime(arguments(['--mode', 'testnet', '--journal', str(tmp_path / 'pairs.sqlite')]), f, s, g.journal)
++    r.gateway = g
++    r.start_ms = 0
++    r.wallet_before = {'USDT': dec('1000')}
++    r.market = {'BTCUSDT': {'spot': {'bidPrice': '100'}, 'perp': {'askPrice': '100'}}}
++    t = trade(1, 100, True)
++    async def account():
++        return {'balances': [{'asset': 'BTC', 'free': '1', 'locked': '0'},
++                             {'asset': 'USDT', 'free': '899.9', 'locked': '0'}]}
++    s.account = account
++    class Reconciler:
++        async def pair_report(self, pair, spot, perp, **kwargs):
++            return {'pair_id': pair.pair_id, 'status': 'RECONCILED', 'closed': False,
++                    'net_usdt': '2', 'reported_at': 1, 'funding_usdt': '3',
++                    'basis_pnl_usdt': '0', 'fee_usdt': '1'}, [t]
++    r.reconciler = Reconciler()
++    await r.reconcile_accounts()
++    assert r.wallet_status == 'RECONCILED' and pair.state == 'CLOSED'
++    assert (tmp_path / 'testnet-weekly.md').exists()
+diff --git a/docs/CARRY_MIGRATION.md b/docs/CARRY_MIGRATION.md
+new file mode 100644
+--- /dev/null
++++ b/docs/CARRY_MIGRATION.md
+@@ -0,0 +1,135 @@
++# Spot–perp migration / M0
++
++Baseline: `python -m pytest -q`: **272 passed (32.46s)**. Existing dirty
++working-tree edits are preserved. Scope is a separate REST carry runtime;
++the legacy 0.5s pipeline and its research interfaces remain compatible.
++
++## Checklist
++
++- M1: new `live/binance_spot_client.py`, pair gateway in
++  `live/execution_gateway.py`, deterministic exchange fault tests.
++- M2: pair models and HMAC authority, strict eight-vote carry policy,
++  funding planner with actual settlement intervals and both-leg costs.
++- M3: `core/carry_runtime.py`, opt-in `--carry` dispatch in `core/runtime.py`,
++  REST 60s scan, private fill events, 30s isolated-margin watchdog.
++- M4: attributed funding + both-leg cashflow/wallet reconciliation,
++  weekly report, >=15 real behavior tests.
++- M5: launcher entries, full regression run, 60s public shadow smoke.
++
++## Accounting conventions
++
++`basis = spot - perp` in USDT per coin. For matched quantity q:
++`basis_pnl = q * (basis_exit - basis_entry)`. Defining basis as perp-spot
++would require the opposite sign. Funding is summed from actual settlements;
++current annualized funding is a scenario, never a guaranteed return.
++
++Perp fills first. With BNB commission, net spot coins equal executed coins.
++With base-asset commission, a spot buy of q yields less than q: gross up by
++`1/(1-fee)` then reconcile actual commissions and reduce residual futures
++exposure where necessary. Never silently declare mismatched legs hedged.
++The 100ms objective measures fill receipt to hedge dispatch; network completion
++cannot be guaranteed. A 5s hedge deadline initiates emergency unwind.
++
++## Rollback
++
++Pre-migration copies (including pre-existing uncommitted changes) are in
++`artifacts/carry_migration_baseline/`, manifest included. Stop the carry
++runtime and verify both venue legs closed before restoring these exact eight
++files. Remove only migration-created files listed in the final diff if wanted.
++Do not use `git reset --hard`: it would discard the user's earlier work.
++Retain execution journals and reconciliation reports. Default shadow sends
++no signed order or wallet mutation. Mainnet requires both explicit `--arm`
++and the exact confirmation text; environment arming alone is ignored.
++
++## Windows operations
++
++From PowerShell:
++
++```powershell
++Set-Location 'F:\he_thong_da_tac_tu_2'
++python -m pytest -q
++python -m core.runtime --carry --mode shadow --seconds 60
++python -m core.runtime --carry --mode shadow
++python -m core.runtime --carry --mode testnet --notional 100 --leverage 1
++.\run.bat
++```
++
++Testnet requires four existing environment/.env.local entries:
++`BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET_KEY`,
++`BINANCE_SPOT_TESTNET_API_KEY`, `BINANCE_SPOT_TESTNET_SECRET_KEY`.
++Spot Testnet and Futures Testnet have separate wallets and credentials.
++Fund both test wallets, enable BNB fee payment where supported, and retain
++enough BNB for twice the estimated round-trip spot fees. Unavailable commission
++or BNB support blocks entry; the runtime does not fabricate a successful check.
++The default 100 USDT cap may be below the exchange minimum after lot rounding;
++that produces a BLOCK, not an automatic increase in capital.
++
++Mainnet credentials use `BINANCE_MAINNET_API_KEY`,
++`BINANCE_MAINNET_SECRET_KEY`, `BINANCE_SPOT_MAINNET_API_KEY`, and
++`BINANCE_SPOT_MAINNET_SECRET_KEY`. The CLI additionally requires `--arm` and
++`--confirm "I UNDERSTAND SPOT PERP MAINNET RISK"`. No mainnet order was sent
++during this migration. Environment variable ARM_LIVE_EXECUTION is ignored
++by the carry runtime. There is no Mainnet launcher menu option.
++
++Ctrl+C cooperatively cancels entries and closes both owned legs. Never use the
++legacy futures-only kill switch for a carry pair. On restart, the pair journal
++reconstructs venue orders and closes previous carry exposure before new entries.
++Run only one carry process per mode; an OS file lock rejects duplicates.
++Execution failures that cannot be reconciled remain UNWINDING and block entry;
++they are not reported as CLOSED. Retain the journal until venue reconciliation.
++
++## Outputs and limits
++
++- `data/carry/<mode>.sqlite`: order intents, acknowledgements, pair state,
++  attribution, account reconciliation, private execution identities. No L2/ticks.
++- `data/carry/<mode>-weekly.md`: realized complete cycles grouped by UTC closing
++  week; open positions show liquidation MTM separately. Unmatched wallets and
++  incomplete histories cannot qualify for realized-profit totals.
++- `artifacts/carry_migration.diff`: complete patch against the saved M0 worktree,
++  excluding unrelated pre-existing changes. Source ZIP contains complete files.
++- REST market scans every 60 seconds, bounded market-data batch timeout 50s;
++  each new-entry snapshot must be younger than 60s. Account watchdog every 30s
++  after its preceding check. Emergency execution may delay the next check.
++- Futures V3 balances join accountConfig and symbolConfig for permissions,
++  isolated mode and leverage. The watchdog adds only free Futures wallet cash,
++  capped at 25% of the pair's entry notional; otherwise closes the pair.
++- Funding histories normalize 1h/4h/8h intervals and tolerate at most 1s timestamp
++  jitter. Three negative *settlements* trigger exit, not three repeated polls.
++- Fees use account endpoints with conservative baseline floors. Third-asset
++  commissions use a documented REST 1m-open USDT valuation: these conversions
++  are estimates, while native fee quantities and wallet reconciliation are exact.
++- The <100ms hedge-dispatch target is instrumented from fill receipt, including
++  journaling. Local deterministic tests verify ordering and failure handling;
++  they do not prove Internet/venue execution under 100ms. A 5s hedge timeout
++  initiates cancel-and-unwind; venue/network outages can prevent completion.
++- This delivery proves software behavior and public Shadow operation. It does
++  not prove positive realized alpha, private Testnet settlement, or Mainnet
++  readiness under real exchange/network faults. No fabricated fills are used.
++
++## API references checked
++
++- [Spot commission and BNB](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md)
++- [Spot authenticated WebSocket](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/ws-api/user-data-stream)
++- [Futures V3 account, accountConfig, symbolConfig](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account)
++
++## Acceptance evidence
++
++| Requirement | Implementation | Evidence |
++|---|---|---|
++| Preserve 272 tests | Legacy interfaces retained; new opt-in dispatch | Final full suite: 335 passed, including 63 carry tests |
++| Coin matching and BNB | Actual commissionAsset/qty, gross-up fallback, exact residual check | Base fee, BNB fee, missing commissions, tiny partial, delta accounting tests |
++| Perp-first GTX and partial fills | PairExecutionGateway and private order event callback | No Spot before fill; .4 + .6 fills; duplicate fill replay |
++| Retry/unwind/restart | Journal-before-POST; known-ID recovery; cancel race reconciliation | Three IOC retries; lost buy/sell ACK; timeout; restart; stop reduction |
++| Strict consensus and pair HMAC | PairIntent, PairAuthToken, eight carry_votes | 76.8% policy; tampered symbols/replay denied; basis/BNB/margin veto |
++| Funding economics | SpotPerpCarryPlan, actual intervals, all-leg fee floors | APR, horizon, OI, spread, net hurdle, timestamp jitter tests |
++| Isolated margin 1x–2x | V3/accountConfig/symbolConfig join; capped top-up | V3 schema test; >65% unwind; bounded rebalance test |
++| No L2 carry loop | core.carry_runtime; only REST public snapshots and private account events | Public Shadow log, dispatch test, source inspection |
++| Exit conditions | Distinct negative settlements, horizon, basis, reconciled profit target | Negative-poll dedup and wallet-gated profit target tests |
++| Cashflow reconciliation | PairReconciler, pair_cashflow, wallet_reconciliation | Attributed order/income integration; FX/missing settlement/external deposit tests |
++| Weekly reporting | Separate realized cycles and open liquidation MTM | Weekly grouping test; Shadow report explicitly has zero realized cycles |
++| Windows launcher | run.bat + Shadow/Testnet menu | Command/arming/batch-path tests |
++
++Full test log: `artifacts/carry_tests_final.log` (**335 passed in 32.90s**).
++Shadow evidence: `artifacts/carry_shadow_final.log`. The earlier successful
++smoke completed in 60.02s with zero positions; the final smoke revalidates the
++last freshness checks. No signed Testnet/Mainnet trade was executed here.

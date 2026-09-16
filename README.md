@@ -35,6 +35,12 @@ Hệ thống hỗ trợ 2 chế độ độc lập:
 - Máy chủ loopback port `8765` (`http://127.0.0.1:8765`).
 - Hoạt họa SVG bạch tuộc 8 xúc tu Cyberpunk, đồng hồ đo đồng thuận động, đường cong tài sản thực tế.
 
-## 5. Bắt đầu với GPT-6 Astra
-Xem chi tiết chỉ thị nghiên cứu và kiến thiết toàn diện từ đầu tại:
-[`FORM_GPT6_ASTRA_GROKTOPUS_REBUILD_MASTER.md`](./FORM_GPT6_ASTRA_GROKTOPUS_REBUILD_MASTER.md)
+## 5. Tài liệu Nghiên cứu & Định hướng Đột phá 2026
+- **Tổng hợp Đối soát & Con đường Đột phá (16/09/2026)**: [`docs/TONG_HOP_NGHIEN_CUU_VA_CON_DUONG_DOT_PHA_2026.md`](./docs/TONG_HOP_NGHIEN_CUU_VA_CON_DUONG_DOT_PHA_2026.md)
+- **Giải mã GrokTOPUS & Blueprint 6 Sàn Giao dịch**: [`docs/GROKTOPUS_TRUTH_VENUES_BLUEPRINT_2026-09-16.md`](./docs/GROKTOPUS_TRUTH_VENUES_BLUEPRINT_2026-09-16.md)
+- **Đặc tả Khả thi Atomic Arbitrage Vốn Nhỏ (<100k VNĐ)**: [`docs/ATOMIC_4USD_FEASIBILITY_2026-09-16.md`](./docs/ATOMIC_4USD_FEASIBILITY_2026-09-16.md)
+- **Đặc tả Regime-Gated Shadow (DOGE Flush)**: [`docs/FLUSH_REGIME_SPEC_2026-09-15.md`](./docs/FLUSH_REGIME_SPEC_2026-09-15.md)
+
+## 6. Trạng thái Kiểm thử Hồi quy
+- Kiểm thử tự động: `python -m pytest -q` $\to$ **410 passed in ~31s**.
+- Bất biến an toàn: Quorum 76.8%, Veto RUNE 70.0%, TokenAuthority HMAC-SHA256 được bảo vệ tuyệt đối.

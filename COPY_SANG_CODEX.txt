@@ -1,0 +1,13 @@
+Role: Quant researcher. RESEARCH ONLY. Allowed: read-only file access if an attachment appears; NEVER edit, NEVER mutate, NEVER place orders.
+Answer: <800 tokens, Vietnamese, table only, no basics.
+Ctx: GROKTOPUS futures-only Binance USD-M, 272 tests pass. Scalping 5phut KILLED (102 trips, net -6.72, edge -12.6bps). Carry funding DUNG NGOAI (chuan R1 chi 1/900 coin gan dat: VTHO, gap mark/idx -2.56%, ATR_1m 1.79%, OI 7M<20M). Dang scan dinh ky 15phut x 7 ngay phat hien ung vien — nguoi chu noi TOI QUÁ LÂU, muon huong khac chi can VAI TIENG la co ket luan duoc.
+Da co san: L2 recorder data (BTCUSDT 1.6GB + SOLUSDT 364MB + BNBUSDT 313MB ngay 08/09, bookTicker+depth@100ms kem local-timestamp), hftbacktest queue model (research/), SignalLab v2 counterfactual 2550 probes, carry_lab forecast/settle schema, soi_funding cross-filter 900 perp realtime.
+Ky ham: khong nha ZEPHR/76.8/1.8x; khong single-leg goi la delta-neutral; khong noi chuan R1; khong dau tien vao thang 1% equity.
+Task: LIET KE va RANK huong nao co the CHO KET LUAN GO/NO-GO trong VAI TIENG (khong phai 7 ngay scan, khong phai thang data), voi tien ich co san o tren. Tra bang | Huong | Kieu gi trong vai tieng | Can data gi (co san hay phai tai) | Cu the chay gi | Co khung | Gia thuyet kiem dinh |:
+T1: Basis trade perp-perp (VTHO perp Binance vs perp san khac nhu Bybit/OKX) — chenh lech funding 2 san, nhan 2 dau khong can spot?
+T2: Funding capture ngan han: chi vao 30-60ph truoc print roi thoat ngay sau print (khong giu 8h) — giam thoi gian exposure gap mark/idx tu 8h xuong 1h?
+T3: Vol-squeeze event: coin vua listing/funding flip rat manh — vao 1h dau listing khi funding chua cap thay doi?
+T4: Cross-exchange arb spot-perp (can spot, he khong co) — co phien ban perp-perp thay the khong?
+T5: Huong khac ban nghi duoc — tu de xuat, mien la co du lieu ngay hoac lay duoc trong vai tieng.
+Dieu kien chap nhan moi huong: (a) co du lieu ngay hoac <4h, (b) co logic kiem dinh GO/NO-GO ro rang trong phien, (c) khong pha Ky ham (khong nha nguong, khong goi directional la hedge), (d) PnL giai thich duoc bang fee MEASURED 6bps.
+Rank cac huong T1-T5 theo: thoi gian can de co GO/NO-GO (it nhat truoc), xac suat co ket luan ro, rui ro khi chay. Khong xuat code. Neu tat ca deu can >4h thi noi thang "KHONG CO huong vai tieng, de nghi toi uu nhanh nhat la X gio".

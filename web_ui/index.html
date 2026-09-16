@@ -4,13 +4,17 @@
 <body>
 <header><a class="wordmark" href="/">GROK<span>TOPUS</span><small>QUANTITATIVE SWARM / 01</small></a><div class="connection"><i id="lamp"></i><span id="connection">CONNECTING</span><span id="mode" class="hero-mode">OFFLINE</span><span id="armed" class="hero-armed">LOCKED</span><span id="clock">—</span></div></header>
 <main>
-<div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
+<div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag tick" id="tick-tag" title="Nhấp nháy mỗi khi có tick giá mới từ Binance REST"><i id="tick-dot"></i><b id="tick-price">—</b></span><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
 
 <section class="metrics" aria-label="Account metrics">
 <article><p>ACCOUNT EQUITY <small>USDT</small></p><h2 id="equity">—</h2><span>W <b id="wallet">—</b></span></article>
 <article><p>SESSION EQUITY CHANGE</p><h2 id="pnl">—</h2><span>unrealized incl.</span></article>
 <article><p>EXECUTED NOTIONAL <small>USDT</small></p><h2 id="volume">—</h2><span>fees <b id="fees">—</b></span></article>
 <article><p>CAPITAL GUARD</p><h2 id="drawdown">—</h2><span>Kelly <b id="kelly">WARMUP</b></span></article>
+</section>
+<section class="panel branch-panel" aria-label="Competing shadow branches">
+  <div class="panel-title"><h3>00 / SHADOW BRANCH BENCHMARK (REAL-TIME COMPETING BRANCHES)</h3><span id="branch-verdict" class="verdict">GIẢI ĐẤU SONG SONG · CÙNG ĐIỂM VÀO, KHÁC QUY TẮC STOP</span></div>
+  <div class="branch-grid" id="branch-cards"><p class="ticker-empty">Waiting for shadow branch statistics…</p></div>
 </section>
 <section class="panel market-panel"><div class="panel-title"><h3>01 / MARKET MICROSTRUCTURE</h3><span>NET EDGE = EDGE − COST · CẦN &gt; 0 ĐỂ CÓ LÃI</span></div><div class="table-scroll"><table><thead><tr><th>MARKET</th><th>MIDPRICE</th><th>SPREAD / BPS</th><th>OBI</th><th>VPIN</th><th>CONSENSUS</th><th>DIRECTIONAL</th><th title="edge − cost (bps). >0 mới có lãi sau phí.">NET EDGE</th><th>BLOCKED BY</th><th>STATE</th></tr></thead><tbody id="markets"><tr><td colspan="10">Waiting for live order books…</td></tr></tbody></table></div></section>
 <div class="bottom-grid"><section class="panel"><div class="panel-title"><h3>02 / POSITION PROTECTION</h3></div><div id="positions" class="positions">No active positions</div></section><section class="panel"><div class="panel-title"><h3>03 / EVENT TAPE</h3></div><ol id="events"></ol></section></div>
@@ -37,9 +41,9 @@
 <section class="equity-panel panel"><div class="panel-title"><h3>07 / EQUITY TRACE</h3><span id="equity-range">AWAITING ACCOUNT DATA</span></div>
 <div class="chart-wrap"><svg id="equity-chart" viewBox="0 0 900 140" preserveAspectRatio="none" role="img" aria-label="Equity history, rolling 600 observations">
 <defs><linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#5ae5be" stop-opacity=".34"/><stop offset="1" stop-color="#5ae5be" stop-opacity="0"/></linearGradient></defs>
-<path id="equity-area" d=""/><path id="equity-line" d=""/><line id="equity-cursor" x1="0" y1="0" x2="0" y2="140"/></svg>
+<path id="equity-area" d=""/><line id="equity-start" class="guide start" x1="0" y1="0" x2="900" y2="0"/><line id="equity-kill" class="guide kill" x1="0" y1="0" x2="900" y2="0"/><path id="equity-line" d=""/><line id="equity-cursor" x1="0" y1="0" x2="0" y2="140"/></svg>
 <div id="equity-tip" class="chart-tip" hidden></div></div>
-<div class="chart-bottom"><span>ROLLING 600 OBSERVATIONS</span><span>ACTUAL SNAPSHOTS / NO INTERPOLATED RETURNS</span></div></section>
+<div class="chart-bottom"><span><i class="key start"></i>VÀO 3.85 U <i class="key kill"></i>DỪNG 3.80 U · ROLLING 600</span><span>ACTUAL SNAPSHOTS / NO INTERPOLATED RETURNS</span></div></section>
 </div>
 </details>
 <footer><span>LOCAL OBSERVABILITY · 127.0.0.1 · KILL SWITCH ENABLED</span><span>Heuristic research system. Results require independent validation.</span></footer>

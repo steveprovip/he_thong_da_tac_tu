@@ -1,0 +1,13 @@
+{
+  "baseline_tests": 272,
+  "files": [
+    "core/funding_carry.py",
+    "live/execution_gateway.py",
+    "core/consensus_engine.py",
+    "core/models.py",
+    "core/runtime.py",
+    "phan_tich/carry_lab.py",
+    "run_launcher.py",
+    "run.bat"
+  ]
+}
