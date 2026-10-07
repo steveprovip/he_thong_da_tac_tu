@@ -209,6 +209,18 @@
       mcn.className = 'chip ' + (mc.name === 'LONG ONLY' ? 'green' : mc.name === 'SHORT ONLY' ? 'red' : '');
       mcn.title = mc.why || '';
     }
+    const hun = $('hurdle-chip');
+    if (hun) {
+      const g = pos ? pos.gross_pct : null, h = pos ? pos.hurdle_pct : 0.08;
+      hun.textContent = !pos || !fin(g) ? 'HURDLE: —'
+        : !pos.fee_hurdle ? 'HURDLE: OFF'
+        : String(pos.hurdle || '').startsWith('HOLD') ? `HOLDING: MIN ${pos.hurdle.slice(5)}`
+        : g >= h ? 'PROFIT: UNLOCKED'
+        : g <= -h ? `EXIT: ARMED (${sg(g, 3)}% ≤ -${fx(h, 2)}%)`
+        : `HOLDING: FEE HURDLE (${sg(g, 3)}% < +${fx(h, 2)}%)`;
+      hun.className = 'chip ' + (pos && fin(g) ? (g >= h ? 'green' : g <= -h ? 'red' : '') : '');
+      hun.title = pos ? `Flow/Regime exit bị giữ ${pos.hurdle_blocks || 0} lần · SL cứng vẫn chạy` : '';
+    }
     const shn = $('shield-chip');
     if (shn) {
       shn.textContent = !pos ? 'SHIELD: —' : pos.plock ? `SHIELD: PROFIT LOCK (+${fx(pos.lock_trigger_pct, 2)}%)`

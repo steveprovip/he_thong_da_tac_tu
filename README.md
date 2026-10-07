@@ -117,3 +117,9 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **IOC** chỉ khi CVD 10 s cùng chiều ≥ $3M **và** KER ≥ 0.60 **và** (JEV ≥ 9.2 hoặc swarm ≥ 85 %); còn lại pegged GTX 5 s, không đuổi taker.
 - **MACRO 5m**: giá > VWAP 5 phút và EMA-20 nến 5 phút dốc lên → chỉ LONG; ngược lại → chỉ SHORT. EMA được nạp 40 nến 5m từ REST công khai của Binance lúc khởi động; VWAP 5 phút cần 4 phút dữ liệu (trước đó = WARMUP, không chặn).
 - UI: chip `ABSORPTION`, `MACRO 5m`, `SHIELD` cạnh Win Rate.
+
+### 8.9 Cập nhật 07/10/2026 (i) — Rào cản phí khi thoát FLOW/REGIME
+- FLOW / REGIME exit chỉ chạy khi gross ≥ +0.08 % hoặc ≤ −0.08 %; lệnh đang xanh (gross ≥ 0) không bị FLOW/REGIME cắt trong 90 s đầu. SL cứng −0.20 % và các tầng MARIN (LOCK/BE/PROFIT/TP1/TRAIL) không bị chặn.
+- Mỗi lần thoát bị giữ được ghi vào sổ lệnh (`hurdle_blocks`, `hurdle_first_px`, `hurdle_first_pct`) để so sánh "giữ" với "thoát ngay".
+- Vào lệnh: KER mở khoá ở ≥ 0.48 (khoá < 0.40); giá 15 s phải đi ≥ 0.04 % cùng chiều lệnh.
+- UI: chip `HOLDING: FEE HURDLE (+0.03% < +0.08%)` / `PROFIT: UNLOCKED` / `EXIT: ARMED`.

@@ -95,6 +95,10 @@ class Profile:
     lock_trigger_pct: float = 0.25      # T2b PROFIT LOCK: MFE >= +0.25 % ...
     lock_pct: float = 0.15              # ... -> exit level entry + 0.15 %
     absorb_gate: bool = True            # block entries into an ABSORPTION TRAP (flow without price)
+    fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
+    hurdle_pct: float = 0.08
+    hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
+    min_velocity_pct: float = 0.04      # auto entry needs price velocity 15 s >= +0.04 % (BUY) / <= -0.04 % (SELL)
     macro_gate: bool = True             # block entries against the 5 m VWAP + EMA-20 bias
     trail_activate_pct: float = 0.50    # MARIN phase 2: runner trails once +0.50 % was reached
     trail_gap_pct: float = 0.20         # trail = peak -/+ 0.20 %
@@ -643,6 +647,12 @@ class Engine:
             return False, f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'
         if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
             return False, f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'
+        if self.p.min_velocity_pct:
+            vel = (self.features or {}).get('px_vel_15s')
+            sv = None if vel is None else (vel if d.side == 'BUY' else -vel)
+            if sv is None or sv < self.p.min_velocity_pct:
+                return False, (f'VELOCITY {d.side} 15s {"—" if vel is None else f"{vel:+.3f}%"} '
+                               f'< {self.p.min_velocity_pct}% cùng chiều')
         if score < self.p.min_score:
             return False, f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'
         if edge < self.p.min_edge_bps:
@@ -959,8 +969,22 @@ class Engine:
         now = self.clock()
         flip = self.regime_flipped(p, f)
         p['flip_since'] = (p.get('flip_since') or now) if flip else None
-        if (flip and now - p['opened'] >= self.p.regime_flip_min_hold_s
-                and now - p['flip_since'] >= self.p.regime_flip_debounce_s):
+        p['gross_pct'] = fav
+        gate = self.hurdle_gate(p, fav, now)
+        p['hurdle'] = gate
+        regime_due = (flip and now - p['opened'] >= self.p.regime_flip_min_hold_s
+                      and now - p['flip_since'] >= self.p.regime_flip_debounce_s)
+        adverse = self.adverse_flow(p)
+        p['adverse_usd'] = adverse
+        limit = p.get('flow_limit') or self.flow_limit({})
+        p['breathing'] = now - p['opened'] < self.p.flow_breath_s
+        flow_due = self.p.flow_exit and adverse >= limit and not p['breathing']
+        if (regime_due or flow_due) and gate:
+            self.note_hurdle_block(p, 'REGIME' if regime_due else 'FLOW', fav, mark, gate)
+            regime_due = flow_due = False
+        elif not (regime_due or flow_due):
+            p['hurdle_active'] = False
+        if regime_due:
             self.event(f'MARIN REGIME-FLIP EXIT: {"SHORT" if d < 0 else "LONG"} vs CVD 60s '
                        f'{(f.get("cvd_60s") or 0) / 1e6:+.2f}M (limit ±${self.p.regime_flip_usd * self.feed.cfg.usd_scale / 1e6:.2f}M)'
                        f' held {now - p["flip_since"]:.0f}s at {fav:+.3f}% -> soft maker exit')
@@ -970,12 +994,7 @@ class Engine:
                 p['exit_reason'] = 'REGIME'
                 await self.close('REGIME')
             return
-        adverse = self.adverse_flow(p)
-        p['adverse_usd'] = adverse
-        limit = p.get('flow_limit') or self.flow_limit({})
-        age = self.clock() - p['opened']
-        p['breathing'] = age < self.p.flow_breath_s
-        if self.p.flow_exit and adverse >= limit and not p['breathing']:
+        if flow_due:
             self.event(f'MARIN FLOW EXIT: ${adverse / 1e6:.2f}M aggressor flow against {p["side"]} in '
                        f'{self.feed.cfg.flow_exit_s:g}s (limit ${limit / 1e6:.2f}M) at {fav:+.3f}%')
             if self.p.soft_exits:
@@ -991,6 +1010,28 @@ class Engine:
             await self._manage_soft(p, d, mark, fav)
         else:
             await self._manage_hard(p, d, mark, fav)
+
+    def hurdle_gate(self, p: dict, fav: float, now: float) -> Optional[str]:
+        """Fee hurdle: why a FLOW / REGIME exit must wait (None = exits allowed). Hard SL and MARIN tiers ignore it."""
+        if not self.p.fee_hurdle:
+            return None
+        age, h = now - p['opened'], self.p.hurdle_pct
+        if fav >= 0 and age < self.p.hurdle_min_hold_s:
+            return f'HOLD {age:.0f}/{self.p.hurdle_min_hold_s:.0f}s (gross {fav:+.3f}% >= 0)'
+        if -h < fav < h:
+            return f'FEE HURDLE {fav:+.3f}% inside ±{h}%'
+        return None
+
+    def note_hurdle_block(self, p: dict, why: str, fav: float, mark: float, gate: str) -> None:
+        """Count each suppressed exit once (until its trigger clears) and keep the first price for the post-mortem."""
+        if p.get('hurdle_active'):
+            return
+        p['hurdle_active'] = True
+        p['hurdle_blocks'] = p.get('hurdle_blocks', 0) + 1
+        p.setdefault('hurdle_first_px', mark)
+        p.setdefault('hurdle_first_pct', fav)
+        self.event(f'MARIN {why} exit HELD by {gate} - waiting for >= +{self.p.hurdle_pct}% / <= -{self.p.hurdle_pct}% '
+                   f'(hard SL {p["sl0"]:g} stays live)')
 
     async def _manage_soft(self, p: dict, d: int, mark: float, fav: float) -> None:
         """4 tiers (soft maker exits): T1 +0.08 % -> entry +0.03 % · T2 +0.12 % -> entry + fees + 0.02 %
@@ -1147,7 +1188,9 @@ class Engine:
                'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
                'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
                'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
-               'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False), 'hold_s': self.clock() - p['opened'],
+               'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
+               'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
+               'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],
                'latency_ms': p['latency_ms'], 'entry_type': p.get('entry_type', 'GTX')}
         self.pos = None
         self.phase = 'SCANNING'
@@ -1252,6 +1295,8 @@ class Engine:
                 'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - p['opened'])) if p else None,
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
+                'gross_pct': p.get('gross_pct'), 'hurdle': p.get('hurdle'), 'hurdle_pct': self.p.hurdle_pct,
+                'hurdle_blocks': p.get('hurdle_blocks', 0), 'fee_hurdle': self.p.fee_hurdle,
                 'fee_shield_trigger_pct': self.p.be_trigger_pct, 'lock_trigger_pct': self.p.lock_trigger_pct,
                 'microbe_trigger_pct': self.p.microbe_trigger_pct,
                 'tp1_filled': p.get('tp1_filled'), 'tp_qty': p.get('tp_qty'), 'mfe_pct': p.get('mfe_pct'),

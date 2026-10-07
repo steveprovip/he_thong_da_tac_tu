@@ -75,7 +75,7 @@ class SignalConfig:
     ker_bucket_s: float = 5.0           # sampled every 5 s (last print): no bid/ask bounce, 24 steps
     ker_min_span_s: float = 60.0        # < 60 s of prints -> KER unknown (treated as CHOP)
     ker_lock: float = 0.40              # KER < 0.40 -> CHOP LOCKED
-    ker_unlock: float = 0.45            # unlock only at KER >= 0.45 (hysteresis band 0.40-0.45)
+    ker_unlock: float = 0.48            # unlock only at KER >= 0.48 (hysteresis band 0.40-0.48; was 0.45)
     absorb_window_s: float = 15.0       # price-delta concordance window
     absorb_usd: float = 500_000.0       # |CVD 15 s| >= $500k (x scale) ...
     absorb_min_move_pct: float = 0.03   # ... must move price >= 0.03 % the same way, else ABSORPTION TRAP

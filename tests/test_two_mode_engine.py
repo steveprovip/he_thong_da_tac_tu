@@ -218,6 +218,8 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('gtx_ttl_s', 0.6)
     prof.setdefault('min_edge_bps', 0.0)          # churn edge floor has its own tests (test_churn_*)
     prof.setdefault('ker_gate', False)            # KER chop lock has its own tests (test_chop_filter.py)
+    prof.setdefault('fee_hurdle', False)          # exit fee hurdle has its own tests (test_fee_hurdle.py)
+    prof.setdefault('min_velocity_pct', 0.0)      # entry velocity gate: test_fee_hurdle.py
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')
