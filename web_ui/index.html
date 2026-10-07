@@ -26,10 +26,10 @@
   <div class="trigger-strip" id="triggers" aria-label="Tín hiệu kích hoạt">
     <div class="trig" id="trig-FLOW"><b>S1 · OBI+CVD</b><span>—</span><small>|OBI| ≥ 0.20 &amp; CVD 60s ≥ 0.20 + CVD 10s cùng chiều</small></div>
     <div class="trig" id="trig-VWAP"><b>S2 · VWAP / TREND</b><span>—</span><small>TREND: CVD ≥ $300k + OBI ≥ 0.15 + giá xuyên VWAP · MR chỉ khi NEUTRAL</small></div>
-    <div class="trig" id="trig-LIQ"><b>S3 · LIQ IMPULSE</b><span>—</span><small>≥ $10k thanh lý / 3 s → bắt râu</small></div>
+    <div class="trig" id="trig-LIQ"><b>S3 · SQUEEZE / LIQ</b><span>—</span><small>box 2 phút ≤ 0.08 % rồi phá vỡ + SURGE ≥ $50k/s · hoặc thanh lý ≥ $10k/3 s</small></div>
     <div class="trig decision" id="trig-DEC"><b>QUYẾT ĐỊNH</b><span>—</span><small>(Swarm ≥ 76.8 % | JEV ≥ 8.0) + hội tụ ≥ 2/3 (C3 edge/cost ≥ 2.5x)</small></div>
   </div>
-  <header class="card-h"><h3>VỊ THẾ ĐANG MỞ</h3><span class="pnl-split" id="pnl-split" aria-label="Lãi lỗ hôm nay">GROSS — · PHÍ — · NET —</span><span class="chip" id="pos-count">0</span></header>
+  <header class="card-h"><h3>VỊ THẾ ĐANG MỞ</h3><span class="winrate" id="winrate" aria-label="Thống kê thắng thua">WIN RATE —</span><span class="pnl-split" id="pnl-split" aria-label="Lãi lỗ hôm nay">GROSS — · PHÍ — · NET —</span><span class="chip" id="pos-count">0</span></header>
   <div class="table-scroll"><table class="bn-table"><thead><tr><th>Symbol</th><th>Size</th><th>Giá vào</th><th>Mark</th><th>Giá thanh lý</th><th>Margin</th><th>PNL (ROE %)</th><th>TP1 / Stop</th><th>MARIN</th></tr></thead><tbody id="pos-rows"><tr><td colspan="9" class="empty">Không có vị thế</td></tr></tbody></table></div>
   <div class="desk-tabs" role="tablist"><button type="button" role="tab" data-tab="orders" class="tab on" aria-selected="true">Lệnh chờ (<span id="ord-count">0</span>)</button><button type="button" role="tab" data-tab="history" class="tab" aria-selected="false">Lịch sử khớp lệnh (<span id="hist-count">0</span>)</button></div>
   <div id="tab-orders" class="table-scroll" role="tabpanel"><table class="bn-table"><thead><tr><th>Loại</th><th>Side</th><th>Giá / Trigger</th><th>Số lượng</th><th>Reduce-only</th><th>ID</th></tr></thead><tbody id="ord-rows"><tr><td colspan="6" class="empty">Không có lệnh chờ</td></tr></tbody></table></div>
@@ -46,7 +46,7 @@
   <article class="glass card flow-card">
     <header class="card-h"><h3>T2 · OBI &amp; CVD PRESSURE</h3><span class="chip" id="flow-sym">—</span></header>
     <canvas id="cv-gauge" class="gauge" height="150" aria-label="Order book imbalance and CVD pressure gauge"></canvas>
-    <dl class="kv"><div><dt>OBI L5 (EMA)</dt><dd id="flow-obi" class="num">—</dd></div><div><dt>CVD 60s</dt><dd id="flow-cvd" class="num">—</dd></div><div><dt>BUY / SELL 60s</dt><dd id="flow-bs" class="num">—</dd></div><div><dt>CVD SESSION</dt><dd id="flow-cvds" class="num">—</dd></div></dl>
+    <dl class="kv"><div><dt>OBI L5 (EMA)</dt><dd id="flow-obi" class="num">—</dd></div><div><dt>CVD 60s</dt><dd id="flow-cvd" class="num">—</dd></div><div><dt>BUY / SELL 60s</dt><dd id="flow-bs" class="num">—</dd></div><div><dt id="flow-cvds-label">CVD VELOCITY 10s</dt><dd id="flow-cvds" class="num">—</dd></div></dl>
     <canvas id="cv-cvd" class="spark" height="46" aria-label="CVD 60s trace"></canvas>
   </article>
   <article class="glass card swarm-card">

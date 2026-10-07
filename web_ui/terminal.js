@@ -163,7 +163,7 @@
     const f = s.features || {};
     if (!fast || !fast.flow) {
       const obi = fin(f.obi) ? +f.obi : 0, cvd = fin(f.cvd_norm) ? +f.cvd_norm : 0;
-      renderFlow({ symbol: s.symbol, price: f.price, obi_ema: f.obi, cvd_window: f.cvd_60s, cvd_session: null,
+      renderFlow({ symbol: s.symbol, price: f.price, obi_ema: f.obi, cvd_window: f.cvd_60s, cvd_session: null, cvd_velocity: f.cvd_vel_10s,
         buy_usd: null, sell_usd: null, pressure: (obi + cvd) / 2, series: (cvdHist.push([0, f.cvd_60s]), cvdHist.slice(-120)) });
       if (cvdHist.length > 240) cvdHist.splice(0, 120);
     }
@@ -176,7 +176,8 @@
     tw('pressure', fin(f.pressure) ? Number(f.pressure) : 0, 180); tw('obi', fin(f.obi_ema) ? Number(f.obi_ema) : 0, 180);
     txt('flow-obi', fin(f.obi_ema) ? sg(f.obi_ema, 3) : '—'); txt('flow-cvd', fin(f.cvd_window) ? (f.cvd_window >= 0 ? '+' : '−') + usdK(Math.abs(f.cvd_window)) : '—');
     cls('flow-cvd', 'num ' + (Number(f.cvd_window) >= 0 ? 'up' : 'down'));
-    txt('flow-bs', `${usdK(f.buy_usd)} / ${usdK(f.sell_usd)}`); txt('flow-cvds', fin(f.cvd_session) ? (f.cvd_session >= 0 ? '+' : '−') + usdK(Math.abs(f.cvd_session)) : '—');
+    txt('flow-bs', `${usdK(f.buy_usd)} / ${usdK(f.sell_usd)}`); if (fin(f.cvd_velocity)) { txt('flow-cvds', (f.cvd_velocity >= 0 ? '+' : '−') + usdK(Math.abs(f.cvd_velocity)) + '/s'); cls('flow-cvds', 'num ' + (Math.abs(f.cvd_velocity) >= 50000 ? (f.cvd_velocity > 0 ? 'up' : 'down') : '')); }
+    else { txt('flow-cvds-label', 'CVD SESSION'); txt('flow-cvds', fin(f.cvd_session) ? (f.cvd_session >= 0 ? '+' : '−') + usdK(Math.abs(f.cvd_session)) : '—'); }
     cvdSeries.length = 0; for (const s of f.series || []) cvdSeries.push(s[1]);
     sCvd.dirty = true; sGauge.dirty = true;
   }

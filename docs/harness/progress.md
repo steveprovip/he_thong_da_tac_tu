@@ -53,3 +53,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Unfilled -> SCANNING + 1 s cooldown. IOC entries: taker-aware soft BE (+0.12 % trigger, level +0.09 %).
 - tests/test_shutdown_control.py fixture isolated from the live data/telemetry_state.json (a running/killed engine made it fail).
 - Verification: pytest 827 passed.
+
+## 2026-10-07 (e) Velocity / L10 wall / squeeze / 4-tier MARIN / demo venue book
+- Root cause found in the live demo log: demo matching engine prices differ from mainnet; entries priced off mainnet were rejected post-only, and MARIN measured MFE on mainnet (trades #4/#5 show mfe_pct 0.0 although TP1 filled at +0.35 % on demo). Fix: BinanceVenue.own_book + bookTicker loop; Engine.book() is the execution/MARIN price source.
+- BinanceVenue.order tolerates -2013 (2 tries -> NOT_FOUND).
+- Real ledger stats (5 demo trades): 2W/3L, win rate 40 %, PF 2.28, net +0.3258 U, expectancy +0.065 U/trade.
+- Verification: pytest 834 passed.

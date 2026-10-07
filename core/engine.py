@@ -84,6 +84,8 @@ class Profile:
     be_offset_pct: float = 0.02         # breakeven stop = entry + all fees + slip + 0.02 %
     trail_activate_pct: float = 0.50    # MARIN phase 2: runner trails once +0.50 % was reached
     trail_gap_pct: float = 0.20         # trail = peak -/+ 0.20 %
+    trail_tight_pct: float = 0.70       # tier 4b: from +0.70 % the runner trails 0.15 % behind the peak
+    trail_tight_gap_pct: float = 0.15
     trail_min_step_pct: float = 0.02    # do not re-place the stop for < 0.02 % improvement
     max_loss_usdt: Optional[float] = None   # set -> stop derived from it (live)
     min_sl_pct: float = 0.10
@@ -253,6 +255,24 @@ class BinanceVenue(DemoVenue):
             avg = cq / filled if cq > 0 else float(price)
         return avg, filled
 
+    own_book = True                     # demo matching engine != mainnet: quote/manage on THIS venue's book
+
+    async def book_ticker(self, symbol: str) -> dict:
+        r = await self.c.request('GET', '/fapi/v1/ticker/bookTicker', {'symbol': symbol}, weight=2)
+        return {'bid': float(r['bidPrice']), 'ask': float(r['askPrice']), 'bid_qty': float(r.get('bidQty') or 0),
+                'ask_qty': float(r.get('askQty') or 0)}
+
+    async def order(self, symbol: str, cid: str) -> dict:
+        from live.binance_futures_client import BinanceError
+        for attempt in range(2):
+            try:
+                return await super().order(symbol, cid)
+            except BinanceError as e:
+                if e.code != -2013:                       # -2013: not visible yet / expired post-only
+                    raise
+                await asyncio.sleep(0.3)
+        return {'status': 'NOT_FOUND', 'filled': 0.0, 'avg': 0.0}
+
     async def realized_parts(self, symbol: str, start_ms: int) -> dict:
         trades, _ = await self.c.history_since(symbol, start_ms)
         gross = sum(float(x.get('realizedPnl', 0)) for x in trades)
@@ -289,6 +309,7 @@ class PostOnlyReject(RuntimeError):
 
 class LiveVenue(BinanceVenue):
     label = 'BINANCE MAINNET'
+    own_book = False                    # mainnet: the public WS book IS the venue book
 
     def __init__(self, client, margin_type: str = 'CROSSED'):
         host = urlsplit(client.settings.rest).hostname
@@ -394,6 +415,9 @@ class Engine:
         self.consensus = ConsensusEngine()
         self.cost = CostModel(profile)
         self.lock = asyncio.Lock()                  # one actor at a time: entry / MARIN / REST sync
+        self.vbook: Optional[dict] = None           # venue's own top of book (demo), see refresh_book()
+        self.vbook_at = 0.0
+        self.all_rows = self._load_all()
         self.authority = TokenAuthority()
         self.spec: Optional[dict] = None
         self.started = False
@@ -438,6 +462,54 @@ class Engine:
         except (OSError, ValueError):
             pass
         return pnl
+
+    def _load_all(self) -> list:
+        rows = []
+        try:
+            for line in self.ledger.read_text(encoding='utf-8').splitlines():
+                r = json.loads(line)
+                if r.get('mode') == self.p.mode:
+                    rows.append(r)
+        except (OSError, ValueError):
+            pass
+        return rows
+
+    def stats(self, rows: Optional[list] = None) -> dict:
+        """Win-rate radar over settled trades: net PnL after fees."""
+        rows = self.all_rows if rows is None else rows
+        pnl = [float(r.get('pnl') or 0) for r in rows]
+        wins, losses = [x for x in pnl if x > 0], [x for x in pnl if x <= 0]
+        gw, gl = sum(wins), -sum(losses)
+        n = len(pnl)
+        return {'n': n, 'wins': len(wins), 'losses': len(losses), 'win_rate': len(wins) / n if n else None,
+                'avg_win': gw / len(wins) if wins else None, 'avg_loss': -gl / len(losses) if losses else None,
+                'profit_factor': gw / gl if gl > 0 else None, 'no_losses': gl == 0 and gw > 0,
+                'expectancy': sum(pnl) / n if n else None, 'net': sum(pnl),
+                'fees': sum(float(r.get('fee') or 0) for r in rows)}
+
+    @property
+    def own_book(self) -> bool:
+        return bool(getattr(self.venue, 'own_book', False))
+
+    async def refresh_book(self, max_age: float = 0.25) -> None:
+        if self.own_book and time.monotonic() - self.vbook_at >= max_age:
+            try:
+                self.vbook = await self.venue.book_ticker(self.p.symbol)
+                self.vbook_at = time.monotonic()
+            except Exception as exc:
+                self.last_error = f'bookTicker: {type(exc).__name__}: {exc}'[:160]
+
+    def book(self) -> dict:
+        """Execution book: the venue's own touch (demo) or the market feed (mainnet / mock)."""
+        if self.own_book:
+            b = self.vbook or {}
+            stale = not b or time.monotonic() - self.vbook_at > 3.0
+            bid, ask = b.get('bid'), b.get('ask')
+            return {'bid': bid, 'ask': ask, 'bid_qty': b.get('bid_qty'), 'ask_qty': b.get('ask_qty'),
+                    'price': (bid + ask) / 2 if bid and ask else None, 'stale': stale, 'source': 'venue'}
+        f = self.feed.features(self.clock())
+        return {'bid': f.get('bid'), 'ask': f.get('ask'), 'bid_qty': f.get('bid_qty'), 'ask_qty': f.get('ask_qty'),
+                'price': f.get('price'), 'stale': f.get('stale'), 'source': 'feed'}
 
     def _write_ledger(self, row: dict) -> None:
         try:
@@ -558,7 +630,8 @@ class Engine:
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
         try:
-            f = self.feed.features(self.clock())
+            await self.refresh_book(0.0)
+            f = {**self.feed.features(self.clock()), **{k: v for k, v in self.book().items() if v is not None}}
             px = self.gtx_price(side, f)
             if px is None:
                 return {'ok': False, 'error': 'no book'}
@@ -599,7 +672,8 @@ class Engine:
                     if peg and time.monotonic() - last_post >= self.p.peg_interval_s:
                         # Dynamic pegged maker: follow the touch while the book walks away, never cross it,
                         # never further than peg_max_drift_pct from the first quote (bounded chase).
-                        new = self.gtx_price(side, self.feed.features(self.clock()))
+                        await self.refresh_book(0.0)
+                        new = self.gtx_price(side, self.book())
                         d = 1 if side == 'BUY' else -1
                         if (new is not None and d * (new - px) > 0
                                 and abs(new / px0 - 1) * 100 <= self.p.peg_max_drift_pct):
@@ -752,8 +826,8 @@ class Engine:
         p, sym, step, tick = self.pos, self.p.symbol, self.spec['step'], self.spec['tick']
         x = p['exiting']
         opp = 'SELL' if p['side'] == 'BUY' else 'BUY'
-        f = self.feed.features(self.clock())
-        want = self.exit_price(opp, f)
+        await self.refresh_book(0.3)
+        want = self.exit_price(opp, self.book())
         if want is None:
             return
         now = time.monotonic()
@@ -785,7 +859,8 @@ class Engine:
         if not p or not v.get('amt'):
             return
         f = self.features or {}
-        mark = (f.get('price') if not f.get('stale') else None) or v.get('mark') or self.feed.price()
+        b = self.book()
+        mark = (b.get('price') if not b.get('stale') else None) or v.get('mark') or self.feed.price()
         if not mark:
             return
         d = 1 if p['side'] == 'BUY' else -1
@@ -817,22 +892,33 @@ class Engine:
             await self._manage_hard(p, d, mark, fav)
 
     async def _manage_soft(self, p: dict, d: int, mark: float, fav: float) -> None:
+        """4 tiers (soft maker exits): T1 +0.08 % -> entry +0.03 % · T2 +0.12 % -> entry + fees + 0.02 %
+        · T3 TP1 50 % at +0.35 % (resting maker order) · T4 runner trails 0.20 % from +0.50 %, 0.15 % from +0.70 %."""
         level, kind = p.get('soft_stop'), p.get('soft_kind')
-        trigger = self.p.microbe_trigger_pct if p.get('entry_type') != 'IOC' else self.p.be_trigger_pct
-        if p['mfe_pct'] >= trigger:
-            be = self.soft_be_price(p)
-            if level is None or d * (be - level) > 0:
-                level, kind = be, 'BE'
-                if not p['be_locked']:
-                    p['be_locked'] = p['mbe_locked'] = True
-                    self.event(f'MARIN BREAKEVEN (soft maker) at {fav:+.3f}% -> exit level {be:g} '
-                               f'(entry + 2x maker + {self.p.be_offset_pct}% -> net >= +{self.p.be_offset_pct}%)')
+        cands = []
+        if p['mfe_pct'] >= self.p.microbe_trigger_pct:
+            cands.append((self.mbe_price(p), 'LOCK'))
+        if p['mfe_pct'] >= self.p.be_trigger_pct:
+            cands.append((self.soft_be_price(p), 'BE'))
         if p['mfe_pct'] >= self.p.trail_activate_pct:
-            trail = round_tick(p['peak'] * (1 - d * self.p.trail_gap_pct / 100.0), self.spec['tick'],
-                               'down' if d > 0 else 'up')
-            if level is None or d * (trail - level) > 0:
-                level, kind = trail, 'TRAIL'
-                p['trail_on'] = True
+            gap = self.p.trail_tight_gap_pct if p['mfe_pct'] >= self.p.trail_tight_pct else self.p.trail_gap_pct
+            cands.append((round_tick(p['peak'] * (1 - d * gap / 100.0), self.spec['tick'], 'down' if d > 0 else 'up'),
+                          'TRAIL'))
+            p['trail_gap'] = gap
+        for px, k in cands:
+            if level is None or d * (px - level) > 0:
+                if k != kind:
+                    self.event({'LOCK': f'MARIN T1 MICRO-LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
+                                        f'{self.p.microbe_lock_pct}%, loss <= fees)',
+                                'BE': f'MARIN T2 BREAKEVEN at {fav:+.3f}% -> exit level {px:g} (entry + fees + '
+                                      f'{self.p.be_offset_pct}% net)',
+                                'TRAIL': f'MARIN T4 TRAIL {p.get("trail_gap")}% behind peak {p["peak"]:g} -> {px:g}'}[k])
+                level, kind = px, k
+        if kind in ('BE', 'TRAIL'):
+            p['be_locked'] = True
+        if kind == 'LOCK':
+            p['mbe_locked'] = True
+        p['trail_on'] = kind == 'TRAIL'
         p['soft_stop'], p['soft_kind'] = level, kind
         if level is not None:
             p['stop_kind'] = kind
@@ -951,6 +1037,7 @@ class Engine:
         self.phase = 'SCANNING'
         self.day_pnl += pnl
         self.history.appendleft(row)
+        self.all_rows.append(row)
         self._write_ledger(row)
         self.cooldown_until = self.clock() + self.p.cooldown_s
         if pnl < 0 and p['tag'] == 'AUTO':
@@ -1090,7 +1177,8 @@ class Engine:
             'features': {k: f.get(k) for k in ('price', 'mark', 'bid', 'ask', 'spread_bps', 'obi', 'cvd_norm',
                                                'cvd_60s', 'cvd_10s', 'vwap', 'vwap_dev_pct', 'range_pos',
                                                'liq_long_usd', 'liq_short_usd', 'stale', 'trades_silent',
-                                               'book_age_s', 'trade_age_s', 'trades')},
+                                               'book_age_s', 'trade_age_s', 'trades', 'cvd_3m', 'cvd_vel_10s',
+                                               'cvd_vel_60s', 'depth10_imb', 'box_pct', 'box_lo', 'box_hi')},
             'market_data': 'binance-ws' if not f.get('stale') else 'stale',
             'position': self.position_row(), 'open_orders': self.orders, 'trade_history': list(self.history)[:30],
             'session': {'trades': len(self.history), 'wins': sum(1 for r in self.history if (r.get('pnl') or 0) > 0),
@@ -1098,6 +1186,8 @@ class Engine:
                         'gross': sum(r.get('gross', r.get('pnl') or 0) or 0 for r in self.history),
                         'fees': sum(r.get('fee') or 0 for r in self.history)},
             'cost': self.cost.view(),
+            'stats': self.stats(), 'stats_today': self.stats(list(self.history)),
+            'exec_book': {k: v for k, v in self.book().items()} if self.spec else None,
             'profile': asdict(self.p), 'live_allowed': self.allow_live, 'symbols': list(SYMBOLS),
             'fee_model': self.fee_model(),
             'latency_ms': {'last': self.latency[-1] if self.latency else None,
@@ -1193,6 +1283,14 @@ class Runner:
                     e.event(f'tick error {type(exc).__name__}: {exc}')
             await asyncio.sleep(0.2)
 
+    async def vbook_loop(self, e: Engine) -> None:
+        while True:
+            if e.started and e.own_book:
+                await e.refresh_book(0.0)
+                await asyncio.sleep(0.3 if (e.pos or e.busy) else 1.0)
+            else:
+                await asyncio.sleep(1.0)
+
     async def sync_loop(self, e: Engine) -> None:
         period = 0.5 if isinstance(e.venue, MockVenue) else 1.2
         while True:
@@ -1241,7 +1339,7 @@ class Runner:
         e = await self.build(mode)
         self.mode, self.engine = mode, e
         self.tasks = [asyncio.create_task(self.pump(e.feed, 'public')), asyncio.create_task(self.pump(e.feed, 'market')),
-                      asyncio.create_task(self.sync_loop(e)),
+                      asyncio.create_task(self.sync_loop(e)), asyncio.create_task(self.vbook_loop(e)),
                       asyncio.create_task(self.decide_loop(e))]
         return e
 

@@ -42,7 +42,7 @@ Hệ thống hỗ trợ 2 chế độ độc lập:
 - **Đặc tả Regime-Gated Shadow (DOGE Flush)**: [`docs/FLUSH_REGIME_SPEC_2026-09-15.md`](./docs/FLUSH_REGIME_SPEC_2026-09-15.md)
 
 ## 6. Trạng thái Kiểm thử Hồi quy
-- Kiểm thử tự động: `python -m pytest -q` (hoặc `run.bat test`) $\to$ **827 passed in ~45s** (07/10/2026).
+- Kiểm thử tự động: `python -m pytest -q` (hoặc `run.bat test`) $\to$ **834 passed in ~45s** (07/10/2026).
 - Bất biến an toàn: Quorum 76.8%, Veto RUNE 70.0%, TokenAuthority HMAC-SHA256 được bảo vệ tuyệt đối.
 
 ## 7. Cấu trúc thư mục & Khởi chạy (06/10/2026)
@@ -91,3 +91,9 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **Pegged maker nới rộng**: chờ khớp 6 s, bám giá tối đa 0.15 %, áp dụng từ 76.8 %; spread ≥ 2 tick thì mua ở ask − 1 tick / bán ở bid + 1 tick (vẫn post-only).
 - **IOC taker khi siêu dòng tiền**: đồng thuận swarm gốc ≥ 85 % **hoặc** (JEV ≥ 9.0 **và** |CVD 60s| ≥ $3M × hệ số coin) → VESKA gửi LIMIT IOC tại giá tốt nhất ± 0.03 % (trượt có giới hạn, không phải MARKET mù). Sau khi khớp: SL sàn + TP1 maker như cũ; BE mềm kích hoạt ở +0.12 % với mức thoát = giá vào + taker + maker + 0.02 % (+0.09 %).
 - **Không kẹt trạng thái**: lệnh không khớp (GTX hết 6 s hoặc IOC hết thanh khoản) → về SCANNING, quét lại sau 1 s.
+
+### 8.5 Cập nhật 07/10/2026 (e) — Velocity, L10 wall, squeeze, 4 tầng chốt lời, sổ lệnh của sàn demo
+- **Sửa lỗi gốc ở DEMO**: sàn demo có sổ lệnh/giá riêng, KHÔNG phải bản sao mainnet. Trước đây giá đặt lệnh và MARIN đọc giá mainnet → GTX bị từ chối "post-only", và ở lệnh #4/#5 TP1 khớp +0.35 % trên demo trong khi MFE ghi 0 % (BE không bao giờ kích hoạt). Nay giá đặt/thoát lệnh và MARIN dùng `bookTicker` của chính sàn demo (0.3 s khi có vị thế); tín hiệu dòng tiền vẫn lấy từ mainnet.
+- **S5 SURGE**: tốc độ CVD 10 s ≥ $50k/s và ≥ 2× nhịp 60 s. **WALL**: mất cân bằng sổ L10 ≥ ±0.35 (tính confluence, chặn vào lệnh đâm vào tường ngược). **S6 SQUEEZE**: hộp giá 2 phút ≤ 0.08 % rồi phá vỡ cùng SURGE → TIDAL bỏ phiếu 100 % → đồng thuận ≥ 95 % → IOC.
+- **MARIN 4 tầng (mềm, thoát maker)**: +0.08 % → mức thoát entry +0.03 % · +0.12 % → hoà phí +0.02 % net · TP1 50 % ở +0.35 % · runner trailing 0.20 % từ +0.50 %, siết 0.15 % từ +0.70 %.
+- UI: Win Rate · W/L · Avg Win/Loss · Profit Factor · Expectancy; CVD velocity trên đồng hồ T2.

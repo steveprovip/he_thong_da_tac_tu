@@ -36,7 +36,7 @@ def trend_feed(side='BUY', now=None, sym=SYM, px=99_800.0):
     d = 1 if side == 'BUY' else -1
     f = msig.MicroFeed(sym)
     for i in range(30):
-        f.on_message(agg(px - d * 100, 0.05, maker=d > 0), now - 50 + i)          # earlier, other side
+        f.on_message(agg(px - d * (100 + (i % 2) * 250), 0.05, maker=d > 0), now - 50 + i)  # earlier, wide range
     for i in range(30):
         f.on_message(agg(px, 0.3, maker=d < 0), now - 10 + i * 0.3)               # +-$900k aggressor flow
     for _ in range(10):
@@ -407,7 +407,7 @@ def test_stale_feed_vetoes_and_snapshot_is_json(tmp_path):
 
 def test_ws_routes_follow_binance_split():
     s = msig.streams('BTCUSDT')
-    assert s['public'] == 'wss://fstream.binance.com/public/stream?streams=btcusdt@depth5@100ms'
+    assert s['public'] == 'wss://fstream.binance.com/public/stream?streams=btcusdt@depth10@100ms'
     assert s['market'].startswith('wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/')
     assert 'markPrice@1s' in s['market'] and 'forceOrder' in s['market'] and 'depth' not in s['market']
 
@@ -560,7 +560,10 @@ async def test_flow_exit_is_a_maker_queue_and_beats_trade3_by_the_taker_gap(tmp_
 async def test_soft_breakeven_exit_is_maker_and_net_positive(tmp_path):
     e, venue, feed = await opened(tmp_path)
     entry, sl0 = e.pos['entry'], e.pos['sl0']
-    book_at(feed, round(entry * 1.0009, 1))                          # +0.09 %: soft BE armed
+    book_at(feed, round(entry * 1.0009, 1))                          # +0.09 %: T1 micro-lock
+    await e.tick()
+    assert e.pos['soft_kind'] == 'LOCK' and e.pos['soft_stop'] == pytest.approx(entry * 1.0003, abs=0.2)
+    book_at(feed, round(entry * 1.0013, 1))                          # +0.13 %: T2 breakeven (maker in + out + 0.02)
     await e.tick()
     lvl = e.pos['soft_stop']
     assert e.pos['be_locked'] and lvl == pytest.approx(entry * 1.0006, abs=0.2) and e.pos['sl'] == sl0
@@ -731,6 +734,142 @@ def test_default_execution_profile_values():
     p = eng.PROFILES['demo']
     assert (p.gtx_ttl_s, p.peg_max_drift_pct, p.peg_min_score, p.unfilled_cooldown_s) == (6.0, 0.15, 0.768, 1.0)
     assert (p.super_consensus, p.super_jev, p.super_cvd_usd, p.ioc_max_slip_pct) == (0.85, 9.0, 3_000_000.0, 0.03)
+
+
+# ----------------------------------------------------------------------------- velocity / wall / squeeze / tiers / stats
+def test_cvd_velocity_surge_needs_pace_and_acceleration():
+    base = {'cvd_60s': 0.0, 'cvd_3m': 0.0, 'obi': 0.0}
+    hot = msig.signals(dict(base, cvd_vel_10s=80_000.0, cvd_vel_60s=20_000.0))
+    assert hot['SURGE']['side'] == 'BUY' and '+80k/s' in hot['SURGE']['why']
+    assert msig.signals(dict(base, cvd_vel_10s=40_000.0, cvd_vel_60s=5_000.0))['SURGE'] is None    # < $50k/s
+    assert msig.signals(dict(base, cvd_vel_10s=60_000.0, cvd_vel_60s=45_000.0))['SURGE'] is None   # no acceleration
+    assert msig.signals(dict(base, cvd_vel_10s=-70_000.0, cvd_vel_60s=-10_000.0))['SURGE']['side'] == 'SELL'
+
+
+def test_depth_l10_wall_measured_and_blocks_entry_into_opposite_wall():
+    f = msig.MicroFeed(SYM)
+    f.on_message({'stream': 'btcusdt@depth10@100ms', 'data': {
+        'b': [[str(100 - i * 0.1), '3'] for i in range(10)], 'a': [[str(100.1 + i * 0.1), '1'] for i in range(10)]}})
+    imb = f.features()['depth10_imb']
+    assert imb == pytest.approx(0.5) and msig.signals(f.features())['WALL']['side'] == 'BUY'
+    up = sig(FLOW=('BUY', 1.0, 3), TREND=('BUY', 1.0, 3))
+    up['WALL'] = {'side': 'BUY', 'strength': 0.5, 'edge_bps': 0.0, 'why': 'L10 wall +0.50'}
+    d, _, diag = ms.evaluate(up, ms.Gates())
+    assert d.allowed and diag['confluence']['C6_WALL']
+    up['WALL'] = {'side': 'SELL', 'strength': 0.5, 'edge_bps': 0.0, 'why': 'L10 wall -0.50'}
+    assert ms.evaluate(up, ms.Gates())[0].reason.startswith('WALL against BUY')
+
+
+def squeeze_feed(px=99_800.0):
+    """2 min coiled inside 0.02 %, then $900k of buying breaks the box high."""
+    now = time.time()
+    f = msig.MicroFeed(SYM)
+    for i in range(100):
+        f.on_message(agg(px + (i % 3) * 5, 0.01, maker=i % 2 == 0), now - 115 + i)
+    for i in range(30):
+        f.on_message(agg(px + 40, 0.3, maker=False), now - 10 + i * 0.3)
+    for _ in range(5):
+        f.on_message(depth(px + 40, px + 40.1, bq=6.0, aq=1.0), now)
+    return f
+
+
+async def test_squeeze_breakout_lifts_consensus_to_super_edge(tmp_path):
+    feed = squeeze_feed()
+    fx = feed.features()
+    s = msig.signals(fx)
+    assert fx['box_pct'] <= 0.08 and s['SQUEEZE']['side'] == 'BUY' and s['SURGE']['side'] == 'BUY'
+    e, venue, _ = mock_engine(tmp_path, feed=feed)
+    await e.sync()
+    d = await e.tick()
+    assert e.diag['consensus'] >= 0.95 and e.diag['confluence']['C5_SQUEEZE']
+    assert d.allowed and e.pos and e.pos['entry_type'] == 'IOC'
+
+
+async def test_four_tier_profit_ladder_and_tight_trail(tmp_path):
+    e, venue, feed = await opened(tmp_path)
+    entry = e.pos['entry']
+    steps = [(1.0009, 'LOCK', 1.0003), (1.0013, 'BE', 1.0006)]
+    for k, kind, lvl in steps:
+        book_at(feed, round(entry * k, 1))
+        await e.tick()
+        assert e.pos['soft_kind'] == kind and e.pos['soft_stop'] == pytest.approx(entry * lvl, abs=0.2)
+    book_at(feed, round(entry * 1.0040, 1))                          # T3: TP1 maker fills half
+    await e.sync()
+    await e.tick()
+    assert e.pos['tp1_filled']
+    book_at(feed, round(entry * 1.0060, 1))                          # T4: trail 0.20 %
+    await e.tick()
+    assert e.pos['trail_gap'] == 0.20 and e.pos['soft_stop'] == pytest.approx(entry * 1.0060 * 0.998, abs=0.3)
+    book_at(feed, round(entry * 1.0090, 1))                          # >= +0.70 %: trail tightens to 0.15 %
+    await e.tick()
+    assert e.pos['trail_gap'] == 0.15 and e.pos['soft_stop'] == pytest.approx(entry * 1.0090 * 0.9985, abs=0.3)
+    lvl = e.pos['soft_stop']
+    book_at(feed, round(lvl - 0.1, 1))
+    await e.tick()
+    lift(feed, e.pos['exiting']['px'])
+    await e.sync()
+    h = e.history[0]
+    assert h['reason'] == 'TP1+SOFT-TRAIL' and h['taker_fills'] == 0 and h['pnl'] > 0
+    # the tight tier keeps more of the run than a flat 0.20 % trail on the same path: +0.75 % vs +0.70 %
+    assert (1.0090 * 0.9985 - 1) * 100 > (1.0090 * 0.998 - 1) * 100
+
+
+async def test_demo_venue_book_drives_quotes_and_marin_not_mainnet(tmp_path):
+    """09:46 demo log: TP1 filled at +0.35 % on the demo book while the mainnet mid never rose - MFE stayed 0,
+    breakeven never armed. Quotes and MARIN now read the venue's own book when the venue has one."""
+    e, venue, feed = mock_engine(tmp_path)
+    vb = {'bid': 99_830.0, 'ask': 99_830.1, 'bid_qty': 5.0, 'ask_qty': 1.0}
+
+    async def book_ticker(symbol):
+        return dict(vb)
+    venue.own_book = True
+    venue.book_ticker = book_ticker
+    await e.refresh_book(0.0)
+    assert e.book()['bid'] == 99_830.0 and e.gtx_price('BUY', e.book()) == 99_830.0       # not the feed's 99_800
+    venue.quote = lambda s: (vb['bid'], vb['ask'])                                       # fills follow the venue
+    await e.sync()
+    import asyncio
+    task = asyncio.ensure_future(e.tick())
+    await asyncio.sleep(0.15)
+    vb.update(bid=99_829.9, ask=99_830.0)
+    await e.refresh_book(0.0)
+    d = await task
+    assert d.allowed and e.pos and e.pos['entry'] == pytest.approx(99_830.0)
+    await e.sync()
+    vb.update(bid=round(99_830.0 * 1.0013, 1), ask=round(99_830.0 * 1.0013 + 0.1, 1))   # venue +0.13 %, feed flat
+    await e.refresh_book(0.0)
+    await e.tick()
+    assert e.pos['mfe_pct'] >= 0.12 and e.pos['be_locked']
+
+
+def test_win_rate_radar_on_the_real_demo_ledger(tmp_path):
+    import shutil
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1] / 'data' / 'engine_trades.jsonl'
+    rows = [json.loads(x) for x in src.read_text(encoding='utf-8').splitlines()[:5]] if src.exists() else []
+    if len(rows) < 5:
+        pytest.skip('ledger not present')
+    e, _, _ = mock_engine(tmp_path)
+    s = e.stats(rows)
+    assert (s['wins'], s['losses']) == (2, 3) and s['win_rate'] == pytest.approx(0.4)
+    assert s['net'] == pytest.approx(0.3258, abs=1e-3) and s['profit_factor'] == pytest.approx(2.278, abs=0.01)
+    assert s['avg_win'] == pytest.approx(0.2904, abs=1e-3) and s['avg_loss'] == pytest.approx(-0.0850, abs=1e-3)
+    json.dumps(e.stats([]), allow_nan=False)
+
+
+async def test_order_query_tolerates_binance_2013(tmp_path):
+    from live.binance_futures_client import BinanceError
+    calls = []
+
+    class C:
+        settings = SimpleNamespace(mode='testnet', rest='https://demo-fapi.binance.com', armed=True)
+
+        async def order(self, symbol, cid):
+            calls.append(cid)
+            raise BinanceError(-2013, 400)
+    v = eng.BinanceVenue.__new__(eng.BinanceVenue)
+    v.c = C()
+    assert (await v.order('BTCUSDT', 'x'))['status'] == 'NOT_FOUND' and len(calls) == 2
 
 
 # ----------------------------------------------------------------------------- runner / controls

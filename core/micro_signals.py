@@ -16,6 +16,11 @@ Signals (2026-10-07 confluence brief):
   S2 VWAP   |vwap_dev| >= 0.08 % AND price at the local extreme of the 60 s range (bottom/top 25 %)
   S3 LIQ    one side liquidated >= $10k in 3 s                   -> counter-trend (buy the long flush)
   S4 TREND  CVD 60 s <= -$300k, OBI <= -0.15, price below VWAP 1m -> SHORT (mirror -> LONG)  (2026-10-07b)
+  S5 SURGE  CVD velocity: cvd_10s/10 >= $50k/s AND >= 2x the 60 s pace (cvd_60s/60)  -> follow (2026-10-07e)
+  S6 SQUEEZE price box of [t-120 s, t-15 s] <= 0.08 % wide, then a break of the box edge with SURGE in the
+            same direction -> breakout (TIDAL)
+  WALL      depth L10 imbalance (sum bid qty - sum ask qty) / total >= +0.35 -> supports LONG (non-voting:
+            confluence + blocks entries INTO an opposite wall)
 
 CVD flow-regime gate, multi-timeframe (2026-10-07c; USD thresholds x symbol scale):
   UP       CVD 60 s >= +$400k AND CVD 3 m >= +$600k  -> LONG ONLY
@@ -60,6 +65,12 @@ class SignalConfig:
     trend_obi: float = 0.15
     flow_exit_usd: float = 500_000.0    # MARIN: adverse CVD within flow_exit_s -> exit now
     flow_exit_s: float = 15.0
+    surge_usd_s: float = 50_000.0       # USD/s of net aggressor flow over 10 s
+    surge_ratio: float = 2.0            # 10 s pace vs 60 s pace
+    wall_min: float = 0.35
+    squeeze_range_pct: float = 0.08
+    squeeze_box_s: float = 120.0
+    squeeze_gap_s: float = 15.0
 
 
 USD_SCALE = {'BTCUSDT': 1.0, 'ETHUSDT': 0.5, 'SOLUSDT': 0.1, 'XRPUSDT': 0.1, 'DOGEUSDT': 0.1}
@@ -71,7 +82,7 @@ def config_for(symbol: str) -> SignalConfig:
 
 def streams(symbol: str) -> dict:
     s = symbol.lower()
-    return {'public': WS_PUBLIC + f'{s}@depth5@100ms',
+    return {'public': WS_PUBLIC + f'{s}@depth10@100ms',
             'market': WS_MARKET + f'{s}@aggTrade/{s}@markPrice@1s/{s}@forceOrder'}
 
 
@@ -87,6 +98,7 @@ class MicroFeed:
         self.liq: Deque[Tuple[float, str, float]] = deque()      # (t, LONG|SHORT, usd)
         self.bid = self.ask = self.last = self.mark = None
         self.bid_qty = self.ask_qty = 0.0
+        self.bid10 = self.ask10 = 0.0
         self.last_msg = 0.0
         self.last_book = 0.0
         self.last_trade = 0.0
@@ -113,7 +125,7 @@ class MicroFeed:
             self.last = px
             self.last_trade = now
             signed = -px * q if d.get('m') else px * q
-            self.cvd_long.append((now, signed))
+            self.cvd_long.append((now, signed, px))
             self.cvd_long_sum += signed
             self.n_trades += 1
             self.vw.append((now, px * q, q))
@@ -125,6 +137,8 @@ class MicroFeed:
             try:
                 self.bid, self.bid_qty = float(d['b'][0][0]), float(d['b'][0][1])
                 self.ask, self.ask_qty = float(d['a'][0][0]), float(d['a'][0][1])
+                self.bid10 = sum(float(q) for _, q in d['b'][:10])
+                self.ask10 = sum(float(q) for _, q in d['a'][:10])
                 self.last_book = now
             except (KeyError, IndexError, TypeError, ValueError):
                 pass
@@ -150,6 +164,8 @@ class MicroFeed:
         while self.liq and now - self.liq[0][0] > self.cfg.liq_window_s:
             self.liq.popleft()
         while self.cvd_long and now - self.cvd_long[0][0] > self.cfg.long_window_s:
+            self.cvd_long_sum -= self.cvd_long.popleft()[1]
+        while self.cvd_long and now - self.cvd_long[0][0] > max(self.cfg.long_window_s, self.cfg.squeeze_box_s):
             self.cvd_long_sum -= self.cvd_long.popleft()[1]
 
     # ------------------------------------------------------------------ features
@@ -177,13 +193,20 @@ class MicroFeed:
             lo, hi = (min(pxs), max(pxs)) if pxs else (None, None)
         rng_pos = (px - lo) / (hi - lo) if (px and lo is not None and hi - lo > 1e-12) else None
         book_age = now - self.last_book if self.last_book else None
+        box = [x[2] for x in self.cvd_long if self.cfg.squeeze_gap_s < now - x[0] <= self.cfg.squeeze_box_s]
+        box_lo, box_hi = (min(box), max(box)) if len(box) >= 10 else (None, None)
+        box_pct = (box_hi - box_lo) / box_lo * 100 if box_lo else None
+        tot10 = self.bid10 + self.ask10
         trade_age = now - self.last_trade if self.last_trade else None
         return {'t': now, 'symbol': self.symbol, 'price': self.price(), 'last': px, 'mark': self.mark,
                 'bid': self.bid, 'ask': self.ask, 'spread_bps': spread,
                 'obi': self.flow.obi_ema, 'cvd_60s': self.flow.cvd_window(),
                 'cvd_norm': self.flow.cvd_window() / gross if gross > 0 else 0.0,
                 'cvd_10s': fast, 'cvd_3m': self.cvd_long_sum, 'cvd_exit_win': exit_win, 'vwap': vwap,
-                'bid_qty': self.bid_qty, 'ask_qty': self.ask_qty, 'vwap_dev_pct': (px / vwap - 1) * 100 if (vwap and px) else None,
+                'bid_qty': self.bid_qty, 'ask_qty': self.ask_qty,
+                'cvd_vel_10s': fast / self.cfg.cvd_fast_s, 'cvd_vel_60s': self.flow.cvd_window() / 60.0,
+                'depth10_imb': (self.bid10 - self.ask10) / tot10 if tot10 > 0 else None,
+                'box_lo': box_lo, 'box_hi': box_hi, 'box_pct': box_pct, 'vwap_dev_pct': (px / vwap - 1) * 100 if (vwap and px) else None,
                 'range_lo': lo, 'range_hi': hi, 'range_pos': rng_pos,
                 'liq_long_usd': liq_long, 'liq_short_usd': liq_short,
                 'stale': book_age is None or book_age > self.cfg.stale_s,
@@ -223,7 +246,7 @@ def signals(f: dict, cfg: SignalConfig = SignalConfig(), reg: dict = None) -> di
     """-> {'FLOW'|'VWAP'|'LIQ'|'TREND': {'side', 'strength' 0..1, 'edge_bps', 'why'} or None,
            'BANNED': [signals dropped by the regime gate]}."""
     reg = reg or regime(f, cfg)
-    out = {'FLOW': None, 'VWAP': None, 'LIQ': None, 'TREND': None}
+    out = {'FLOW': None, 'VWAP': None, 'LIQ': None, 'TREND': None, 'SURGE': None, 'SQUEEZE': None, 'WALL': None}
     obi, cvd, fast = f.get('obi'), f.get('cvd_norm') or 0.0, f.get('cvd_10s') or 0.0
     if (obi is not None and abs(obi) >= cfg.obi_min and abs(cvd) >= cfg.cvd_min and (obi > 0) == (cvd > 0)
             and fast != 0 and (fast > 0) == (obi > 0)):
@@ -251,8 +274,25 @@ def signals(f: dict, cfg: SignalConfig = SignalConfig(), reg: dict = None) -> di
             x = min(abs(usd) / (cfg.trend_usd * k), abs(obi) / cfg.trend_obi)
             out['TREND'] = {'side': 'SELL' if down else 'BUY', 'strength': strength(x), 'edge_bps': min(16.0, 4.0 * x),
                             'why': f'TREND CVD {usd / 1e6:+.2f}M · OBI {obi:+.2f} · VWAP {dev:+.3f}%'}
+    v10, v60 = f.get('cvd_vel_10s') or 0.0, f.get('cvd_vel_60s') or 0.0
+    if abs(v10) >= cfg.surge_usd_s * k and abs(v10) >= cfg.surge_ratio * abs(v60) and (v60 == 0 or (v10 > 0) == (v60 > 0)
+                                                                                      or abs(v10) > abs(v60)):
+        x = abs(v10) / (cfg.surge_usd_s * k)
+        out['SURGE'] = {'side': 'BUY' if v10 > 0 else 'SELL', 'strength': strength(x), 'edge_bps': min(12.0, 4.0 * x),
+                        'why': f'CVD velocity {v10 / 1e3:+.0f}k/s vs {v60 / 1e3:+.0f}k/s (60s)'}
+    lo, hi, box, px = f.get('box_lo'), f.get('box_hi'), f.get('box_pct'), f.get('last')
+    if (out['SURGE'] and box is not None and box <= cfg.squeeze_range_pct and px
+            and ((out['SURGE']['side'] == 'BUY' and px > hi) or (out['SURGE']['side'] == 'SELL' and px < lo))):
+        side = out['SURGE']['side']
+        out['SQUEEZE'] = {'side': side, 'strength': 1.0, 'edge_bps': 10.0,
+                          'why': f'SQUEEZE box {box:.3f}% -> break {"above" if side == "BUY" else "below"} '
+                                 f'{hi if side == "BUY" else lo:g}'}
+    wall = f.get('depth10_imb')
+    if wall is not None and abs(wall) >= cfg.wall_min:
+        out['WALL'] = {'side': 'BUY' if wall > 0 else 'SELL', 'strength': min(1.0, abs(wall)), 'edge_bps': 0.0,
+                       'why': f'L10 wall {wall:+.2f}'}
     banned = []
-    for key in ('FLOW', 'VWAP', 'LIQ', 'TREND'):
+    for key in ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE', 'WALL'):
         s = out[key]
         if s and s['side'] not in reg['allow']:
             banned.append({'key': key, 'side': s['side'], 'why': f'REGIME {reg["name"]} bans {s["side"]}: {s["why"]}'})

@@ -23,8 +23,8 @@ from core.consensus_engine import ConsensusEngine, Decision, Vote
 from core.jev_gatekeeper import score_from_ratio
 
 # NORO = fair value / trend alignment (TREND in a flow regime, VWAP mean-reversion only when NEUTRAL)
-ALPHA = {'NORO': ('TREND', 'VWAP'), 'LUMEN': ('FLOW',), 'TIDAL': ('LIQ',)}
-SIGNAL_KEYS = ('FLOW', 'VWAP', 'LIQ', 'TREND')
+ALPHA = {'NORO': ('TREND', 'VWAP'), 'LUMEN': ('FLOW', 'SURGE'), 'TIDAL': ('SQUEEZE', 'LIQ')}
+SIGNAL_KEYS = ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE')     # WALL never votes, never adds edge
 
 
 def alpha_signal(sig: dict, keys: tuple) -> Optional[dict]:
@@ -59,9 +59,11 @@ def direction_of(sig: dict) -> Optional[str]:
 
 def confluence(sig: dict, side: Optional[str], edge_bps: float, cost_bps: float, ratio_min: float = 2.5) -> dict:
     ratio = edge_bps / max(cost_bps, 1e-9)
-    c = {'C1_FLOW': bool(side and sig.get('FLOW') and sig['FLOW']['side'] == side),
+    def al(k):
+        return bool(side and sig.get(k) and sig[k]['side'] == side)
+    c = {'C1_FLOW': al('FLOW') or al('SURGE'),
          'C2_VWAP': bool(side and sig.get('VWAP') and sig['VWAP']['side'] == side),
-         'C4_TREND': bool(side and sig.get('TREND') and sig['TREND']['side'] == side),
+         'C4_TREND': al('TREND'), 'C5_SQUEEZE': al('SQUEEZE'), 'C6_WALL': al('WALL'),
          'C3_EDGE': bool(side and ratio >= ratio_min)}
     return {**c, 'count': sum(c.values()), 'edge_cost': ratio}
 
@@ -100,12 +102,16 @@ def evaluate(sig: dict, gates: Gates, engine: Optional[ConsensusEngine] = None,
         decision = replace(decision, allowed=False,
                            reason=f'CONFLUENCE {conf["count"]}/3 < {min_confluence} · edge/cost {conf["edge_cost"]:.2f}x')
         path = None
+    wall = sig.get('WALL')
+    if decision.allowed and wall and wall['side'] != decision.side:  # do not buy into a sell wall (or vice versa)
+        decision = replace(decision, allowed=False, reason=f'WALL against {decision.side}: {wall["why"]}')
+        path = None
     if decision.allowed and decision.side not in allow:          # hard CVD regime gate (defence in depth)
         decision = replace(decision, allowed=False, reason=f'REGIME BAN {decision.side} (allowed: {"/".join(allow)})')
         path = None
     if side is None and gates_ok:
         decision = replace(decision, reason='SCANNING · no trigger')
-    elif side and gates_ok and not decision.allowed and not decision.reason.startswith(('CONFLUENCE', 'REGIME')):
+    elif side and gates_ok and not decision.allowed and not decision.reason.startswith(('CONFLUENCE', 'REGIME', 'WALL')):
         decision = replace(decision, reason=f'WEAK {decision.score * 100:.1f}% < {decision.threshold * 100:.1f}% · JEV {jev:.1f}')
     return decision, votes, {'side': side, 'edge_bps': edge, 'jev': jev, 'gates_ok': gates_ok, 'path': path,
                              'confluence': conf, 'consensus': consensus}

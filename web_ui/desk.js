@@ -156,13 +156,15 @@
       n.className = 'trig' + (x ? ' fire ' + x.side.toLowerCase() : '');
       n.querySelector('span').textContent = x ? `${x.side} ${(x.strength * 100).toFixed(0)}% · ${x.why}` : val;
     };
-    trig('FLOW', `OBI ${sg(f.obi, 2)} · CVD ${sg(f.cvd_norm, 2)}`);
+    trig('FLOW', `OBI ${sg(f.obi, 2)} · vel ${fin(f.cvd_vel_10s) ? sg(f.cvd_vel_10s / 1e3, 0) + 'k/s' : '—'} · L10 ${sg(f.depth10_imb, 2)}`);
+    if (sig.SURGE && !sig.FLOW) { const n = $('trig-FLOW'); n.className = 'trig fire ' + sig.SURGE.side.toLowerCase(); n.querySelector('span').textContent = `${sig.SURGE.side} SURGE · ${sig.SURGE.why}`; }
     if (sig.TREND) { const n = $('trig-VWAP'); n.className = 'trig fire ' + sig.TREND.side.toLowerCase();
       n.querySelector('span').textContent = `${sig.TREND.side} ${(sig.TREND.strength * 100).toFixed(0)}% · ${sig.TREND.why}`; }
     else trig('VWAP', `lệch ${fin(f.vwap_dev_pct) ? sg(f.vwap_dev_pct, 3) + '%' : '—'} · ${(s.regime || {}).mr_ok ? 'MR mở' : 'MR khoá (dòng tiền)'}`);
     const banned = sig.BANNED || [];
     if (banned.length) { const n = $('trig-DEC'); n.title = banned.map(b => b.why).join('\n'); }
-    trig('LIQ', `L $${fx(f.liq_long_usd, 0)} · S $${fx(f.liq_short_usd, 0)}`);
+    trig('LIQ', `box ${fin(f.box_pct) ? fx(f.box_pct, 3) + '%' : '—'} · L $${fx(f.liq_long_usd, 0)} · S $${fx(f.liq_short_usd, 0)}`);
+    if (sig.SQUEEZE) { const n = $('trig-LIQ'); n.className = 'trig fire ' + sig.SQUEEZE.side.toLowerCase(); n.querySelector('span').textContent = sig.SQUEEZE.why; }
     const d = s.decision || {};
     const dn = $('trig-DEC'); dn.className = 'trig decision' + (d.allowed ? ' fire ' + String(d.side).toLowerCase() : '');
     dn.querySelector('span').textContent = pos ? 'GIỮ VỊ THẾ · swarm chờ MARIN đóng lệnh'
@@ -183,6 +185,10 @@
         : pos.mbe_locked ? `MICRO-BE · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k`
         : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s`,
         pos.trail_on ? 'buy glow' : pos.be_locked ? 'buy' : 'warn']] }] : [], 9, 'Không có vị thế');
+    const st = s.stats || {};
+    const wr = $('winrate');
+    wr.textContent = st.n ? `WIN RATE ${fx(st.win_rate * 100, 1)}% · ${st.wins}W / ${st.losses}L · Avg Win ${sg(st.avg_win, 3)}U · Avg Loss ${sg(st.avg_loss, 3)}U · PF ${st.profit_factor == null ? (st.no_losses ? '∞' : '—') : fx(st.profit_factor, 2)} · E ${sg(st.expectancy, 4)}U/lệnh` : 'WIN RATE — (chưa có lệnh)';
+    wr.className = 'winrate ' + ((st.net || 0) >= 0 ? 'up' : 'down');
     const ss = s.session || {};
     const split = $('pnl-split');
     split.textContent = `GROSS ${sg(ss.gross, 4)} · PHÍ ${sg(-(ss.fees || 0), 4)} · NET ${sg(ss.realized, 4)} U`;
