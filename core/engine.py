@@ -273,13 +273,18 @@ class BinanceVenue(DemoVenue):
 
     async def prepare(self, symbol: str, leverage: int) -> None:
         from live.binance_futures_client import BinanceError
+        ignorable = (-4046, -4047, -4067, -4028, -4059, -4061, -4068, -4131)
         try:
             await self.c.request('POST', '/fapi/v1/marginType', {'symbol': symbol, 'marginType': self.margin_type},
                                  signed=True)
         except BinanceError as e:
-            if e.code not in (-4046, -4047):          # already set / has open orders
+            if e.code not in ignorable:          # already set / has open orders / position exists
                 raise
-        await self.c.request('POST', '/fapi/v1/leverage', {'symbol': symbol, 'leverage': leverage}, signed=True)
+        try:
+            await self.c.request('POST', '/fapi/v1/leverage', {'symbol': symbol, 'leverage': leverage}, signed=True)
+        except BinanceError as e:
+            if e.code not in ignorable:
+                raise
 
     async def account_view(self) -> dict:
         a = await self.c.account()
