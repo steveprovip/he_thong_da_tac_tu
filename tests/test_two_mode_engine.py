@@ -217,6 +217,7 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     feed = feed or bullish_feed()
     prof.setdefault('gtx_ttl_s', 0.6)
     prof.setdefault('min_edge_bps', 0.0)          # churn edge floor has its own tests (test_churn_*)
+    prof.setdefault('ker_gate', False)            # KER chop lock has its own tests (test_chop_filter.py)
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')
@@ -261,7 +262,7 @@ async def test_entry_is_post_only_gtx_maker_at_best_bid(tmp_path):
     assert len(fills) == 1 and fills[0]['maker'] and fills[0]['fee'] == pytest.approx(99_800.0 * 0.002 * 2 / 1e4)
     assert {o['type'] for o in e.orders} == {'TP LIMIT', 'STOP_MARKET'}
     assert p['split'] and p['tp_qty'] == pytest.approx(0.001)                 # TP1 takes exactly half
-    assert any(r['label'].startswith('LONG OPEN (TP1: +0.35%)') for r in e.agent_rows())
+    assert any(r['label'].startswith('LONG OPEN (TP1: +0.45%)') for r in e.agent_rows())
 
 
 async def test_gtx_not_filled_is_cancelled_without_chasing(tmp_path):
@@ -320,7 +321,7 @@ async def test_breakeven_stop_is_a_stop_market_so_a_gap_can_still_slip(tmp_path)
 async def test_tp1_half_then_trailing_runner(tmp_path):
     e, venue, feed = await opened(tmp_path, soft_exits=False)
     entry = e.pos['entry']
-    book_at(feed, round(entry * 1.004, 1))                        # +0.40 %: TP1 (+0.35 %) fills half
+    book_at(feed, round(entry * 1.005, 1))                        # +0.50 %: TP1 (+0.45 %) fills half
     await e.sync()
     await e.tick()
     assert e.pos['tp1_filled'] and abs(e.view['amt']) == pytest.approx(0.001) and e.pos['be_locked']
@@ -462,7 +463,7 @@ async def test_short_micro_be_be_and_tp1_trail_mirror(tmp_path):        # hard (
     book_at(feed, round(entry * 0.9987 - 0.1, 1))                  # +0.13 % for the short
     await e.tick()
     assert e.pos['stop_kind'] == 'BE' and e.pos['sl'] < entry
-    book_at(feed, round(entry * 0.9960, 1))                         # TP1 (-0.35 %) fills half
+    book_at(feed, round(entry * 0.9950, 1))                         # TP1 (-0.45 %) fills half
     await e.sync()
     await e.tick()
     assert e.pos['tp1_filled'] and e.view['amt'] == pytest.approx(-0.001)
@@ -806,7 +807,7 @@ async def test_four_tier_profit_ladder_and_tight_trail(tmp_path):
         book_at(feed, round(entry * k, 1))
         await e.tick()
         assert e.pos['soft_kind'] == kind and e.pos['soft_stop'] == pytest.approx(entry * lvl, abs=0.2)
-    book_at(feed, round(entry * 1.0040, 1))                          # T3: TP1 maker fills half
+    book_at(feed, round(entry * 1.0048, 1))                          # T3: TP1 (+0.45 %) maker fills half
     await e.sync()
     await e.tick()
     assert e.pos['tp1_filled']

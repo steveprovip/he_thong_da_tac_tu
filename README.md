@@ -104,3 +104,9 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **Churn governor**: tối đa 8 lệnh/giờ · nghỉ 30 s sau mỗi lệnh đóng · lệnh AUTO cần điểm swarm ≥ 82 % (điểm thô hoặc JEV/10) **và** edge kỳ vọng ≥ 30 bps. Lệnh TEST không qua bộ lọc này.
 - **Regime-flip exit**: SHORT khi CVD 60 s ≥ +$1M, LONG khi ≤ −$1M → MARIN thoát maker ngay (kể cả trong 30 s thở).
 - Đổi coin không đổi % phí: phí và lãi gộp cùng co theo notional, nên net % như nhau; SOL/DOGE chỉ làm số USDT lời/lỗ nhỏ lại.
+
+### 8.7 Cập nhật 07/10/2026 (g) — Khoá sideway (KER), chống nhiễu regime, TP1 +0.45 %
+- **KER 2 phút** = |P_t − P_{t−120s}| / Σ|ΔP|, lấy mẫu giá khớp cuối mỗi 5 s (bỏ nhiễu bid/ask). KER < 0.40 → **CHOP LOCKED** (cấm mọi lệnh AUTO); chỉ mở lại khi KER ≥ 0.45; dưới 60 s dữ liệu = khoá.
+- **Regime-flip exit**: không thoát trong 60 s đầu; CVD lật phải giữ liên tục 20 s mới thoát (maker, không market).
+- **TP1 +0.45 %** cho 50 % khối lượng. 0.002 BTC @84k: TP1 = 0.378 U gộp; nếu runner về hoà phí, cả lệnh ≈ +0.36 U net (không phải +0.75 U).
+- UI: chip `KER 0.52 (TRENDING)` / `KER 0.28 (CHOPPY - LOCKED)` trên header và badge regime; ô QUYẾT ĐỊNH ghi `CHOP LOCKED KER …`.

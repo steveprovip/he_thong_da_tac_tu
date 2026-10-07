@@ -65,3 +65,8 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - SignalConfig.flow_exit_usd 2M; Profile flow_breath_s 30, flow_exit_trigger_mult 2.5 (cap 3x), regime_flip_usd 1M, max_trades_hour 8, cooldown_s 30, min_score 0.82, min_edge_bps 30; Engine.churn_gate / conviction / flow_limit / regime_flipped; snapshot['governor']; ledger rows carry edge_bps + flow_limit.
 - Swarm raw consensus is quantized (3 alpha agents x 20 %): 60/80/100 %. Governor score = max(raw, JEV/10 when all gates green); edge >= 30 bps is the binding filter (trend feed 27 bps blocked, super-momentum 42 bps passes).
 - tests/test_anti_churn.py (17). Verification: pytest 851 passed.
+
+## 2026-10-07 (g) KER chop lock, regime-flip hysteresis, TP1 0.45 %
+- Ledger 19 trades: gross +0.8500, fees 1.5476, net -0.6976; trades 18/19 (REGIME exits) held 261 s / 206 s with MFE ~0 % - the 60 s min hold alone would not have saved them; the KER lock and 20 s debounce target them.
+- micro_signals.ker() (5 s buckets, 120 s window, 60 s min span), chop_locked() hysteresis 0.40/0.45, features ker/ker_span_s; Engine.chop_locked + chop_reason in churn_gate; Profile tp_pct 0.45, regime_flip_min_hold_s 60, regime_flip_debounce_s 20, ker_gate; snapshot['chop'].
+- tests/test_chop_filter.py (10). Verification: pytest 861 passed.

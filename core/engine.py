@@ -60,7 +60,7 @@ class Profile:
     entry: str = 'gtx'                  # Post-Only GTX only; MARKET is kept for emergency reduce-only exits
     gtx_ttl_s: float = 6.0              # pegged maker window; unfilled -> cancel, cooldown 1 s
     qty: float = 0.0                    # 0 -> smallest tradable size (min_qty / min_notional x 1.02)
-    tp_pct: float = 0.35                # TP1: reduce-only GTX for tp1_frac of the size
+    tp_pct: float = 0.45                # TP1: reduce-only GTX for tp1_frac of the size (0.35 -> 0.45, 2026-10-07g)
     tp1_frac: float = 0.5
     sl_pct: float = 0.20
     microbe_trigger_pct: float = 0.08   # MARIN phase 0: +0.08 % -> stop to entry +0.03 % gross (loss <= fees)
@@ -72,6 +72,9 @@ class Profile:
     flow_exit_cap_mult: float = 3.0     # ... capped at 3 x the $2M floor (never 'no exit at all')
     regime_flip_exit: bool = True       # SHORT vs CVD 60 s >= +$1M / LONG vs <= -$1M -> soft maker exit
     regime_flip_usd: float = 1_000_000.0
+    regime_flip_min_hold_s: float = 60.0  # no regime-flip exit in the first 60 s (hard SL still live)
+    regime_flip_debounce_s: float = 20.0  # the flip must hold continuously 20 s before MARIN exits
+    ker_gate: bool = True               # CHOP LOCK: no AUTO entry while KER(2 min) < 0.40 (unlock >= 0.45)
     flow_exit_ttl_s: float = 1.0        # (hard mode only) maker attempt before market
     soft_exits: bool = True             # BE / trail / flow exits = post-only maker queue; only hard SL is taker
     exit_repeg_s: float = 0.5           # re-peg the maker exit when the touch moves away
@@ -437,6 +440,7 @@ class Engine:
         self.history = deque(maxlen=60)
         self.events = deque(maxlen=60)
         self.cooldown_until = 0.0
+        self.chop_locked = True                       # KER unknown at start -> locked
         self.pause_until = 0.0
         self.trade_times = deque()
         self.consec_losses = 0
@@ -592,6 +596,7 @@ class Engine:
         f = self.features = self.feed.features(self.clock())
         if self.pos:                                  # MARIN reacts on every WS tick, not every REST poll
             await self.manage()
+        self.chop_locked = msig.chop_locked(f.get('ker'), self.chop_locked, self.sig_cfg)
         self.reg = msig.regime(f, self.sig_cfg)
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
         d, votes, diag = swarm.evaluate(self.sig, self.gates(f), self.consensus, self.p.jev_min,
@@ -610,9 +615,20 @@ class Engine:
         jev = (diag.get('jev') or 0.0) / 10.0 if diag.get('gates_ok') else 0.0
         return max(d.score, diag.get('consensus') or 0.0, jev)
 
+    def chop_reason(self) -> str:
+        f, c = self.features or {}, self.sig_cfg
+        k = f.get('ker')
+        if k is None:
+            return f'CHOP LOCKED KER warming {f.get("ker_span_s") or 0:.0f}/{c.ker_min_span_s:.0f}s'
+        if k < c.ker_lock:
+            return f'CHOP LOCKED KER {k:.2f} < {c.ker_lock:.2f}'
+        return f'CHOP LOCKED KER {k:.2f} < {c.ker_unlock:.2f} (hysteresis)'
+
     def churn_gate(self, d: Decision, diag: dict) -> tuple:
         """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps."""
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
+        if self.p.ker_gate and self.chop_locked:
+            return False, self.chop_reason()
         if score < self.p.min_score:
             return False, f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'
         if edge < self.p.min_edge_bps:
@@ -752,7 +768,7 @@ class Engine:
                         'be_locked': False, 'mbe_locked': False, 'trail_on': False, 'peak': fill, 'mfe_pct': 0.0,
                         'adverse_usd': 0.0, 'regime': (self.reg or {}).get('name'),
                         'trigger_usd': abs(f.get('cvd_exit_win') or 0.0), 'flow_limit': self.flow_limit(f),
-                        'edge_bps': (self.diag or {}).get('edge_bps'),
+                        'edge_bps': (self.diag or {}).get('edge_bps'), 'ker': f.get('ker'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
                         'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'], 'entry_type': route.upper(),
@@ -912,10 +928,14 @@ class Engine:
         if p.get('exiting'):
             await self.work_soft_exit()
             return
-        if self.regime_flipped(p, f):
+        now = self.clock()
+        flip = self.regime_flipped(p, f)
+        p['flip_since'] = (p.get('flip_since') or now) if flip else None
+        if (flip and now - p['opened'] >= self.p.regime_flip_min_hold_s
+                and now - p['flip_since'] >= self.p.regime_flip_debounce_s):
             self.event(f'MARIN REGIME-FLIP EXIT: {"SHORT" if d < 0 else "LONG"} vs CVD 60s '
                        f'{(f.get("cvd_60s") or 0) / 1e6:+.2f}M (limit ±${self.p.regime_flip_usd * self.feed.cfg.usd_scale / 1e6:.2f}M)'
-                       f' at {fav:+.3f}% -> soft maker exit')
+                       f' held {now - p["flip_since"]:.0f}s at {fav:+.3f}% -> soft maker exit')
             if self.p.soft_exits:
                 await self.start_soft_exit('REGIME')
             else:
@@ -1085,7 +1105,7 @@ class Engine:
                'mfe_pct': p['mfe_pct'], 'adverse_usd': p.get('adverse_usd'), 'regime': p.get('regime'),
                'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
                'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
-               'flow_limit': p.get('flow_limit'), 'hold_s': self.clock() - p['opened'],
+               'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'hold_s': self.clock() - p['opened'],
                'latency_ms': p['latency_ms'], 'entry_type': p.get('entry_type', 'GTX')}
         self.pos = None
         self.phase = 'SCANNING'
@@ -1234,7 +1254,11 @@ class Engine:
                                                'cvd_60s', 'cvd_10s', 'vwap', 'vwap_dev_pct', 'range_pos',
                                                'liq_long_usd', 'liq_short_usd', 'stale', 'trades_silent',
                                                'book_age_s', 'trade_age_s', 'trades', 'cvd_3m', 'cvd_vel_10s',
-                                               'cvd_vel_60s', 'depth10_imb', 'box_pct', 'box_lo', 'box_hi')},
+                                               'cvd_vel_60s', 'depth10_imb', 'box_pct', 'box_lo', 'box_hi',
+                                               'ker', 'ker_span_s')},
+            'chop': {'ker': f.get('ker'), 'locked': self.chop_locked, 'gate': self.p.ker_gate,
+                     'lock': self.sig_cfg.ker_lock, 'unlock': self.sig_cfg.ker_unlock,
+                     'reason': self.chop_reason() if self.chop_locked else None},
             'market_data': 'binance-ws' if not f.get('stale') else 'stale',
             'position': self.position_row(), 'open_orders': self.orders, 'trade_history': list(self.history)[:30],
             'session': {'trades': len(self.history), 'wins': sum(1 for r in self.history if (r.get('pnl') or 0) > 0),

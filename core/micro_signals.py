@@ -71,9 +71,45 @@ class SignalConfig:
     squeeze_range_pct: float = 0.08
     squeeze_box_s: float = 120.0
     squeeze_gap_s: float = 15.0
+    ker_window_s: float = 120.0         # Kaufman Efficiency Ratio over 2 min of trade prints
+    ker_bucket_s: float = 5.0           # sampled every 5 s (last print): no bid/ask bounce, 24 steps
+    ker_min_span_s: float = 60.0        # < 60 s of prints -> KER unknown (treated as CHOP)
+    ker_lock: float = 0.40              # KER < 0.40 -> CHOP LOCKED
+    ker_unlock: float = 0.45            # unlock only at KER >= 0.45 (hysteresis band 0.40-0.45)
 
 
 USD_SCALE = {'BTCUSDT': 1.0, 'ETHUSDT': 0.5, 'SOLUSDT': 0.1, 'XRPUSDT': 0.1, 'DOGEUSDT': 0.1}
+
+
+def ker(points, now: float, window_s: float = 120.0, bucket_s: float = 5.0, min_span_s: float = 60.0):
+    """Kaufman Efficiency Ratio = |P_t - P_{t-window}| / sum |P_i - P_{i-1}| on bucket-sampled prints.
+    points: iterable of (t, px). -> (ker 0..1 or None, span_s). Flat tape (no path) -> 0.0 (no trend)."""
+    last = {}
+    first_t = None
+    for t, px in points:
+        age = now - t
+        if age < 0 or age > window_s or not px:
+            continue
+        first_t = t if first_t is None else min(first_t, t)
+        k = int(age // bucket_s)
+        if k not in last or t >= last[k][0]:
+            last[k] = (t, px)
+    span = now - first_t if first_t is not None else 0.0
+    if span < min_span_s or len(last) < 3:
+        return None, span
+    pxs = [last[k][1] for k in sorted(last, reverse=True)]          # oldest bucket first
+    path = sum(abs(b - a) for a, b in zip(pxs, pxs[1:]))
+    return (abs(pxs[-1] - pxs[0]) / path if path > 0 else 0.0), span
+
+
+def chop_locked(k, was_locked: bool = True, cfg: 'SignalConfig' = None) -> bool:
+    """Hysteresis: lock below ker_lock, unlock at >= ker_unlock, keep the previous state in between."""
+    cfg = cfg or SignalConfig()
+    if k is None or k < cfg.ker_lock:
+        return True
+    if k >= cfg.ker_unlock:
+        return False
+    return was_locked
 
 
 def config_for(symbol: str) -> SignalConfig:
@@ -213,7 +249,10 @@ class MicroFeed:
                 'book_age_s': book_age, 'trade_age_s': trade_age,
                 'trades_silent': (trade_age is None and self.first_msg and now - self.first_msg > self.cfg.trade_silent_s)
                 or (trade_age is not None and trade_age > self.cfg.trade_silent_s),
-                'trades': self.n_trades}
+                'trades': self.n_trades,
+                **dict(zip(('ker', 'ker_span_s'), ker(((t, x) for t, _, x in self.cvd_long), now,
+                                                       self.cfg.ker_window_s, self.cfg.ker_bucket_s,
+                                                       self.cfg.ker_min_span_s)))}
 
 
 def strength(x: float) -> float:

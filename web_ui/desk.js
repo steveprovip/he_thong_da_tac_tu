@@ -139,7 +139,10 @@
     rb.className = 'regime-badge ' + rn;
     rb.querySelector('b').textContent = reg.name === 'DOWN' ? '🔴 ' + reg.label : reg.name === 'UP' ? '🟢 ' + reg.label
       : reg.name ? '⚪ ' + reg.label : 'REGIME —';
-    rb.querySelector('small').textContent = reg.why || 'CVD 60s —';
+    const ch = s.chop || {};
+    const kerTxt = fin(ch.ker) ? `KER ${fx(ch.ker, 2)} (${ch.locked ? 'CHOPPY - LOCKED' : 'TRENDING'})` : `KER — (${ch.locked ? 'WARMING - LOCKED' : '—'})`;
+    rb.querySelector('small').textContent = `${reg.why || 'CVD 60s —'} · ${kerTxt}`;
+    const hk = $('hdr-ker'); if (hk) { hk.textContent = kerTxt; hk.className = 'hero-ker ' + (ch.locked ? 'chop' : 'trend'); hk.title = ch.reason || `khoá < ${ch.lock} · mở ≥ ${ch.unlock}`; }
     document.body.dataset.regime = rn;
     const hr = $('hdr-regime'); if (hr) { hr.textContent = rb.querySelector('b').textContent; hr.className = 'hero-regime ' + rn; }
     $('btn-close').disabled = !pos;

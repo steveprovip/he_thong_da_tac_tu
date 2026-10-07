@@ -12,6 +12,7 @@ from core import micro_swarm as ms
 from tests.test_two_mode_engine import (book_at, dump, lift, mock_engine, opened, opened_short, past_breath, sig,
                                         super_feed)
 
+NO_DEBOUNCE = {'regime_flip_min_hold_s': 0.0, 'regime_flip_debounce_s': 0.0}   # mechanics only
 LEDGER = Path(__file__).resolve().parents[1] / 'data' / 'engine_trades.jsonl'
 
 
@@ -65,7 +66,7 @@ async def test_500k_noise_does_not_cut_and_trade_reaches_tp1(tmp_path):
     dump(feed, entry - 1, 520_000)                                  # more noise after 30 s, still < $2M
     await e.tick()
     assert not e.pos.get('exiting') and not e.pos['breathing'] and e.pos['adverse_usd'] < e.pos['flow_limit']
-    book_at(feed, round(entry * 1.004, 1))                          # +0.40 %: TP1 (+0.35 %) rests and fills
+    book_at(feed, round(entry * 1.005, 1))                          # +0.50 %: TP1 (+0.45 %) rests and fills
     await e.sync()
     await e.tick()
     assert e.pos and e.pos['tp1_filled'] and abs(e.view['amt']) == pytest.approx(0.001) and not e.history
@@ -147,15 +148,15 @@ async def test_rune_caps_8_trades_per_hour_and_30s_cooldown(tmp_path):
 
 # ----------------------------------------------------------------------------- pillar 3: regime-flip exit
 async def test_short_vs_strong_uptrend_cvd_133m_exits_by_maker(tmp_path):
-    """The SHORT that sat through STRONG UPTREND (CVD +1.33M): MARIN now closes it, even inside 30 s."""
-    e, venue, feed = await opened_short(tmp_path)
+    """The SHORT that sat through STRONG UPTREND (CVD +1.33M): MARIN closes it by maker (debounce tested apart)."""
+    e, venue, feed = await opened_short(tmp_path, **NO_DEBOUNCE)
     entry, sl0 = e.pos['entry'], e.pos['sl0']
     cvd0 = feed.features()['cvd_60s']
     dump(feed, entry, 1_330_000 - cvd0, sell=False)                 # buyers push CVD 60 s to +1.33M
     assert feed.features()['cvd_60s'] == pytest.approx(1_330_000, rel=0.01)
     await e.tick()
     x = e.pos['exiting']
-    assert x['reason'] == 'REGIME' and e.pos['breathing'] and e.pos['sl'] == sl0
+    assert x['reason'] == 'REGIME' and e.pos['sl'] == sl0
     assert x['px'] < feed.ask                                         # post-only BUY rests on the bid side
     assert any('REGIME-FLIP' in ev['message'] for ev in e.events)
     lift(feed, x['px'], sell_side=False)
@@ -165,7 +166,7 @@ async def test_short_vs_strong_uptrend_cvd_133m_exits_by_maker(tmp_path):
 
 
 async def test_long_vs_cvd_minus_1m_exits(tmp_path):
-    e, venue, feed = await opened(tmp_path)
+    e, venue, feed = await opened(tmp_path, **NO_DEBOUNCE)
     cvd0 = feed.features()['cvd_60s']
     dump(feed, e.pos['entry'] - 1, cvd0 + 1_050_000)                # CVD 60 s -> -1.05M
     await e.tick()
@@ -184,7 +185,7 @@ def test_regime_flip_thresholds_and_symbol_scale(tmp_path):
 
 
 async def test_regime_flip_hard_mode_closes_reduce_only(tmp_path):
-    e, venue, feed = await opened(tmp_path, soft_exits=False)
+    e, venue, feed = await opened(tmp_path, soft_exits=False, **NO_DEBOUNCE)
     cvd0 = feed.features()['cvd_60s']
     dump(feed, e.pos['entry'] - 1, cvd0 + 1_200_000)
     await e.tick()
