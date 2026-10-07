@@ -41,6 +41,7 @@ SHUTDOWN_FILE = ROOT / 'data' / 'shutdown_request.json'
 MODES = ('demo', 'live')
 SYMBOLS = ('BTCUSDT', 'DOGEUSDT', 'SOLUSDT')
 SYMBOL_QTY = {'BTCUSDT': 0.002}                 # others: smallest tradable size (min notional x 1.02)
+SCAN_SYMBOLS = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')   # demo multi-asset scanner: one slot, first setup wins
 LIVE_CONFIRM = 'LIVE'
 FALLBACK_SPECS = {
     'BTCUSDT': {'step': 0.001, 'min_qty': 0.001, 'min_notional': 100.0, 'tick': 0.1},
@@ -98,7 +99,10 @@ class Profile:
     fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
-    min_velocity_pct: float = 0.04      # auto entry needs price velocity 15 s >= +0.04 % (BUY) / <= -0.04 % (SELL)
+    min_velocity_pct: float = 0.025     # TREND entry needs price velocity 15 s >= +0.025 % with the trade (was 0.04)
+    mr_tp_pct: float = 0.15             # MR lane (KER < 0.38): whole size back toward VWAP at +0.15 % ...
+    mr_sl_pct: float = 0.10             # ... exchange stop -0.10 %
+    mr_min_score: float = 0.80          # MR lane: NORO (MR) + TIDAL (L10 DEPTH) agree
     macro_gate: bool = True             # block entries against the 5 m VWAP + EMA-20 bias
     trail_activate_pct: float = 0.50    # MARIN phase 2: runner trails once +0.50 % was reached
     trail_gap_pct: float = 0.20         # trail = peak -/+ 0.20 %
@@ -425,11 +429,42 @@ class MockVenue(ShadowVenue):
 
 
 # ============================================================================ engine
+class RiskBook:
+    """Portfolio risk shared by every symbol engine of one Runner: one position slot, one governor, one ledger view."""
+
+    def __init__(self):
+        self.loaded = False
+        self.engines: list = []
+        self.history = deque(maxlen=60)
+        self.all_rows: list = []
+        self.cooldown_until = 0.0
+        self.pause_until = 0.0
+        self.trade_times = deque()
+        self.consec_losses = 0
+        self.day_pnl = 0.0
+
+
+def _shared(name: str) -> property:
+    return property(lambda self: getattr(self.risk, name), lambda self, v: setattr(self.risk, name, v))
+
+
 class Engine:
+    history = _shared('history')
+    all_rows = _shared('all_rows')
+    cooldown_until = _shared('cooldown_until')
+    pause_until = _shared('pause_until')
+    trade_times = _shared('trade_times')
+    consec_losses = _shared('consec_losses')
+    day_pnl = _shared('day_pnl')
+
     def __init__(self, profile: Profile, venue, feed: msig.MicroFeed, telemetry=None, ledger: Path = LEDGER,
-                 allow_live: bool = False, sig_cfg: Optional[msig.SignalConfig] = None, clock=time.time):
+                 allow_live: bool = False, sig_cfg: Optional[msig.SignalConfig] = None, clock=time.time,
+                 risk: Optional[RiskBook] = None):
         self.p, self.venue, self.feed, self.tel = profile, venue, feed, telemetry
         self.ledger, self.allow_live, self.clock = ledger, allow_live, clock
+        fresh = risk is None or not risk.loaded
+        self.risk = risk if risk is not None else RiskBook()
+        self.risk.engines.append(self)
         self.sig_cfg = sig_cfg or feed.cfg
         self.reg: dict = {}
         self.consensus = ConsensusEngine()
@@ -437,7 +472,8 @@ class Engine:
         self.lock = asyncio.Lock()                  # one actor at a time: entry / MARIN / REST sync
         self.vbook: Optional[dict] = None           # venue's own top of book (demo), see refresh_book()
         self.vbook_at = 0.0
-        self.all_rows = self._load_all()
+        if fresh:
+            self.all_rows = self._load_all()
         self.authority = TokenAuthority()
         self.spec: Optional[dict] = None
         self.started = False
@@ -447,15 +483,18 @@ class Engine:
         self.view = {'amt': 0.0}                     # venue position view
         self.account = {}
         self.orders: list = []
-        self.history = deque(maxlen=60)
+        if fresh:
+            self.history = deque(maxlen=60)
         self.events = deque(maxlen=60)
-        self.cooldown_until = 0.0
+        if fresh:
+            self.cooldown_until = 0.0
         self.chop_locked = True                       # KER unknown at start -> locked
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
-        self.pause_until = 0.0
-        self.trade_times = deque()
-        self.consec_losses = 0
+        if fresh:
+            self.pause_until = 0.0
+            self.trade_times = deque()
+            self.consec_losses = 0
         self.authorized, self.auth_at = 0, None
         self.latency = deque(maxlen=50)
         self.decision: Optional[Decision] = None
@@ -465,10 +504,21 @@ class Engine:
         self.features: dict = {}
         self.phase = 'BOOT'
         self.last_error = ''
-        self.day_pnl = self._load_today()
+        if fresh:
+            self.day_pnl = self._load_today()
+            self.risk.loaded = True
 
     # ------------------------------------------------------------------ housekeeping
+    def peer(self) -> Optional['Engine']:
+        """Another symbol engine of the same Runner that holds the single position slot."""
+        for o in self.risk.engines:
+            if o is not self and (o.pos or o.busy or abs(o.view.get('amt') or 0) > 0):
+                return o
+        return None
+
     def event(self, msg: str) -> None:
+        if len(self.risk.engines) > 1:
+            msg = f'{self.p.symbol.replace("USDT", "")} · {msg}'
         self.events.appendleft({'t': self.clock(), 'message': msg[:240]})
         if self.tel is not None:
             self.tel.event(msg)
@@ -579,6 +629,8 @@ class Engine:
             r = (False, 'position open' if self.pos else 'EXTERNAL position on venue')
         elif self.busy:
             r = (False, 'order in flight')
+        elif (o := self.peer()) is not None:
+            r = (False, f'SCANNER slot: {o.p.symbol} {"position" if o.pos or o.view.get("amt") else "order"} active')
         elif now < self.pause_until:
             r = (False, f'{self.consec_losses} losses · pause {self.pause_until - now:.0f}s')
         elif now < self.cooldown_until:
@@ -621,8 +673,40 @@ class Engine:
                 d = replace(d, allowed=False, reason=why)
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
-            await self.execute(d.side, d, diag.get('path') or 'SWARM')
+            await self.execute(d.side, d, 'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
         return d
+
+    def lane(self, d: Decision) -> str:
+        """'MR' when the decision is the mean-reversion setup (MR signal on the decision side), else 'TREND'."""
+        mr = (self.sig or {}).get('MR')
+        return 'MR' if mr and mr['side'] == d.side else 'TREND'
+
+    def mr_profile(self) -> Profile:
+        extra = {'sl_pct': self.p.mr_sl_pct} if self.p.max_loss_usdt is None else {}
+        return replace(self.p, tp_pct=self.p.mr_tp_pct, tp1_frac=1.0, **extra)
+
+    def radar(self) -> dict:
+        """One scanner row: BTC: CHOP | SOL: TREND BUY (84%) | DOGE: MR SCAN."""
+        d, f, c = self.decision, self.features or {}, self.sig_cfg
+        k, mr = f.get('ker'), (self.sig or {}).get('MR')
+        score = self.conviction(d, self.diag or {}) if d else 0.0
+        if self.pos:
+            label = f'{"LONG" if self.pos["side"] == "BUY" else "SHORT"} OPEN'
+        elif self.busy:
+            label = 'ORDER'
+        elif mr:
+            label = f'MR {mr["side"]} ({score * 100:.0f}%)'
+        elif k is None:
+            label = 'WARMUP'
+        elif self.chop_locked:
+            label = 'MR SCAN' if k < c.ker_lock else 'CHOP'
+        elif d is not None and d.side:
+            label = f'TREND {d.side} ({score * 100:.0f}%)'
+        else:
+            label = 'TREND SCAN'
+        return {'symbol': self.p.symbol, 'label': label, 'ker': k, 'regime': (self.reg or {}).get('name'),
+                'score': score, 'allowed': bool(d and d.allowed), 'reason': (d.reason if d else '')[:140],
+                'pos': bool(self.pos), 'price': f.get('price')}
 
     def conviction(self, d: Decision, diag: dict) -> float:
         """Swarm score the governor reads: raw vote (60/80/100 % steps with 3 alpha agents) or the JEV lift."""
@@ -641,12 +725,17 @@ class Engine:
     def churn_gate(self, d: Decision, diag: dict) -> tuple:
         """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps."""
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
-        if self.p.ker_gate and self.chop_locked:
+        lane = self.lane(d)
+        if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
             return False, self.chop_reason()
         if self.p.macro_gate and d.side not in self.macro.get('allow', ('BUY', 'SELL')):
             return False, f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'
         if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
             return False, f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'
+        if lane == 'MR':
+            if score < self.p.mr_min_score:
+                return False, f'MR score {score * 100:.1f}% < {self.p.mr_min_score * 100:.1f}%'
+            return True, ''
         if self.p.min_velocity_pct:
             vel = (self.features or {}).get('px_vel_15s')
             sv = None if vel is None else (vel if d.side == 'BUY' else -vel)
@@ -691,8 +780,9 @@ class Engine:
 
     async def execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                       entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
-        if self.busy or self.pos:
-            return {'ok': False, 'error': 'busy or position open'}
+        if self.busy or self.pos or self.peer():
+            return {'ok': False, 'error': 'busy or position open' if not self.peer() else
+                    f'SCANNER: {self.peer().p.symbol} đang giữ slot vị thế'}
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
@@ -702,10 +792,11 @@ class Engine:
             px = self.gtx_price(side, f)
             if px is None:
                 return {'ok': False, 'error': 'no book'}
-            route = self.route(decision, f) if tag == 'AUTO' else 'gtx'
+            route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
+            base = self.mr_profile() if path == 'MR' else self.p
             touch = f.get('ask') if side == 'BUY' else f.get('bid')
             pl = plan(side, px if route == 'gtx' else touch, self.spec,
-                      replace(self.p, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'))
+                      replace(base, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'))
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
@@ -783,7 +874,7 @@ class Engine:
             qty = floor_step(filled, step)
             qty_str = fmt(qty, step)
             sl, tp = brackets(side, fill, pl, tick)
-            half = floor_step(qty * self.p.tp1_frac, step)
+            half = floor_step(qty * base.tp1_frac, step)
             split = half >= self.spec['min_qty'] and qty - half >= self.spec['min_qty'] - 1e-12
             opp = 'SELL' if side == 'BUY' else 'BUY'
             self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': qty_str, 'entry': fill,
@@ -1383,10 +1474,27 @@ def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
     return [(k[6] / 1000.0, float(k[4])) for k in rows if k[6] < now_ms]
 
 
+def build_scanner(profiles: dict, venue, feeds: dict, telemetry=None, ledger: Path = LEDGER,
+                  allow_live: bool = False) -> dict:
+    """One Engine per symbol over ONE venue and ONE RiskBook: shared governor, ledger view and position slot."""
+    risk = RiskBook()
+    return {s: Engine(profiles[s], venue, feeds[s], telemetry, ledger=ledger, allow_live=allow_live, risk=risk)
+            for s in profiles}
+
+
+def _touch(feed) -> tuple:
+    if feed is None:
+        return 0.0, 0.0
+    return feed.bid or feed.price() or 0.0, feed.ask or feed.price() or 0.0
+
+
 class Runner:
     def __init__(self, mode: str, allow_live: bool, env: Optional[dict] = None, symbol: Optional[str] = None,
-                 port: int = 8765, serve: bool = True, overrides: Optional[dict] = None):
+                 port: int = 8765, serve: bool = True, overrides: Optional[dict] = None, scan: bool = True):
         self.env = read_env() if env is None else env
+        self.scan = scan
+        self.engines: dict = {}
+        self.focus_sym: Optional[str] = symbol.upper() if symbol else None
         self.allow_live, self.symbol, self.port, self.serve = allow_live, symbol, port, serve
         self.overrides = overrides or {}
         self.mode = self.start_mode = mode
@@ -1406,6 +1514,32 @@ class Runner:
         if mode != self.start_mode:                       # CLI overrides belong to the mode they were typed for
             return p
         return replace(p, **{k: v for k, v in self.overrides.items() if v is not None})
+
+    def profile_for(self, mode: str, symbol: str) -> Profile:
+        p = self.profile(mode)
+        if symbol != p.symbol:
+            p = replace(p, symbol=symbol, qty=SYMBOL_QTY.get(symbol, 0.0))
+        return p
+
+    def refocus(self) -> Optional['Engine']:
+        """UI / controls follow the engine holding the slot, else the symbol the user picked."""
+        hot = next((e for e in self.engines.values() if e.pos or e.busy or abs(e.view.get('amt') or 0)), None)
+        if hot is not None or self.engines:
+            self.engine = hot or self.engines.get(self.focus_sym) or next(iter(self.engines.values()))
+        return self.engine
+
+    async def build_multi(self, mode: str) -> dict:
+        from live.binance_futures_client import BinanceFuturesClient
+        feeds = {s: msig.MicroFeed(s, msig.config_for(s)) for s in SCAN_SYMBOLS}
+        profiles = {s: self.profile_for(mode, s) for s in SCAN_SYMBOLS}
+        key, sec = credentials(mode, self.env)
+        if not (key and sec):
+            venue = MockVenue(profiles['BTCUSDT'], quote=lambda s: _touch(feeds.get(s)))
+        else:
+            env = dict(self.env, BINANCE_TESTNET_API_KEY=key, BINANCE_TESTNET_SECRET_KEY=sec)
+            self.client = await BinanceFuturesClient(Settings.load('testnet', env=env)).__aenter__()
+            venue = BinanceVenue(self.client, profiles['BTCUSDT'].margin_type)
+        return build_scanner(profiles, venue, feeds, self.tel, LEDGER, self.allow_live)
 
     def live_ready(self) -> tuple:
         key, sec = credentials('live', self.env)
@@ -1436,9 +1570,21 @@ class Runner:
         return Engine(p, venue, feed, self.tel, ledger=LEDGER, allow_live=self.allow_live)
 
     async def pump(self, feed: msig.MicroFeed, route: str = 'market') -> None:
+        await self.pump_multi({feed.symbol: feed}, route)
+
+    @staticmethod
+    def demux(feeds: dict, msg: dict) -> bool:
+        """Route one combined-stream frame to its symbol's feed ('solusdt@aggTrade' -> SOLUSDT)."""
+        f = feeds.get(str(msg.get('stream', '')).split('@')[0].upper()) if isinstance(msg, dict) else None
+        if f is None:
+            return False
+        f.on_message(msg)
+        return True
+
+    async def pump_multi(self, feeds: dict, route: str = 'market') -> None:
         import websockets
         backoff = 1.0
-        url = msig.streams(feed.symbol)[route]
+        url = msig.streams_multi(list(feeds))[route]
         while True:
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=20,
@@ -1448,7 +1594,7 @@ class Runner:
                     backoff = 1.0
                     async for raw in ws:
                         try:
-                            feed.on_message(json.loads(raw))
+                            self.demux(feeds, json.loads(raw))
                         except ValueError:
                             continue
             except asyncio.CancelledError:
@@ -1469,11 +1615,15 @@ class Runner:
                     e.event(f'tick error {type(exc).__name__}: {exc}')
             await asyncio.sleep(0.2)
 
+    def idle(self, e: Engine) -> bool:
+        """A flat, unfocused scanner engine polls REST slowly (rate-limit budget: 3 symbols on one key)."""
+        return len(self.engines) > 1 and not (e.pos or e.busy) and e is not self.engine
+
     async def vbook_loop(self, e: Engine) -> None:
         while True:
             if e.started and e.own_book:
                 await e.refresh_book(0.0)
-                await asyncio.sleep(0.3 if (e.pos or e.busy) else 1.0)
+                await asyncio.sleep(0.3 if (e.pos or e.busy) else 3.0 if self.idle(e) else 1.0)
             else:
                 await asyncio.sleep(1.0)
 
@@ -1488,14 +1638,16 @@ class Runner:
                 e.last_error = f'{type(exc).__name__}: {exc}'[:160]
                 e.event(f'sync error {e.last_error}')
                 await asyncio.sleep(3)
-            await asyncio.sleep(period)
+            await asyncio.sleep(4.0 if self.idle(e) else period)
 
     async def publish_loop(self) -> None:
         n = 0
         while True:
-            e = self.engine
+            e = self.refocus()
             if e is not None and self.tel is not None:
                 snap = e.snapshot()
+                snap['scanner'] = {'on': len(self.engines) > 1, 'focus': e.p.symbol,
+                                   'rows': [x.radar() for x in self.engines.values()]}
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
                             demo_keys=all(credentials('demo', self.env)))
@@ -1506,10 +1658,11 @@ class Runner:
                 if self.tel.state.get('shutdown'):
                     e.event('KILL SWITCH -> flatten + halt')
                     e.halted = 'KILL SWITCH'
-                    try:
-                        await e.venue.flatten(e.p.symbol)
-                    except Exception as exc:
-                        e.event(f'flatten error {exc}')
+                    for x in (self.engines.values() or [e]):
+                        try:
+                            await x.venue.flatten(x.p.symbol)
+                        except Exception as exc:
+                            x.event(f'flatten error {exc}')
                     await asyncio.sleep(1.0)
                     raise SystemExit(0)
             await asyncio.sleep(0.5)
@@ -1522,12 +1675,22 @@ class Runner:
         if self.client is not None:
             await self.client.__aexit__(None, None, None)
             self.client = None
-        e = await self.build(mode)
-        self.mode, self.engine = mode, e
-        self.tasks = [asyncio.create_task(self.seed_macro(e)),
-                      asyncio.create_task(self.pump(e.feed, 'public')), asyncio.create_task(self.pump(e.feed, 'market')),
-                      asyncio.create_task(self.sync_loop(e)), asyncio.create_task(self.vbook_loop(e)),
-                      asyncio.create_task(self.decide_loop(e))]
+        if self.scan and mode == 'demo':
+            self.engines = await self.build_multi(mode)
+        else:
+            e = await self.build(mode)
+            self.engines = {e.p.symbol: e}
+        self.mode = mode
+        if self.focus_sym not in self.engines:
+            sym = self.symbols.get(mode)
+            self.focus_sym = sym if sym in self.engines else next(iter(self.engines))
+        e = self.refocus()
+        feeds = {s: x.feed for s, x in self.engines.items()}
+        self.tasks = [asyncio.create_task(self.pump_multi(feeds, 'public')),
+                      asyncio.create_task(self.pump_multi(feeds, 'market'))]
+        for x in self.engines.values():
+            self.tasks += [asyncio.create_task(self.seed_macro(x)), asyncio.create_task(self.sync_loop(x)),
+                           asyncio.create_task(self.vbook_loop(x)), asyncio.create_task(self.decide_loop(x))]
         return e
 
     async def seed_macro(self, e: Engine) -> None:
@@ -1545,7 +1708,7 @@ class Runner:
         e = self.engine
         if mode == self.mode:
             return {'ok': True, 'mode': mode, 'note': 'đang ở chế độ này'}
-        if e and (e.pos or e.busy or abs(e.view.get('amt') or 0)):
+        if any(x.pos or x.busy or abs(x.view.get('amt') or 0) for x in (list(self.engines.values()) or ([e] if e else []))):
             return {'ok': False, 'error': 'đóng vị thế trước khi đổi chế độ'}
         if mode == 'live':
             ok, why = self.live_ready()
@@ -1564,6 +1727,11 @@ class Runner:
         symbol = str(symbol or '').upper()
         if symbol not in SYMBOLS:
             return {'ok': False, 'error': f'symbol must be one of {", ".join(SYMBOLS)}'}
+        if len(self.engines) > 1 and symbol in self.engines:      # scanner: all symbols run, the button picks the view
+            self.focus_sym = symbol
+            self.refocus()
+            return {'ok': True, 'symbol': symbol, 'note': 'scanner: đổi màn hình theo dõi (cả 3 cặp vẫn quét)',
+                    'focus': self.engine.p.symbol if self.engine else symbol}
         e = self.engine
         if e and e.p.symbol == symbol:
             return {'ok': True, 'symbol': symbol, 'note': 'đang dùng symbol này'}
@@ -1605,6 +1773,7 @@ class Controller:
             return {'ok': False, 'error': f'{type(exc).__name__}: {exc}'[:200]}
 
     def force_test_trade(self, body: dict) -> dict:
+        self.r.refocus()
         if self.r.engine is None:
             return {'ok': False, 'error': 'engine chưa chạy'}
         return self._call(self.r.engine.force_test_trade(str(body.get('side', 'BUY')).upper()))
@@ -1616,6 +1785,7 @@ class Controller:
         return self._call(self.r.switch_symbol(body.get('symbol', '')), 60)
 
     def close_position(self, body: dict) -> dict:
+        self.r.refocus()
         if self.r.engine is None:
             return {'ok': False, 'error': 'engine chưa chạy'}
         return self._call(self.r.engine.close_now())
@@ -1631,6 +1801,7 @@ def main(argv=None) -> None:
     ap.add_argument('--sl', type=float, default=None, help='stop %% (demo; live derives it from max loss)')
     ap.add_argument('--hold', type=float, default=None, help='optional max hold seconds (default: none)')
     ap.add_argument('--jev-min', type=float, default=None)
+    ap.add_argument('--no-scan', action='store_true', help='demo: trade only --symbol instead of scanning BTC/SOL/DOGE')
     a = ap.parse_args(argv)
     allow_live = (a.arm_live or os.environ.get('GROKTOPUS_ARM_LIVE', '')) == LIVE_CONFIRM   # typed per session
     if a.mode == 'live' and not allow_live:
@@ -1640,7 +1811,7 @@ def main(argv=None) -> None:
     print('=' * 86)
     print(f'  GROKTOPUS ENGINE · mode {a.mode.upper()} · live {"ARMED" if allow_live else "LOCKED"} · Ctrl+C dừng')
     print('=' * 86, flush=True)
-    r = Runner(a.mode, allow_live, symbol=a.symbol, port=a.port, overrides=overrides)
+    r = Runner(a.mode, allow_live, symbol=a.symbol, port=a.port, overrides=overrides, scan=not a.no_scan)
     try:
         asyncio.run(r.run())
     except KeyboardInterrupt:

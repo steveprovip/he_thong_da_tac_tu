@@ -23,8 +23,8 @@ from core.consensus_engine import ConsensusEngine, Decision, Vote
 from core.jev_gatekeeper import score_from_ratio
 
 # NORO = fair value / trend alignment (TREND in a flow regime, VWAP mean-reversion only when NEUTRAL)
-ALPHA = {'NORO': ('TREND', 'VWAP'), 'LUMEN': ('FLOW', 'SURGE'), 'TIDAL': ('SQUEEZE', 'LIQ')}
-SIGNAL_KEYS = ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE')     # WALL never votes, never adds edge
+ALPHA = {'NORO': ('TREND', 'VWAP', 'MR'), 'LUMEN': ('FLOW', 'SURGE'), 'TIDAL': ('SQUEEZE', 'LIQ', 'DEPTH')}
+SIGNAL_KEYS = ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE', 'MR')     # WALL never votes, never adds edge
 
 
 def alpha_signal(sig: dict, keys: tuple) -> Optional[dict]:
@@ -62,8 +62,8 @@ def confluence(sig: dict, side: Optional[str], edge_bps: float, cost_bps: float,
     def al(k):
         return bool(side and sig.get(k) and sig[k]['side'] == side)
     c = {'C1_FLOW': al('FLOW') or al('SURGE'),
-         'C2_VWAP': bool(side and sig.get('VWAP') and sig['VWAP']['side'] == side),
-         'C4_TREND': al('TREND'), 'C5_SQUEEZE': al('SQUEEZE'), 'C6_WALL': al('WALL'),
+         'C2_VWAP': al('VWAP') or al('MR'),
+         'C4_TREND': al('TREND'), 'C5_SQUEEZE': al('SQUEEZE'), 'C6_WALL': al('WALL') or al('DEPTH'),
          'C3_EDGE': bool(side and ratio >= ratio_min)}
     return {**c, 'count': sum(c.values()), 'edge_cost': ratio}
 

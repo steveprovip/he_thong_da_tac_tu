@@ -53,8 +53,8 @@ def test_ker_bucket_sampling_ignores_bid_ask_bounce():
 
 def test_chop_hysteresis_040_045():
     L = msig.chop_locked
-    assert L(None) and L(0.38, False) and L(0.42, True) and not L(0.42, False) and not L(0.48, True)
-    assert L(0.46, True)                                                  # 0.45 -> 0.48 unlock (2026-10-07i)
+    assert L(None) and L(0.36, False) and L(0.40, True) and not L(0.40, False) and not L(0.42, True)
+    assert L(0.41, True)                                                  # band 0.38-0.42 since 2026-10-07j
 
 
 def test_feed_exposes_ker():

@@ -74,15 +74,21 @@ class SignalConfig:
     ker_window_s: float = 120.0         # Kaufman Efficiency Ratio over 2 min of trade prints
     ker_bucket_s: float = 5.0           # sampled every 5 s (last print): no bid/ask bounce, 24 steps
     ker_min_span_s: float = 60.0        # < 60 s of prints -> KER unknown (treated as CHOP)
-    ker_lock: float = 0.40              # KER < 0.40 -> CHOP LOCKED
-    ker_unlock: float = 0.48            # unlock only at KER >= 0.48 (hysteresis band 0.40-0.48; was 0.45)
+    ker_lock: float = 0.38              # KER < 0.38 -> TREND lane locked, MR lane may scan
+    ker_unlock: float = 0.42            # TREND lane unlocks at KER >= 0.42 (band 0.38-0.42; was 0.40/0.48)
+    mr_ker_max: float = 0.38            # MR lane only while KER < 0.38 (zig-zag tape)
+    mr_dev_pct: float = 0.12            # price >= 0.12 % away from VWAP 60 s ...
+    mr_box_pct: float = 0.40            # ... inside a 60 s range <= 0.40 % ...
+    mr_extreme_frac: float = 0.20       # ... at the outer 20 % of that range ...
+    mr_depth_imb: float = 0.25          # ... and L10 depth leaning >= 0.25 the reversion way (TIDAL vote)
     absorb_window_s: float = 15.0       # price-delta concordance window
     absorb_usd: float = 500_000.0       # |CVD 15 s| >= $500k (x scale) ...
-    absorb_min_move_pct: float = 0.03   # ... must move price >= 0.03 % the same way, else ABSORPTION TRAP
+    absorb_min_move_pct: float = 0.025  # ... must move price >= 0.025 % the same way, else ABSORPTION TRAP
     macro_vwap_s: float = 300.0         # rolling 5 m VWAP
     macro_vwap_min_s: float = 240.0     # VWAP 5 m needs >= 4 min of prints
     macro_candle_s: float = 300.0       # 5 m candles for the EMA
     macro_ema_n: int = 20               # EMA-20 of 5 m closes (seeded from REST klines at start)
+    macro_slope_pct: float = 0.05       # one-side lock only when EMA-20 moves >= 0.05 % per 5 m candle
 
 
 USD_SCALE = {'BTCUSDT': 1.0, 'ETHUSDT': 0.5, 'SOLUSDT': 0.1, 'XRPUSDT': 0.1, 'DOGEUSDT': 0.1}
@@ -141,20 +147,29 @@ def macro_bias(f: dict, cfg: 'SignalConfig' = None) -> dict:
     """5 m macro gate: price > VWAP 5 m AND EMA-20(5 m) rising -> LONG ONLY; mirrored -> SHORT ONLY."""
     cfg = cfg or SignalConfig()
     px, vw, slope, n = f.get('price'), f.get('vwap_5m'), f.get('ema5_slope'), f.get('ema5_n') or 0
-    span = f.get('vwap_5m_span') or 0.0
-    if not px or vw is None or slope is None or span < cfg.macro_vwap_min_s or n < cfg.macro_ema_n:
+    span, ema = f.get('vwap_5m_span') or 0.0, f.get('ema5_20')
+    if (not px or vw is None or slope is None or not ema or span < cfg.macro_vwap_min_s
+            or n < cfg.macro_ema_n):
         return {'name': 'WARMUP', 'allow': ('BUY', 'SELL'),
                 'why': f'VWAP5m {span:.0f}/{cfg.macro_vwap_min_s:.0f}s · EMA {n}/{cfg.macro_ema_n} nến'}
-    why = f'giá {(px / vw - 1) * 100:+.3f}% vs VWAP5m · EMA20 dốc {slope:+.1f}'
-    if px > vw and slope > 0:
+    sp = slope / ema * 100
+    why = f'giá {(px / vw - 1) * 100:+.3f}% vs VWAP5m · EMA20 dốc {sp:+.3f}%/5m (khoá khi ≥ {cfg.macro_slope_pct}%)'
+    if px > vw and sp >= cfg.macro_slope_pct:
         return {'name': 'LONG ONLY', 'allow': ('BUY',), 'why': why}
-    if px < vw and slope < 0:
+    if px < vw and sp <= -cfg.macro_slope_pct:
         return {'name': 'SHORT ONLY', 'allow': ('SELL',), 'why': why}
     return {'name': 'MIXED', 'allow': ('BUY', 'SELL'), 'why': why}
 
 
 def config_for(symbol: str) -> SignalConfig:
     return SignalConfig(usd_scale=USD_SCALE.get(symbol.upper(), 0.1))
+
+
+def streams_multi(symbols) -> dict:
+    """One public + one market socket for several symbols (combined streams, demuxed by stream prefix)."""
+    ss = [s.lower() for s in symbols]
+    return {'public': WS_PUBLIC + '/'.join(f'{s}@depth10@100ms' for s in ss),
+            'market': WS_MARKET + '/'.join(f'{s}@aggTrade/{s}@markPrice@1s/{s}@forceOrder' for s in ss)}
 
 
 def streams(symbol: str) -> dict:
@@ -385,7 +400,8 @@ def signals(f: dict, cfg: SignalConfig = SignalConfig(), reg: dict = None) -> di
     """-> {'FLOW'|'VWAP'|'LIQ'|'TREND': {'side', 'strength' 0..1, 'edge_bps', 'why'} or None,
            'BANNED': [signals dropped by the regime gate]}."""
     reg = reg or regime(f, cfg)
-    out = {'FLOW': None, 'VWAP': None, 'LIQ': None, 'TREND': None, 'SURGE': None, 'SQUEEZE': None, 'WALL': None}
+    out = {'FLOW': None, 'VWAP': None, 'LIQ': None, 'TREND': None, 'SURGE': None, 'SQUEEZE': None, 'WALL': None,
+           'MR': None, 'DEPTH': None}
     obi, cvd, fast = f.get('obi'), f.get('cvd_norm') or 0.0, f.get('cvd_10s') or 0.0
     if (obi is not None and abs(obi) >= cfg.obi_min and abs(cvd) >= cfg.cvd_min and (obi > 0) == (cvd > 0)
             and fast != 0 and (fast > 0) == (obi > 0)):
@@ -430,8 +446,20 @@ def signals(f: dict, cfg: SignalConfig = SignalConfig(), reg: dict = None) -> di
     if wall is not None and abs(wall) >= cfg.wall_min:
         out['WALL'] = {'side': 'BUY' if wall > 0 else 'SELL', 'strength': min(1.0, abs(wall)), 'edge_bps': 0.0,
                        'why': f'L10 wall {wall:+.2f}'}
+    k_, lo60, hi60 = f.get('ker'), f.get('range_lo'), f.get('range_hi')
+    rng = (hi60 - lo60) / lo60 * 100 if (lo60 and hi60) else None
+    mr_edge = pos is not None and (pos <= cfg.mr_extreme_frac if (dev or 0) < 0 else pos >= 1 - cfg.mr_extreme_frac)
+    if (k_ is not None and k_ < cfg.mr_ker_max and dev is not None and abs(dev) >= cfg.mr_dev_pct and mr_edge
+            and rng is not None and rng <= cfg.mr_box_pct):
+        side = 'SELL' if dev > 0 else 'BUY'
+        out['MR'] = {'side': side, 'strength': strength(abs(dev) / cfg.mr_dev_pct), 'edge_bps': min(20.0, abs(dev) * 100),
+                     'why': f'MR KER {k_:.2f} · VWAP {dev:+.3f}% · box {rng:.2f}% @ {pos * 100:.0f}%'}
+        lean = (wall or 0.0) * (1 if side == 'BUY' else -1)
+        if wall is not None and lean >= cfg.mr_depth_imb:
+            out['DEPTH'] = {'side': side, 'strength': strength(lean / cfg.mr_depth_imb), 'edge_bps': 0.0,
+                            'why': f'L10 depth {wall:+.2f} backs the reversion'}
     banned = []
-    for key in ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE', 'WALL'):
+    for key in ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE', 'WALL', 'MR', 'DEPTH'):
         s = out[key]
         if s and s['side'] not in reg['allow']:
             banned.append({'key': key, 'side': s['side'], 'why': f'REGIME {reg["name"]} bans {s["side"]}: {s["why"]}'})

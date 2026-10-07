@@ -164,9 +164,9 @@ def test_velocity_gate_is_directional_and_needs_data(tmp_path):
     assert e.churn_gate(sell, diag)[1].startswith('VELOCITY SELL 15s —')
 
 
-def test_ker_unlock_048(tmp_path):
-    assert msig.SignalConfig().ker_unlock == 0.48 and msig.SignalConfig().ker_lock == 0.40
-    assert msig.chop_locked(0.47, True) and not msig.chop_locked(0.47, False) and not msig.chop_locked(0.48, True)
+def test_ker_band_038_042(tmp_path):                                       # 0.40/0.48 -> 0.38/0.42 (2026-10-07j)
+    assert msig.SignalConfig().ker_unlock == 0.42 and msig.SignalConfig().ker_lock == 0.38
+    assert msig.chop_locked(0.41, True) and not msig.chop_locked(0.41, False) and not msig.chop_locked(0.42, True)
 
 
 # ----------------------------------------------------------------------------- telemetry / defaults
@@ -185,5 +185,5 @@ async def test_position_row_and_desk_show_the_hurdle(tmp_path):
 
 def test_defaults():
     p = eng.PROFILES['demo']
-    assert p.fee_hurdle and (p.hurdle_pct, p.hurdle_min_hold_s, p.min_velocity_pct) == (0.08, 90.0, 0.04)
+    assert p.fee_hurdle and (p.hurdle_pct, p.hurdle_min_hold_s, p.min_velocity_pct) == (0.08, 90.0, 0.025)
     assert eng.PROFILES['live'].fee_hurdle

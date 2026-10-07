@@ -92,6 +92,12 @@
     msg(r.ok ? `Đã chuyển coin: ${r.symbol}` : 'Không đổi được coin: ' + r.error, r.ok ? 'ok' : 'err');
     if (!r.ok) tone(SFX.err);
   }));
+  $('scan-radar').addEventListener('click', async ev => {
+    const b = ev.target.closest('.radar-chip');
+    if (!b || b.classList.contains('focus')) return;
+    const r = await post('/api/switch_symbol', { symbol: b.dataset.symbol });
+    msg(r.ok ? `Đang xem ${r.symbol} (scanner vẫn quét cả 3 cặp)` : 'Không đổi được: ' + r.error, r.ok ? 'ok' : 'err');
+  });
   document.querySelectorAll('.desk-tabs .tab').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.desk-tabs .tab').forEach(b => { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', String(b === btn)); });
     $('tab-orders').hidden = btn.dataset.tab !== 'orders'; $('tab-history').hidden = btn.dataset.tab !== 'history';
@@ -220,6 +226,17 @@
         : `HOLDING: FEE HURDLE (${sg(g, 3)}% < +${fx(h, 2)}%)`;
       hun.className = 'chip ' + (pos && fin(g) ? (g >= h ? 'green' : g <= -h ? 'red' : '') : '');
       hun.title = pos ? `Flow/Regime exit bị giữ ${pos.hurdle_blocks || 0} lần · SL cứng vẫn chạy` : '';
+    }
+    const sc = s.scanner || {}, rad = $('scan-radar');
+    if (rad) {
+      const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const cls = l => /OPEN|ORDER/.test(l) ? 'open' : /^TREND (BUY|SELL)/.test(l) ? 'trend' : /^MR (BUY|SELL)/.test(l) ? 'mr'
+        : /CHOP/.test(l) ? 'chop' : 'idle';
+      const html = (sc.rows || []).map(r => `<button type="button" class="radar-chip ${cls(r.label)}${r.symbol === sc.focus ? ' focus' : ''}"`
+        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · ${r.reason || ''}`)}">`
+        + `${esc(r.symbol.replace('USDT', ''))}: ${esc(r.label)}</button>`).join('<i>|</i>');
+      const lead = sc.on ? '<b>SCANNER</b>' : '<b>1 CẶP</b>';
+      if (rad.dataset.html !== html) { rad.innerHTML = lead + (html || ' —'); rad.dataset.html = html; }
     }
     const shn = $('shield-chip');
     if (shn) {

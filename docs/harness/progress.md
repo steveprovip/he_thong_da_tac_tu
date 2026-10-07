@@ -81,3 +81,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Ledger #20 REGIME +0.0049 % (258 s, MFE 0.007 %), #21 REGIME +0.0963 % (net +0.0948), #22 FLOW +0.0049 % (195 s, adverse $9.78M, KER 0.40). Under the new rules #20/#22 exits are held, #21 unchanged; the 0.04 % velocity rule would have refused all three entries (|vel| 0.034-0.036 %).
 - engine: hurdle_gate / note_hurdle_block in manage() (FLOW + REGIME only), Profile fee_hurdle/hurdle_pct 0.08/hurdle_min_hold_s 90/min_velocity_pct 0.04, churn_gate VELOCITY, ledger hurdle_* fields, position_row gross_pct/hurdle; micro_signals ker_unlock 0.48.
 - tests/test_fee_hurdle.py (14). Verification: pytest 892 passed.
+
+## 2026-10-07 (j) Multi-asset scanner + TREND/MR lanes
+- engine: RiskBook (shared history/all_rows/cooldown/pause/trade_times/consec/day_pnl via properties), Engine.peer() slot lock in RUNE + execute, lane()/mr_profile()/radar(), build_scanner(), SCAN_SYMBOLS, Runner.build_multi/refocus/idle/demux/pump_multi, focus-only symbol switch in scanner mode, --no-scan; live stays single-engine.
+- micro_signals: streams_multi, MR + DEPTH signals, ker 0.38/0.42, absorb move 0.025, macro slope >= 0.05 %/5 m; micro_swarm: NORO += MR, TIDAL += DEPTH, C2 += MR, C6 += DEPTH.
+- UI latency chip shows GTX wait: p50 ~5.6 s in the 14:11 screenshot = entries timing out unfilled, not network.
+- tests/test_multi_asset_scanner.py (15). Verification: pytest 907 passed. Runner smoke (mock, no keys): 3 engines start, radar + snapshot JSON ok (WS blocked by the sandbox proxy).

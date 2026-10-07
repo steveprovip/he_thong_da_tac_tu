@@ -123,3 +123,10 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Mỗi lần thoát bị giữ được ghi vào sổ lệnh (`hurdle_blocks`, `hurdle_first_px`, `hurdle_first_pct`) để so sánh "giữ" với "thoát ngay".
 - Vào lệnh: KER mở khoá ở ≥ 0.48 (khoá < 0.40); giá 15 s phải đi ≥ 0.04 % cùng chiều lệnh.
 - UI: chip `HOLDING: FEE HURDLE (+0.03% < +0.08%)` / `PROFIT: UNLOCKED` / `EXIT: ARMED`.
+
+### 8.10 Cập nhật 07/10/2026 (j) — Quét đa cặp BTC/SOL/DOGE, 2 làn TREND/MR
+- DEMO chạy 3 engine (BTCUSDT, SOLUSDT, DOGEUSDT) trên 1 venue, 1 cặp WebSocket gộp, 1 sổ rủi ro chung: **1 vị thế tại một thời điểm**, cặp nào đủ điều kiện trước thì vào; 8 lệnh/giờ, nghỉ 30 s, daily kill tính chung. LIVE vẫn 1 cặp (DOGE, vốn ≤ 3.85 U). Tắt quét: `python -m core.engine --mode demo --no-scan --symbol BTCUSDT`.
+- Làn TREND: KER ≥ 0.42 (khoá < 0.38), velocity 15 s ≥ 0.025 %, hấp thụ ≥ 0.025 %, các lọc cũ giữ nguyên.
+- Làn MR: KER < 0.38, giá lệch VWAP 60 s ≥ 0.12 % ở mép 20 % của hộp 60 s ≤ 0.40 %, sổ L10 nghiêng ≥ 0.25 về phía đảo chiều (NORO MR + TIDAL DEPTH = 80 %). Lệnh GTX, TP +0.15 % toàn bộ, SL −0.10 %.
+- MACRO 5m chỉ khoá 1 chiều khi EMA-20 nến 5m dốc ≥ 0.05 %/nến.
+- UI: dải `SCANNER BTC: CHOP | SOL: TREND BUY (84%) | DOGE: MR SCAN`; bấm chip hoặc nút BTC/DOGE/SOL để đổi màn hình theo dõi (cả 3 cặp vẫn quét); màn hình tự nhảy sang cặp đang giữ vị thế.

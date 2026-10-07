@@ -165,20 +165,21 @@ async def test_super_momentum_without_straight_tape_rests_as_maker(tmp_path):
 # ============================================================================= 4. macro 5 m
 def test_macro_bias_rules():
     M = msig.macro_bias
-    base = {'price': 100.0, 'vwap_5m': 99.0, 'vwap_5m_span': 290.0, 'ema5_slope': 0.5, 'ema5_n': 25}
+    base = {'price': 100.0, 'vwap_5m': 99.0, 'vwap_5m_span': 290.0, 'ema5_slope': 0.06, 'ema5_20': 100.0, 'ema5_n': 25}
     assert M(base)['name'] == 'LONG ONLY' and M(base)['allow'] == ('BUY',)
-    assert M(dict(base, price=98.0, ema5_slope=-0.5))['allow'] == ('SELL',)
-    assert M(dict(base, ema5_slope=-0.5))['name'] == 'MIXED'
+    assert M(dict(base, price=98.0, ema5_slope=-0.06))['allow'] == ('SELL',)
+    assert M(dict(base, ema5_slope=-0.06))['name'] == 'MIXED'
+    assert M(dict(base, ema5_slope=0.04))['name'] == 'MIXED'                 # < 0.05 %/5 m: no one-side lock
     assert M(dict(base, ema5_n=5))['name'] == 'WARMUP' and M(dict(base, vwap_5m_span=100.0))['name'] == 'WARMUP'
 
 
 def test_feed_vwap5m_and_ema20_from_seed_and_live_candles():
     now = 1_791_400_000.0
     f = msig.MicroFeed(SYM)
-    assert f.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 10) for k in range(1, 26)], now) == 25
+    assert f.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 60) for k in range(1, 26)], now) == 25
     assert f.seed_candles([(now + 60, 1.0)], now) == 0                       # open candle is never seeded
     for i in range(150):
-        f.on_message(agg(99_200.0 + i, 0.01, maker=i % 2 == 0), now - 290 + i * 2)
+        f.on_message(agg(100_500.0 + i, 0.01, maker=i % 2 == 0), now - 290 + i * 2)
     x = f.features(now)
     assert x['ema5_n'] >= 25 and x['ema5_slope'] > 0 and x['vwap_5m_span'] >= 280
     assert x['vwap_5m'] < x['price'] and msig.macro_bias(x)['name'] == 'LONG ONLY'
@@ -191,7 +192,7 @@ async def test_short_above_rising_5m_vwap_is_blocked(tmp_path):
     for i in range(40):                                                     # heavy volume 4-5 min ago, far lower
         feed.on_message(agg(PX - 400, 0.5, maker=i % 2 == 0), now - 280 + i * 2)
     trend_feed('SELL', now=now, f=feed)
-    feed.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 10) for k in range(1, 26)], now)
+    feed.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 60) for k in range(1, 26)], now)
     e, venue, _ = mock_engine(tmp_path, feed=feed)
     await e.sync()
     d = await e.tick()
@@ -233,4 +234,4 @@ def test_defaults():
     assert (p.fee_shield_pct, p.be_trigger_pct, p.lock_trigger_pct, p.lock_pct) == (0.04, 0.12, 0.25, 0.15)
     assert p.absorb_gate and p.macro_gate and (p.super_cvd_usd, p.super_ker, p.super_jev) == (3e6, 0.60, 9.2)
     c = msig.SignalConfig()
-    assert (c.absorb_window_s, c.absorb_usd, c.absorb_min_move_pct) == (15.0, 500_000.0, 0.03)
+    assert (c.absorb_window_s, c.absorb_usd, c.absorb_min_move_pct) == (15.0, 500_000.0, 0.025)
