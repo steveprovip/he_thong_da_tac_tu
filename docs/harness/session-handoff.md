@@ -25,3 +25,9 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Next code steps for Claude Code: (1) capture fill time from the user data stream (ORDER_TRADE_UPDATE `T`) instead of 0.1 s REST polling; (2) calibrate edge_bps vs markout/net on time-split holdout (E3) before touching any threshold; (3) VPIN bucket/threshold study (7 TOXIC flags in 33 min on SOL).
 - Rollback: order_log=False; convex_sizing/alt_size_boost=True, alt_kelly_min_n=5 restore round (p) sizing; schema-2 fields are additive.
 - Checks: python -m pytest -q 1052 passed (Cowork Linux VM, Python 3.10); toolkit tests not run here.
+
+## Handoff — loss continuation brief, 2026-10-07 (r)
+- Latest request/brief: prompts/FORM_CLAUDE_SUA_LO_SOFT_BE_2026-10-07.md, referenced by CLAUDE.md. Recompute latest ledger; 37-row snapshot net -1.24659858 U is DEMO only.
+- First task: reproduce DOGE BUY 291 @0.08880 -> SOFT-BE average exit 0.08868, net -0.04524931 despite be_locked=true; trace soft-target vs confirmed exchange protection. Then instrument/reproduce SOL RATCHET cancellation/new-stop failure/restore using actual sanitized error codes. No profitability improvement or runtime fix was performed by this brief task.
+- SOL ADOPT has now closed in the ledger; investigate accounting ownership/entry fees instead of treating its earlier UNKNOWN outcome as still open. Keep prior instrumentation and sizing patches.
+- Post-edit init.sh: 1052 project tests passed (86.99 s), toolkit 15 passed/1 skipped; prompt consistency/snapshot and git diff --check passed. No trading process was started or restarted by this brief task.
