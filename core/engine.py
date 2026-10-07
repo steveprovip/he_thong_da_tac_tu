@@ -61,7 +61,7 @@ class Profile:
     entry: str = 'gtx'                  # Post-Only GTX only; MARKET is kept for emergency reduce-only exits
     gtx_ttl_s: float = 5.0              # pegged maker window; unfilled -> cancel, cooldown 1 s, never chase taker
     qty: float = 0.0                    # 0 -> smallest tradable size (min_qty / min_notional x 1.02)
-    tp_pct: float = 0.45                # TP1: reduce-only GTX for tp1_frac of the size (0.35 -> 0.45, 2026-10-07g)
+    tp_pct: float = 0.50                # static TP1 (ATR unknown): 2.5 x SL 0.20 -> RR 2.5 (was 0.45)
     tp1_frac: float = 0.5
     sl_pct: float = 0.20
     microbe_trigger_pct: float = 0.08   # MARIN phase 0: +0.08 % -> stop to entry +0.03 % gross (loss <= fees)
@@ -100,9 +100,30 @@ class Profile:
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
     min_velocity_pct: float = 0.025     # TREND entry needs price velocity 15 s >= +0.025 % with the trade (was 0.04)
-    mr_tp_pct: float = 0.15             # MR lane (KER < 0.38): whole size back toward VWAP at +0.15 % ...
-    mr_sl_pct: float = 0.10             # ... exchange stop -0.10 %
+    mr_tp_pct: float = 0.15             # MR lane (KER < 0.38): TP = distance back to VWAP 60 s ...
+    mr_tp_min: float = 0.12             # ... clamped to [0.12 %, 0.18 %], whole size
+    mr_tp_max: float = 0.18
+    mr_sl_pct: float = 0.08             # ... exchange stop -0.08 % (was 0.10)
     mr_min_score: float = 0.80          # MR lane: NORO (MR) + TIDAL (L10 DEPTH) agree
+    as_gamma: float = 0.10              # Avellaneda-Stoikov risk aversion (1/bps) for the MR maker quote
+    as_k: float = 2.0                   # order-arrival decay (1/bps): liquidity term (2/g) ln(1 + g/k)
+    as_max_offset_bps: float = 2.0      # MR quote never rests more than 2 bps from mid
+    as_tau_s: float = 5.0               # quoting horizon tau (s) in gamma sigma^2 tau
+    atr_scaler: bool = True             # TREND brackets from Wilder ATR(14) of 1 m bars when known
+    atr_sl_mult: float = 1.0            # SL  = entry -/+ 1.0 x ATR (floored)
+    atr_tp1_mult: float = 2.5           # TP1 = entry +/- max(2.5 x ATR, rr_min x SL), 50 % of the size
+    atr_trail_mult: float = 1.2         # runner trails 1.2 x ATR behind the peak once TP1 filled
+    rr_min: float = 2.5                 # gross TP1 / SL distance never below 2.5
+    atr_sl_floor_pct: float = 0.15      # stop never tighter than 0.15 %: a stop-out also pays ~0.08 % in fees
+    atr_trail_floor_pct: float = 0.10
+    atr_trail_pct: Optional[float] = None   # per trade, set by Engine.bracket_plan()
+    vpin_gate: bool = True              # VPIN > vpin_max: cancel resting maker entries + RUNE veto vpin_pause_s
+    vpin_pause_s: float = 30.0
+    kelly: bool = True                  # quarter-Kelly size per symbol once its ledger holds >= kelly_min_trades
+    kelly_lambda: float = 0.25
+    kelly_min_trades: int = 20
+    kelly_max_risk_usdt: float = 0.50   # demo cap on money at the stop (fees included) per trade
+    kelly_max_notional: float = 1000.0
     macro_gate: bool = True             # block entries against the 5 m VWAP + EMA-20 bias
     trail_activate_pct: float = 0.50    # MARIN phase 2: runner trails once +0.50 % was reached
     trail_gap_pct: float = 0.20         # trail = peak -/+ 0.20 %
@@ -136,7 +157,8 @@ PROFILES = {
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0),
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
-                    daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85),
+                    daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
+                    atr_scaler=False, kelly=False),      # live: stop from max loss 0.05 U, fixed minimum size
 }
 
 
@@ -491,6 +513,8 @@ class Engine:
         self.chop_locked = True                       # KER unknown at start -> locked
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
+        self.tox = {'vpin': None, 'buckets': 0, 'toxic': False, 'state': 'WARMUP'}
+        self.toxic_until = 0.0                        # VPIN pause (per symbol)
         if fresh:
             self.pause_until = 0.0
             self.trade_times = deque()
@@ -631,6 +655,9 @@ class Engine:
             r = (False, 'order in flight')
         elif (o := self.peer()) is not None:
             r = (False, f'SCANNER slot: {o.p.symbol} {"position" if o.pos or o.view.get("amt") else "order"} active')
+        elif self.p.vpin_gate and now < self.toxic_until:
+            r = (False, f'VPIN TOXIC {(self.tox.get("vpin") or 0):.2f} > {self.sig_cfg.vpin_max} · '
+                        f'pause {self.toxic_until - now:.0f}s')
         elif now < self.pause_until:
             r = (False, f'{self.consec_losses} losses · pause {self.pause_until - now:.0f}s')
         elif now < self.cooldown_until:
@@ -662,6 +689,9 @@ class Engine:
             await self.manage()
         self.chop_locked = msig.chop_locked(f.get('ker'), self.chop_locked, self.sig_cfg)
         self.absorb = msig.absorption(f, self.sig_cfg)
+        self.tox = msig.toxicity(f, self.sig_cfg)
+        if self.tox['toxic'] and self.p.vpin_gate:
+            self.mark_toxic(self.tox['vpin'])
         self.macro = msig.macro_bias(f, self.sig_cfg)
         self.reg = msig.regime(f, self.sig_cfg)
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
@@ -681,9 +711,98 @@ class Engine:
         mr = (self.sig or {}).get('MR')
         return 'MR' if mr and mr['side'] == d.side else 'TREND'
 
-    def mr_profile(self) -> Profile:
-        extra = {'sl_pct': self.p.mr_sl_pct} if self.p.max_loss_usdt is None else {}
-        return replace(self.p, tp_pct=self.p.mr_tp_pct, tp1_frac=1.0, **extra)
+    def mr_profile(self, f: Optional[dict] = None) -> Profile:
+        return self.bracket_plan('MR', f)['profile']
+
+    def bracket_plan(self, path: str = 'SWARM', f: Optional[dict] = None, route: str = 'gtx') -> dict:
+        """TP / SL / trail for the next entry + gross and fee-true reward:risk.
+        MR: TP = |VWAP dev| clamped [mr_tp_min, mr_tp_max], SL mr_sl_pct, whole size.
+        TREND with ATR known: SL = max(floor, 1.0 ATR), TP1 = max(2.5 ATR, 2.5 SL), trail 1.2 ATR after TP1.
+        Else the static profile. rr_net counts maker/taker fees and slip: win = TP - in - maker out,
+        loss = SL + in + taker out + slip; be_wr = loss / (win + loss)."""
+        f = self.features if f is None else f
+        f, p = f or {}, self.p
+        atr_pct, trail = f.get('atr_pct'), None
+        if path == 'MR':
+            dev = abs(f.get('vwap_dev_pct') or 0.0) or p.mr_tp_pct
+            tp, sl, src = min(p.mr_tp_max, max(p.mr_tp_min, dev)), p.mr_sl_pct, 'MR'
+            prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
+        elif p.atr_scaler and p.max_loss_usdt is None and atr_pct:
+            sl = max(p.atr_sl_floor_pct, p.atr_sl_mult * atr_pct)
+            tp = max(p.atr_tp1_mult * atr_pct, p.rr_min * sl)
+            trail, src = max(p.atr_trail_floor_pct, p.atr_trail_mult * atr_pct), 'ATR'
+            prof = replace(p, sl_pct=sl, tp_pct=tp, atr_trail_pct=trail)
+        else:
+            tp, sl, src, prof = p.tp_pct, p.sl_pct, 'STATIC', p
+        e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
+        win, loss = tp - (e_in + p.maker_bps) / 100.0, sl + (e_in + p.taker_bps + p.slip_bps) / 100.0
+        ok = sl > 0 and loss > 0
+        return {'profile': prof, 'src': src, 'atr_pct': atr_pct, 'sl_pct': sl, 'tp_pct': tp, 'trail_pct': trail,
+                'rr_gross': tp / sl if sl > 0 else None, 'rr_net': win / loss if ok else None,
+                'be_wr': loss / (win + loss) if ok and win > 0 else None}
+
+    def kelly(self) -> dict:
+        """Kelly on this symbol's settled trades (net PnL): f* = p - (1 - p) / b, b = avg win / avg loss."""
+        rows = [float(r['pnl']) for r in self.all_rows
+                if r.get('symbol', self.p.symbol) == self.p.symbol and r.get('pnl') is not None]
+        n, wins, losses = len(rows), [x for x in rows if x > 0], [-x for x in rows if x <= 0]
+        out = {'n': n, 'min_n': self.p.kelly_min_trades, 'lambda': self.p.kelly_lambda, 'p': None, 'b': None,
+               'f_star': None, 'f': None, 'state': 'SAMPLE'}
+        if n < self.p.kelly_min_trades or not wins:
+            out['state'] = 'SAMPLE' if n < self.p.kelly_min_trades else 'NO EDGE'
+            if wins == [] and n >= self.p.kelly_min_trades:
+                out.update(p=0.0, f_star=-1.0, f=-self.p.kelly_lambda)
+            return out
+        pw = len(wins) / n
+        b = (sum(wins) / len(wins)) / (sum(losses) / len(losses)) if losses and sum(losses) > 0 else float('inf')
+        f_star = pw - (1 - pw) / b if b != float('inf') else pw
+        out.update(p=pw, b=None if b == float('inf') else b, f_star=f_star, f=self.p.kelly_lambda * f_star,
+                   state='EDGE' if f_star > 0 else 'NO EDGE')
+        return out
+
+    def kelly_qty(self, price: float, prof: Profile, route: str = 'gtx') -> Optional[float]:
+        """Quarter-Kelly size: money at the stop = min(cap, f x equity). None -> exchange minimum / profile qty."""
+        if not self.p.kelly or self.p.max_loss_usdt is not None or not price or not self.spec:
+            return None
+        k = self.kelly()
+        if not k.get('f') or k['f'] <= 0:
+            return None
+        equity = self.account.get('wallet') or self.account.get('available') or 0.0
+        e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
+        risk_pct = (prof.sl_pct + (e_in + self.p.taker_bps + self.p.slip_bps) / 100.0) / 100.0
+        risk_usd = min(self.p.kelly_max_risk_usdt, k['f'] * equity)
+        if risk_usd <= 0 or risk_pct <= 0:
+            return None
+        qty = min(risk_usd / (price * risk_pct), self.p.kelly_max_notional / price)
+        qty = floor_step(qty, self.spec['step'])
+        return qty if qty > (prof.qty or 0.0) else None
+
+    def inventory(self) -> float:
+        """Signed inventory for Avellaneda-Stoikov, normalised to the one-position slot: -1 / 0 / +1."""
+        if self.pos:
+            return 1.0 if self.pos['side'] == 'BUY' else -1.0
+        amt = self.view.get('amt') or 0.0
+        return (amt > 0) - (amt < 0)
+
+    def mr_quote(self, side: str, f: dict, touch_px: float) -> float:
+        """MR maker entry at the Avellaneda-Stoikov quote: never better than the touch (post-only), at most
+        as_max_offset_bps behind the mid."""
+        bid, ask, sig = f.get('bid'), f.get('ask'), f.get('sigma_bps')
+        if not (bid and ask and sig):
+            return touch_px
+        qt = msig.as_quote((bid + ask) / 2.0, self.inventory(), sig, self.p.as_gamma, self.p.as_k,
+                           self.p.as_tau_s, self.p.as_max_offset_bps)
+        tick = self.spec['tick']
+        if side == 'BUY':
+            return min(touch_px, round_tick(qt['bid'], tick, 'down'))
+        return max(touch_px, round_tick(qt['ask'], tick, 'up'))
+
+    def mark_toxic(self, v: Optional[float]) -> None:
+        now = self.clock()
+        if now >= self.toxic_until:
+            self.event(f'VPIN TOXIC {(v or 0):.2f} > {self.sig_cfg.vpin_max}: RUNE veto {self.p.vpin_pause_s:g}s, '
+                       f'resting maker entries cancelled')
+        self.toxic_until = now + self.p.vpin_pause_s
 
     def radar(self) -> dict:
         """One scanner row: BTC: CHOP | SOL: TREND BUY (84%) | DOGE: MR SCAN."""
@@ -793,10 +912,15 @@ class Engine:
             if px is None:
                 return {'ok': False, 'error': 'no book'}
             route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
-            base = self.mr_profile() if path == 'MR' else self.p
+            bp = self.bracket_plan(path, f, route)
+            base = bp['profile']
             touch = f.get('ask') if side == 'BUY' else f.get('bid')
+            if path == 'MR':
+                px = self.mr_quote(side, f, px)
+            kq = self.kelly_qty(px if route == 'gtx' else touch, base, route)
             pl = plan(side, px if route == 'gtx' else touch, self.spec,
-                      replace(base, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'))
+                      replace(base, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'),
+                      qty=kq)
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
@@ -807,7 +931,7 @@ class Engine:
             self.authority.consume(token, intent)      # VESKA spends the one-use token right before routing
             cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
             posted_ms = int(self.clock() * 1000)       # entry fill can land any time in the GTX window
-            px0, reprices = px, 0
+            px0, reprices, toxic_abort = px, 0, None
             if route == 'ioc':
                 d = 1 if side == 'BUY' else -1
                 lim = round_tick(touch * (1 + d * self.p.ioc_max_slip_pct / 100.0), tick, 'up' if d > 0 else 'down')
@@ -821,11 +945,16 @@ class Engine:
                     self.event(f'GTX {side} @ {fmt(px, tick)} rejected post-only (book moved) - retry after cooldown')
                     return {'ok': False, 'error': 'post-only rejected (would take liquidity)'}
                 st, deadline = {}, time.monotonic() + self.p.gtx_ttl_s
-                peg = self.p.peg and decision.score >= self.p.peg_min_score
+                peg = self.p.peg and decision.score >= self.p.peg_min_score and path != 'MR'
                 last_post = time.monotonic()
                 while time.monotonic() < deadline:
                     st = await self.venue.order(sym, cid)
                     if st.get('status') == 'FILLED':
+                        break
+                    v = self.feed.vpin_now() if self.p.vpin_gate else None
+                    if v is not None and v > self.sig_cfg.vpin_max:      # toxic flow: pull the bid/ask now
+                        self.mark_toxic(v)
+                        toxic_abort = v
                         break
                     if peg and time.monotonic() - last_post >= self.p.peg_interval_s:
                         # Dynamic pegged maker: follow the touch while the book walks away, never cross it,
@@ -866,6 +995,11 @@ class Engine:
                                f'{self.p.ioc_max_slip_pct}% -> expired, rescan in {self.p.unfilled_cooldown_s:g}s')
                     return {'ok': False, 'error': f'IOC không khớp trong biên trượt {self.p.ioc_max_slip_pct}%',
                             'latency_ms': ms, 'route': 'IOC'}
+                if toxic_abort is not None:
+                    self.event(f'GTX {side} {pl["qty_str"]} @ {fmt(px, tick)} cancelled: VPIN {toxic_abort:.2f} > '
+                               f'{self.sig_cfg.vpin_max} (toxic flow)')
+                    return {'ok': False, 'error': f'VPIN {toxic_abort:.2f} > {self.sig_cfg.vpin_max}: huỷ lệnh maker '
+                                                  f'chờ khớp (dòng tiền độc)', 'latency_ms': ms, 'route': 'GTX'}
                 self.event(f'GTX {side} {pl["qty_str"]} @ {fmt(px, tick)} not filled in {self.p.gtx_ttl_s:g}s '
                            f'-> cancelled (peg drift cap {self.p.peg_max_drift_pct}%), rescan in {self.p.unfilled_cooldown_s:g}s')
                 return {'ok': False, 'error': f'GTX không khớp trong {self.p.gtx_ttl_s:g}s (peg tối đa '
@@ -885,6 +1019,10 @@ class Engine:
                         'adverse_usd': 0.0, 'regime': (self.reg or {}).get('name'),
                         'trigger_usd': abs(f.get('cvd_exit_win') or 0.0), 'flow_limit': self.flow_limit(f),
                         'edge_bps': (self.diag or {}).get('edge_bps'), 'ker': f.get('ker'),
+                        'atr_pct': bp['atr_pct'], 'atr_trail_pct': bp['trail_pct'], 'bracket_src': bp['src'],
+                        'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
+                        'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
+                        'quote_px': px,
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
@@ -1135,11 +1273,16 @@ class Engine:
             cands.append((self.shield_price(p), 'BE'))
         if p['mfe_pct'] >= self.p.lock_trigger_pct:
             cands.append((self.plock_price(p), 'PROFIT'))
+        gaps = []
         if p['mfe_pct'] >= self.p.trail_activate_pct:
-            gap = self.p.trail_tight_gap_pct if p['mfe_pct'] >= self.p.trail_tight_pct else self.p.trail_gap_pct
+            gaps.append(self.p.trail_tight_gap_pct if p['mfe_pct'] >= self.p.trail_tight_pct else self.p.trail_gap_pct)
+        if p.get('atr_trail_pct') and p.get('tp1_filled'):         # TP2: runner trails 1.2 x ATR after TP1
+            gaps.append(p['atr_trail_pct'])
+        if gaps:
+            gap = min(gaps)
             cands.append((round_tick(p['peak'] * (1 - d * gap / 100.0), self.spec['tick'], 'down' if d > 0 else 'up'),
                           'TRAIL'))
-            p['trail_gap'] = gap
+            p['trail_gap'] = round(gap, 4)
         for px, k in cands:
             if level is None or d * (px - level) > 0:
                 if k != kind:
@@ -1279,6 +1422,9 @@ class Engine:
                'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
                'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
                'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
+               'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
+               'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
+               'kelly_f': p.get('kelly_f'),
                'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
                'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
                'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],
@@ -1387,6 +1533,8 @@ class Engine:
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
                 'gross_pct': p.get('gross_pct'), 'hurdle': p.get('hurdle'), 'hurdle_pct': self.p.hurdle_pct,
+                'bracket_src': p.get('bracket_src'), 'rr_gross': p.get('rr_gross'), 'rr_net': p.get('rr_net'),
+                'be_wr': p.get('be_wr'), 'atr_pct': p.get('atr_pct'), 'trail_gap': p.get('trail_gap'),
                 'hurdle_blocks': p.get('hurdle_blocks', 0), 'fee_hurdle': self.p.fee_hurdle,
                 'fee_shield_trigger_pct': self.p.be_trigger_pct, 'lock_trigger_pct': self.p.lock_trigger_pct,
                 'microbe_trigger_pct': self.p.microbe_trigger_pct,
@@ -1394,6 +1542,14 @@ class Engine:
                 'be_price': self.be_price(p) if p and self.spec else None,
                 'be_trigger_pct': self.p.be_trigger_pct, 'entry_type': p.get('entry_type'),
                 'hold_s': p.get('hold_s'), 'tag': p.get('tag', 'EXTERNAL'), 'path': p.get('path')}
+
+    def quant_view(self) -> dict:
+        f = self.features or {}
+        bp = {k: v for k, v in self.bracket_plan('SWARM', f).items() if k != 'profile'}
+        return {'ofi': f.get('ofi_10s'), 'ofi_n': f.get('ofi_n'), 'vpin': f.get('vpin'), 'vpin_n': f.get('vpin_n'),
+                'tox': self.tox.get('state'), 'toxic_left': max(0.0, self.toxic_until - self.clock()),
+                'atr_pct': f.get('atr_pct'), 'yz_pct': f.get('yz_pct'), 'sigma_bps': f.get('sigma_bps'),
+                'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly()}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')
@@ -1452,6 +1608,7 @@ class Engine:
             'exec_book': {k: v for k, v in self.book().items()} if self.spec else None,
             'profile': asdict(self.p), 'live_allowed': self.allow_live, 'symbols': list(SYMBOLS),
             'fee_model': self.fee_model(),
+            'quant': self.quant_view(),
             'governor': {'min_score': self.p.min_score, 'min_edge_bps': self.p.min_edge_bps,
                          'max_trades_hour': self.p.max_trades_hour, 'trades_hour': len(self.trade_times),
                          'cooldown_s': self.p.cooldown_s, 'flow_breath_s': self.p.flow_breath_s,
@@ -1464,14 +1621,20 @@ class Engine:
 
 
 # ============================================================================ runner (one process: WS + engine + UI)
-def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
-    """Closed 5 m candles [(close_time_s, close)] from Binance USD-M mainnet public REST."""
+def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: float = 5.0) -> list:
+    """Closed candles [(open_s, o, h, l, c, close_s)] from Binance USD-M mainnet public REST (no key)."""
     import urllib.request
-    url = f'https://fapi.binance.com/fapi/v1/klines?symbol={symbol.upper()}&interval=5m&limit={int(limit)}'
+    url = f'https://fapi.binance.com/fapi/v1/klines?symbol={symbol.upper()}&interval={interval}&limit={int(limit)}'
     with urllib.request.urlopen(url, timeout=timeout) as r:
         rows = json.loads(r.read().decode())
     now_ms = time.time() * 1000
-    return [(k[6] / 1000.0, float(k[4])) for k in rows if k[6] < now_ms]
+    return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0)
+            for k in rows if k[6] < now_ms]
+
+
+def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
+    """Closed 5 m candles [(close_time_s, close)]."""
+    return [(r[5], r[4]) for r in fetch_klines(symbol, '5m', limit, timeout)]
 
 
 def build_scanner(profiles: dict, venue, feeds: dict, telemetry=None, ledger: Path = LEDGER,
@@ -1689,9 +1852,20 @@ class Runner:
         self.tasks = [asyncio.create_task(self.pump_multi(feeds, 'public')),
                       asyncio.create_task(self.pump_multi(feeds, 'market'))]
         for x in self.engines.values():
-            self.tasks += [asyncio.create_task(self.seed_macro(x)), asyncio.create_task(self.sync_loop(x)),
+            self.tasks += [asyncio.create_task(self.seed_macro(x)), asyncio.create_task(self.seed_bars(x)),
+                           asyncio.create_task(self.sync_loop(x)),
                            asyncio.create_task(self.vbook_loop(x)), asyncio.create_task(self.decide_loop(x))]
         return e
+
+    async def seed_bars(self, e: Engine) -> None:
+        """ATR(14) / Yang-Zhang need closed 1 m bars: seed 30 from mainnet public klines (no key)."""
+        try:
+            rows = await asyncio.to_thread(fetch_klines, e.feed.symbol, '1m', 30)
+            n = e.feed.seed_bars([r[:5] for r in rows])
+            e.event(f'ATR 1m: seeded {n} closed 1 m bars -> ATR brackets live at once')
+        except Exception as exc:
+            e.event(f'ATR 1m: kline seed failed ({type(exc).__name__}) -> static brackets until '
+                    f'{e.feed.cfg.atr_min_bars} live bars')
 
     async def seed_macro(self, e: Engine) -> None:
         """EMA-20(5 m) needs 100 min of candles: seed it once from mainnet public klines (no key)."""

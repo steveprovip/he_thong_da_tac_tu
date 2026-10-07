@@ -123,14 +123,14 @@ async def test_cvd_flicker_resets_debounce(tmp_path):
 
 # ----------------------------------------------------------------------------- TP1 +0.45 %
 def test_tp1_045_and_the_real_payout():
-    p = eng.PROFILES['demo']
-    assert p.tp_pct == 0.45 and p.tp1_frac == 0.5
+    p = eng.PROFILES['demo']                         # static TP1 0.45 -> 0.50 (RR 2.5 vs SL 0.20) since 2026-10-07k
+    assert p.tp_pct == 0.50 and p.tp1_frac == 0.5
     _, tp = eng.brackets('BUY', 84_000.0, {'tp_pct': p.tp_pct, 'sl_pct': p.sl_pct}, eng.FALLBACK_SPECS['BTCUSDT']['tick'])
-    assert tp == pytest.approx(84_000.0 * 1.0045, abs=0.1)
-    # 0.002 BTC: TP1 takes HALF -> 0.001 x 84,000 x 0.45 % = 0.378 U, not 0.75 U.
-    half = 0.001 * 84_000 * 0.0045
+    assert tp == pytest.approx(84_000.0 * 1.005, abs=0.1)
+    # 0.002 BTC: TP1 takes HALF -> 0.001 x 84,000 x 0.50 % = 0.42 U, not the whole 0.84 U.
+    half = 0.001 * 84_000 * 0.005
     fees = 0.002 * 84_000 * 4e-4                                          # GTX in + GTX out
     runner_be = 0.001 * 84_000 * 0.0006                                   # runner closed at soft breakeven
-    assert half == pytest.approx(0.378) and 0.30 < half + runner_be - fees < 0.40
-    full = 0.002 * 84_000 * 0.0045 - fees                                 # only if the whole size made +0.45 %
-    assert full == pytest.approx(0.6888, abs=1e-4)
+    assert half == pytest.approx(0.42) and 0.35 < half + runner_be - fees < 0.45
+    full = 0.002 * 84_000 * 0.005 - fees                                  # only if the whole size made +0.50 %
+    assert full == pytest.approx(0.7728, abs=1e-4)

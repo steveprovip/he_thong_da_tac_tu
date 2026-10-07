@@ -179,19 +179,34 @@ def test_mr_signal_rules():
     assert not alone.allowed                                                   # MR without the L10 vote = 60 %
 
 
+async def fill_deep(e, feed, coro, low):
+    """Sellers sweep down to `low`: every resting bid above it trades (the MR quote rests under the touch)."""
+    task = asyncio.ensure_future(coro)
+    await asyncio.sleep(0.15)
+    bid = feed.bid
+    for _ in range(3):
+        feed.on_message(depth(round(low - 0.1, 1), low))
+    res = await task
+    feed.on_message(depth(bid, round(bid + 0.1, 1)))
+    return res
+
+
 async def test_mr_lane_trades_the_sideway_with_tp015_sl010(tmp_path):
+    """MR (2026-10-07k): Avellaneda-Stoikov quote <= 2 bps under mid, TP = VWAP distance in [0.12, 0.18] %, SL 0.08 %."""
     e, venue, feed = mock_engine(tmp_path, feed=mr_feed(), ker_gate=True, min_edge_bps=30.0, min_velocity_pct=0.025)
     await e.sync()
-    d = await fill_through(e, feed, e.tick())
+    d = await fill_deep(e, feed, e.tick(), 83_920.0)
     assert e.chop_locked and e.features['ker'] < 0.38 and e.lane(d) == 'MR'
     assert d.allowed and e.pos and e.pos['path'] == 'MR' and e.pos['entry_type'] == 'GTX'
-    entry = e.pos['entry']
-    assert e.pos['tp'] == pytest.approx(entry * 1.0015, abs=0.2) and e.pos['sl'] == pytest.approx(entry * 0.999, abs=0.2)
-    assert not e.pos['split'] and e.radar()['label'] == 'LONG OPEN'
-    book_at(feed, round(entry * 1.0016, 1))                                    # back toward VWAP: TP fills
+    entry, mid = e.pos['entry'], (83_950.0 + 83_950.1) / 2
+    assert entry == pytest.approx(mid * (1 - 2e-4), abs=0.11) and entry < 83_950.0       # A-S quote, capped 2 bps
+    dev = 0.13005
+    assert e.pos['tp'] == pytest.approx(entry * (1 + dev / 100), abs=0.2) and e.pos['sl'] == pytest.approx(entry * 0.9992, abs=0.2)
+    assert e.pos['bracket_src'] == 'MR' and not e.pos['split'] and e.radar()['label'] == 'LONG OPEN'
+    book_at(feed, round(e.pos['tp'] + 0.1, 1))                                 # back toward VWAP: TP fills
     await e.sync()
     h = e.history[0]
-    net = h['qty'] * entry * (0.0015 - 0.0004)
+    net = h['qty'] * entry * (dev / 100 - 0.0004)
     assert h['pnl'] == pytest.approx(net, abs=0.003) and h['taker_fills'] == 0
 
 
@@ -238,7 +253,7 @@ def test_macro_locks_one_side_only_on_a_steep_ema():
 def test_scanner_defaults():
     c, p = msig.SignalConfig(), eng.PROFILES['demo']
     assert (c.ker_lock, c.ker_unlock, c.mr_ker_max, c.mr_dev_pct, c.absorb_min_move_pct) == (0.38, 0.42, 0.38, 0.12, 0.025)
-    assert (p.min_velocity_pct, p.mr_tp_pct, p.mr_sl_pct, p.mr_min_score) == (0.025, 0.15, 0.10, 0.80)
+    assert (p.min_velocity_pct, p.mr_tp_min, p.mr_tp_max, p.mr_sl_pct, p.mr_min_score) == (0.025, 0.12, 0.18, 0.08, 0.80)
     assert eng.SCAN_SYMBOLS == ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT') and ms.ALPHA['NORO'][-1] == 'MR'
 
 

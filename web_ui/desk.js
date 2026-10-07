@@ -238,6 +238,17 @@
       const lead = sc.on ? '<b>SCANNER</b>' : '<b>1 CẶP</b>';
       if (rad.dataset.html !== html) { rad.innerHTML = lead + (html || ' —'); rad.dataset.html = html; }
     }
+    const qv = s.quant || {}, br = qv.brackets || {}, kl = qv.kelly || {};
+    const chip = (id, text, cls) => { const n = $(id); if (!n) return; if (n.textContent !== text) n.textContent = text; n.className = 'chip ' + (cls || ''); };
+    chip('ofi-chip', fin(qv.ofi) ? `OFI L10 ${sg(qv.ofi, 2)}` : `OFI — (${qv.ofi_n || 0} ev)`,
+      fin(qv.ofi) && Math.abs(qv.ofi) >= 0.65 ? (qv.ofi > 0 ? 'green' : 'red') : '');
+    chip('vpin-chip', fin(qv.vpin) ? `VPIN ${fx(qv.vpin, 2)} · ${qv.tox}${qv.toxic_left > 0 ? ` ${fx(qv.toxic_left, 0)}s` : ''}` : 'VPIN — (warmup)',
+      qv.tox === 'TOXIC' || qv.toxic_left > 0 ? 'red' : qv.tox === 'CLEAN' ? 'green' : '');
+    chip('rr-chip', fin(br.sl_pct) ? `${br.src} SL ${fx(br.sl_pct, 2)}% · TP1 ${fx(br.tp_pct, 2)}% · RR ${fx(br.rr_gross, 1)} gộp / ${fin(br.rr_net) ? fx(br.rr_net, 2) : '—'} sau phí · hoà vốn ≥ ${fin(br.be_wr) ? fx(br.be_wr * 100, 0) : '—'}% thắng` : 'RR —',
+      br.src === 'ATR' ? 'green' : '');
+    chip('kelly-chip', kl.state === 'SAMPLE' ? `KELLY ¼: ${kl.n || 0}/${kl.min_n || 20} lệnh mẫu`
+      : kl.state === 'EDGE' ? `KELLY ¼: ${fx(kl.f * 100, 1)}% vốn · f* ${sg(kl.f_star, 2)}`
+      : `KELLY ¼: f* ${sg(kl.f_star, 2)} → khối lượng tối thiểu`, kl.state === 'EDGE' ? 'green' : kl.state === 'NO EDGE' ? 'red' : '');
     const shn = $('shield-chip');
     if (shn) {
       shn.textContent = !pos ? 'SHIELD: —' : pos.plock ? `SHIELD: PROFIT LOCK (+${fx(pos.lock_trigger_pct, 2)}%)`

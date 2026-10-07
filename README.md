@@ -130,3 +130,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Làn MR: KER < 0.38, giá lệch VWAP 60 s ≥ 0.12 % ở mép 20 % của hộp 60 s ≤ 0.40 %, sổ L10 nghiêng ≥ 0.25 về phía đảo chiều (NORO MR + TIDAL DEPTH = 80 %). Lệnh GTX, TP +0.15 % toàn bộ, SL −0.10 %.
 - MACRO 5m chỉ khoá 1 chiều khi EMA-20 nến 5m dốc ≥ 0.05 %/nến.
 - UI: dải `SCANNER BTC: CHOP | SOL: TREND BUY (84%) | DOGE: MR SCAN`; bấm chip hoặc nút BTC/DOGE/SOL để đổi màn hình theo dõi (cả 3 cặp vẫn quét); màn hình tự nhảy sang cặp đang giữ vị thế.
+
+### 8.11 Cập nhật 07/10/2026 (k) — OFI, VPIN, TP/SL theo ATR, Avellaneda-Stoikov, Kelly ¼
+- **OFI L10** (Cont-Kukanov-Stoikov 2014, cộng 10 mức): OFI_norm = Σe/Σ|e| trong 10 s (≥ 5 lần cập nhật sổ). |OFI| ≥ 0.65 cùng chiều CVD 15 s ≥ $500k → TIDAL bỏ phiếu → đồng thuận 3 agent (≥ 85 %).
+- **VPIN** (Easley-López de Prado-O'Hara 2012) trên 10 rổ $1M (SOL/DOGE $100k), phân loại mua/bán chính xác từ aggTrade. VPIN > 0.75 → huỷ lệnh maker vào đang chờ, RUNE chặn mở lệnh mới 30 s (theo từng cặp).
+- **TP/SL theo ATR(14) nến 1 phút** (nạp 30 nến REST lúc khởi động): SL = max(0.15 %, 1.0 ATR), TP1 = max(2.5 ATR, 2.5 SL) cho 50 %, phần còn lại trailing 1.2 ATR (≥ 0.10 %) sau TP1. RR gộp ≥ 2.5; UI hiện cả RR sau phí và tỉ lệ thắng hoà vốn. Chưa đủ 5 nến → TP 0.50 % / SL 0.20 % (RR 2.5). LIVE giữ SL theo lỗ tối đa 0.05 U.
+- **MR**: lệnh maker đặt theo Avellaneda-Stoikov (r = s − qγσ²τ, nửa spread γσ²τ/2 + (1/γ)ln(1+γ/k)), không xa mid quá 2 bps, không bao giờ vượt touch; TP = khoảng cách về VWAP trong [0.12, 0.18] %, SL 0.08 %.
+- **Kelly ¼** theo từng cặp khi sổ có ≥ 20 lệnh của cặp đó; rủi ro tới SL tối đa 0.50 U/lệnh (demo), notional ≤ $1000; Kelly ≤ 0 → khối lượng tối thiểu. LIVE không dùng Kelly.
+- UI: chip `OFI`, `VPIN`, `RR` (SL/TP1, RR gộp / sau phí, % thắng hoà vốn), `KELLY ¼`.

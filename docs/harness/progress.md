@@ -87,3 +87,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - micro_signals: streams_multi, MR + DEPTH signals, ker 0.38/0.42, absorb move 0.025, macro slope >= 0.05 %/5 m; micro_swarm: NORO += MR, TIDAL += DEPTH, C2 += MR, C6 += DEPTH.
 - UI latency chip shows GTX wait: p50 ~5.6 s in the 14:11 screenshot = entries timing out unfilled, not network.
 - tests/test_multi_asset_scanner.py (15). Verification: pytest 907 passed. Runner smoke (mock, no keys): 3 engines start, radar + snapshot JSON ok (WS blocked by the sandbox proxy).
+
+## 2026-10-07 (k) OFI L10, VPIN gate, ATR brackets, Avellaneda-Stoikov MR quote, quarter-Kelly
+- micro_signals: mlofi() (CKS per level, L10 sum), atr() (Wilder), yang_zhang(), realized_sigma_bps(), as_quote(), toxicity(); MicroFeed depth levels + OFI deque (10 s, >= 5 events), VPIN buckets (exact aggressor, $1M x scale, 10), 1 m bars + seed_bars(); features ofi_10s/vpin/atr_pct/yz_pct/sigma_bps; OFI signal (TIDAL, C1).
+- engine: Profile tp_pct 0.50 (static RR 2.5), ATR scaler (SL max(0.15, ATR), TP1 max(2.5 ATR, 2.5 SL), trail 1.2 ATR after TP1), MR TP clamp(|VWAP dev|, 0.12, 0.18) + SL 0.08 + A-S quote (gamma 0.1/bps, k 2/bps, tau 5 s, cap 2 bps, peg off), VPIN RUNE veto 30 s + maker-entry cancel in the GTX loop, kelly()/kelly_qty() (lambda 0.25, >= 20 trades/symbol, risk cap 0.50 U, notional cap $1000), bracket_plan() with rr_net/be_wr, quant_view() in snapshot, ledger fields; fetch_klines() + Runner.seed_bars(). Live: atr_scaler/kelly off.
+- Real ledger: quarter-Kelly f* = -0.18 (22 trades) -> minimum size. Static/ATR floor economics: SL 0.15 / TP1 0.375 -> RR 2.5 gross, 1.46 after fees, break-even win rate 40.7 %; zero-drift hit rate of +2.5R before -1R = 28.6 %.
+- tests/test_ultimate_quant.py (27). Verification: pytest 934 passed. Runner smoke: 3 engines, quant view JSON ok, kline seeds fail gracefully behind the sandbox proxy.
