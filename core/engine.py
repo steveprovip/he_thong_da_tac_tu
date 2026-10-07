@@ -66,7 +66,12 @@ class Profile:
     microbe_trigger_pct: float = 0.08   # MARIN phase 0: +0.08 % -> stop to entry +0.03 % gross (loss <= fees)
     microbe_lock_pct: float = 0.03
     be_trigger_pct: float = 0.12        # MARIN phase 1: +0.12 % in favour -> stop to fee-true breakeven
-    flow_exit: bool = True              # adverse CVD >= $500k (x symbol scale) in 15 s since entry -> exit
+    flow_exit: bool = True              # adverse CVD >= $2M (x symbol scale) in 15 s since entry -> exit
+    flow_breath_s: float = 30.0         # no adverse-flow exit in the first 30 s (exchange hard SL still live)
+    flow_exit_trigger_mult: float = 2.5 # flow limit = max($2M, 2.5 x the 15 s CVD that triggered the entry)
+    flow_exit_cap_mult: float = 3.0     # ... capped at 3 x the $2M floor (never 'no exit at all')
+    regime_flip_exit: bool = True       # SHORT vs CVD 60 s >= +$1M / LONG vs <= -$1M -> soft maker exit
+    regime_flip_usd: float = 1_000_000.0
     flow_exit_ttl_s: float = 1.0        # (hard mode only) maker attempt before market
     soft_exits: bool = True             # BE / trail / flow exits = post-only maker queue; only hard SL is taker
     exit_repeg_s: float = 0.5           # re-peg the maker exit when the touch moves away
@@ -92,8 +97,10 @@ class Profile:
     max_hold_s: Optional[float] = None  # no time stop (2026-10-07): exits are TP1 / BE / trail / SL
     equity_cap: Optional[float] = None      # margin cap (live micro-capital)
     daily_kill_usdt: float = 5.0
-    cooldown_s: float = 20.0
-    max_trades_hour: int = 30
+    cooldown_s: float = 30.0            # churn governor: 30 s flat after every close
+    max_trades_hour: int = 8
+    min_score: float = 0.82             # churn governor: auto entry needs swarm score >= 82 % ...
+    min_edge_bps: float = 30.0          # ... AND expected edge >= 30 bps (>= 5x a 6 bps maker round trip)
     max_consec_losses: int = 3
     loss_pause_s: float = 300.0
     max_spread_bps: float = 3.0
@@ -589,10 +596,29 @@ class Engine:
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
         d, votes, diag = swarm.evaluate(self.sig, self.gates(f), self.consensus, self.p.jev_min,
                                         self.p.min_confluence, self.p.edge_ratio_min, allow=self.reg['allow'])
+        if d.allowed and not self.busy and not self.pos:
+            ok, why = self.churn_gate(d, diag)
+            if not ok:
+                d = replace(d, allowed=False, reason=why)
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
             await self.execute(d.side, d, diag.get('path') or 'SWARM')
         return d
+
+    def conviction(self, d: Decision, diag: dict) -> float:
+        """Swarm score the governor reads: raw vote (60/80/100 % steps with 3 alpha agents) or the JEV lift."""
+        jev = (diag.get('jev') or 0.0) / 10.0 if diag.get('gates_ok') else 0.0
+        return max(d.score, diag.get('consensus') or 0.0, jev)
+
+    def churn_gate(self, d: Decision, diag: dict) -> tuple:
+        """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps."""
+        score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
+        if score < self.p.min_score:
+            return False, f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'
+        if edge < self.p.min_edge_bps:
+            return False, (f'CHURN edge {edge:.1f} bps < {self.p.min_edge_bps:g} bps '
+                           f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)')
+        return True, ''
 
     # ------------------------------------------------------------------ VESKA (Post-Only GTX only)
     def gtx_price(self, side: str, f: dict) -> Optional[float]:
@@ -725,6 +751,8 @@ class Engine:
                         'stop_kind': 'SL', 'tp_qty': half if split else qty, 'split': split, 'tp1_filled': False,
                         'be_locked': False, 'mbe_locked': False, 'trail_on': False, 'peak': fill, 'mfe_pct': 0.0,
                         'adverse_usd': 0.0, 'regime': (self.reg or {}).get('name'),
+                        'trigger_usd': abs(f.get('cvd_exit_win') or 0.0), 'flow_limit': self.flow_limit(f),
+                        'edge_bps': (self.diag or {}).get('edge_bps'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
                         'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'], 'entry_type': route.upper(),
@@ -851,6 +879,19 @@ class Engine:
     async def flow_exit(self) -> None:
         await self.start_soft_exit('FLOW')
 
+    def flow_limit(self, f: dict) -> float:
+        """Adverse-flow exit threshold for a trade: max($2M, 2.5 x entry trigger flow), <= 3 x $2M (x usd_scale)."""
+        base = self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale
+        trig = abs(f.get('cvd_exit_win') or 0.0) * self.p.flow_exit_trigger_mult
+        return min(max(base, trig), base * self.p.flow_exit_cap_mult)
+
+    def regime_flipped(self, p: dict, f: dict) -> bool:
+        """SHORT while CVD 60 s >= +$1M (x scale), LONG while <= -$1M: the thesis is dead."""
+        if not self.p.regime_flip_exit:
+            return False
+        cvd, lim = f.get('cvd_60s') or 0.0, self.p.regime_flip_usd * self.feed.cfg.usd_scale
+        return cvd >= lim if p['side'] == 'SELL' else cvd <= -lim
+
     async def manage(self) -> None:
         """MARIN: adverse-flow exit -> breakeven tiers -> TP1 half -> trailing runner.
         soft_exits=True: BE / trail / flow exits are post-only maker orders at the touch; only the hard SL on the
@@ -871,10 +912,22 @@ class Engine:
         if p.get('exiting'):
             await self.work_soft_exit()
             return
+        if self.regime_flipped(p, f):
+            self.event(f'MARIN REGIME-FLIP EXIT: {"SHORT" if d < 0 else "LONG"} vs CVD 60s '
+                       f'{(f.get("cvd_60s") or 0) / 1e6:+.2f}M (limit ±${self.p.regime_flip_usd * self.feed.cfg.usd_scale / 1e6:.2f}M)'
+                       f' at {fav:+.3f}% -> soft maker exit')
+            if self.p.soft_exits:
+                await self.start_soft_exit('REGIME')
+            else:
+                p['exit_reason'] = 'REGIME'
+                await self.close('REGIME')
+            return
         adverse = self.adverse_flow(p)
         p['adverse_usd'] = adverse
-        limit = self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale
-        if self.p.flow_exit and adverse >= limit:
+        limit = p.get('flow_limit') or self.flow_limit({})
+        age = self.clock() - p['opened']
+        p['breathing'] = age < self.p.flow_breath_s
+        if self.p.flow_exit and adverse >= limit and not p['breathing']:
             self.event(f'MARIN FLOW EXIT: ${adverse / 1e6:.2f}M aggressor flow against {p["side"]} in '
                        f'{self.feed.cfg.flow_exit_s:g}s (limit ${limit / 1e6:.2f}M) at {fav:+.3f}%')
             if self.p.soft_exits:
@@ -1031,7 +1084,8 @@ class Engine:
                'be_locked': p['be_locked'], 'mbe_locked': p.get('mbe_locked'), 'tp1': p['tp1_filled'],
                'mfe_pct': p['mfe_pct'], 'adverse_usd': p.get('adverse_usd'), 'regime': p.get('regime'),
                'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
-               'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'hold_s': self.clock() - p['opened'],
+               'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
+               'flow_limit': p.get('flow_limit'), 'hold_s': self.clock() - p['opened'],
                'latency_ms': p['latency_ms'], 'entry_type': p.get('entry_type', 'GTX')}
         self.pos = None
         self.phase = 'SCANNING'
@@ -1132,7 +1186,9 @@ class Engine:
                 'soft_stop': p.get('soft_stop'), 'soft_exits': self.p.soft_exits,
                 'exiting': None if not p.get('exiting') else {k: p['exiting'][k] for k in
                                                                ('reason', 'px', 'reprices', 'started')},
-                'flow_exit_usd': self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
+                'flow_exit_usd': p.get('flow_limit') or self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
+                'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - p['opened'])) if p else None,
+                'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'microbe_trigger_pct': self.p.microbe_trigger_pct,
                 'tp1_filled': p.get('tp1_filled'), 'tp_qty': p.get('tp_qty'), 'mfe_pct': p.get('mfe_pct'),
                 'be_price': self.be_price(p) if p and self.spec else None,
@@ -1190,6 +1246,11 @@ class Engine:
             'exec_book': {k: v for k, v in self.book().items()} if self.spec else None,
             'profile': asdict(self.p), 'live_allowed': self.allow_live, 'symbols': list(SYMBOLS),
             'fee_model': self.fee_model(),
+            'governor': {'min_score': self.p.min_score, 'min_edge_bps': self.p.min_edge_bps,
+                         'max_trades_hour': self.p.max_trades_hour, 'trades_hour': len(self.trade_times),
+                         'cooldown_s': self.p.cooldown_s, 'flow_breath_s': self.p.flow_breath_s,
+                         'flow_exit_usd': self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
+                         'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale},
             'latency_ms': {'last': self.latency[-1] if self.latency else None,
                            'p50': lat[len(lat) // 2] if lat else None},
             'markets': [], 'events': list(self.events)[:30], 'updated_at': self.clock(),

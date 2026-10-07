@@ -183,12 +183,15 @@
         : pos.trail_on ? `TRAILING (soft ${fx(pos.soft_stop, pdp(pos.soft_stop))}) · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.be_locked ? `BE ${pos.soft_exits ? 'soft ' + fx(pos.soft_stop, pdp(pos.soft_stop)) : 'LOCKED'} · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.mbe_locked ? `MICRO-BE · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k`
-        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s`,
+        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,
         pos.trail_on ? 'buy glow' : pos.be_locked ? 'buy' : 'warn']] }] : [], 9, 'Không có vị thế');
     const st = s.stats || {};
     const wr = $('winrate');
     wr.textContent = st.n ? `WIN RATE ${fx(st.win_rate * 100, 1)}% · ${st.wins}W / ${st.losses}L · Avg Win ${sg(st.avg_win, 3)}U · Avg Loss ${sg(st.avg_loss, 3)}U · PF ${st.profit_factor == null ? (st.no_losses ? '∞' : '—') : fx(st.profit_factor, 2)} · E ${sg(st.expectancy, 4)}U/lệnh` : 'WIN RATE — (chưa có lệnh)';
     wr.className = 'winrate ' + ((st.net || 0) >= 0 ? 'up' : 'down');
+    const gv = s.governor;
+    if (gv) wr.title = `CHURN GOVERNOR · ${gv.trades_hour}/${gv.max_trades_hour} lệnh/h · nghỉ ${fx(gv.cooldown_s, 0)}s sau đóng · vào khi ≥${fx(gv.min_score * 100, 0)}% & edge ≥${fx(gv.min_edge_bps, 0)}bps · flow exit $${fx(gv.flow_exit_usd / 1e6, 1)}M sau ${fx(gv.flow_breath_s, 0)}s · regime-flip ±$${fx(gv.regime_flip_usd / 1e6, 1)}M`;
+    txt('gov', gv ? `GOV ${gv.trades_hour}/${gv.max_trades_hour}/h · ≥${fx(gv.min_score * 100, 0)}% · edge ≥${fx(gv.min_edge_bps, 0)}bps` : 'GOV —');
     const ss = s.session || {};
     const split = $('pnl-split');
     split.textContent = `GROSS ${sg(ss.gross, 4)} · PHÍ ${sg(-(ss.fees || 0), 4)} · NET ${sg(ss.realized, 4)} U`;

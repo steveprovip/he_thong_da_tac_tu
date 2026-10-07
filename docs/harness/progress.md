@@ -59,3 +59,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - BinanceVenue.order tolerates -2013 (2 tries -> NOT_FOUND).
 - Real ledger stats (5 demo trades): 2W/3L, win rate 40 %, PF 2.28, net +0.3258 U, expectancy +0.065 U/trade.
 - Verification: pytest 834 passed.
+
+## 2026-10-07 (f) Anti-churn: $2M flow exit + 30 s breath, churn governor, regime-flip exit
+- Ledger (17 trades): gross +0.9493 (incl. manual), fees 1.3458, net -0.4662; 15 FLOW exits, 13 with adverse $0.50-0.97M; busiest hour 14 trades; IOC entries 8 trades net +0.380 (fees 0.806), GTX entries net -0.776.
+- SignalConfig.flow_exit_usd 2M; Profile flow_breath_s 30, flow_exit_trigger_mult 2.5 (cap 3x), regime_flip_usd 1M, max_trades_hour 8, cooldown_s 30, min_score 0.82, min_edge_bps 30; Engine.churn_gate / conviction / flow_limit / regime_flipped; snapshot['governor']; ledger rows carry edge_bps + flow_limit.
+- Swarm raw consensus is quantized (3 alpha agents x 20 %): 60/80/100 %. Governor score = max(raw, JEV/10 when all gates green); edge >= 30 bps is the binding filter (trend feed 27 bps blocked, super-momentum 42 bps passes).
+- tests/test_anti_churn.py (17). Verification: pytest 851 passed.

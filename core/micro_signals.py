@@ -63,7 +63,7 @@ class SignalConfig:
     neutral_long_usd: float = 400_000.0
     trend_usd: float = 300_000.0
     trend_obi: float = 0.15
-    flow_exit_usd: float = 500_000.0    # MARIN: adverse CVD within flow_exit_s -> exit now
+    flow_exit_usd: float = 2_000_000.0  # MARIN: adverse CVD within flow_exit_s -> exit (was $500k: 13/17 noise exits)
     flow_exit_s: float = 15.0
     surge_usd_s: float = 50_000.0       # USD/s of net aggressor flow over 10 s
     surge_ratio: float = 2.0            # 10 s pace vs 60 s pace

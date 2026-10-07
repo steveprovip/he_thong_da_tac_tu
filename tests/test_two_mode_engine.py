@@ -216,6 +216,7 @@ def test_live_venue_refuses_unarmed_or_wrong_host():
 def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     feed = feed or bullish_feed()
     prof.setdefault('gtx_ttl_s', 0.6)
+    prof.setdefault('min_edge_bps', 0.0)          # churn edge floor has its own tests (test_churn_*)
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')
@@ -413,6 +414,18 @@ def test_ws_routes_follow_binance_split():
 
 
 # ----------------------------------------------------------------------------- 2-way: SHORT lifecycle, flow exit
+def dump(feed, px, usd, sell=True, n=50):
+    """Aggressor prints worth `usd` at px (sell=True -> sellers hit the bid)."""
+    q = usd / px / n
+    for _ in range(n):
+        feed.on_message(agg(px, q, maker=sell))
+
+
+def past_breath(e, s=31.0):
+    """Pretend the position is s seconds old (30 s breathing room over)."""
+    e.pos['opened'] -= s
+
+
 async def opened_short(tmp_path, **prof):
     import asyncio
     e, venue, feed = mock_engine(tmp_path, feed=bearish_feed(), **prof)
@@ -463,16 +476,16 @@ async def test_short_micro_be_be_and_tp1_trail_mirror(tmp_path):        # hard (
 
 
 async def test_adverse_flow_exit_does_not_wait_for_the_stop(tmp_path):     # hard mode: maker 0.2 s then market
-    e, venue, feed = await opened(tmp_path, flow_exit_ttl_s=0.2, soft_exits=False)
+    e, venue, feed = await opened(tmp_path, flow_exit_ttl_s=0.2, soft_exits=False, regime_flip_exit=False)
     entry, sl = e.pos['entry'], e.pos['sl']
-    for _ in range(30):                                            # whales dump $600k after our long
-        feed.on_message(agg(entry - 5, 0.2, maker=True))
+    past_breath(e)
+    dump(feed, entry - 5, 4_000_000)                               # whales dump $4M after our long (net of pre-entry buys)
     book_at(feed, round(entry - 5, 1))
     await e.tick()
     h = e.history[0]
-    assert e.pos is None and h['reason'] == 'FLOW' and h['adverse_usd'] >= 500_000
+    assert e.pos is None and h['reason'] == 'FLOW' and h['adverse_usd'] >= 2_000_000
     full_sl_loss = h['qty'] * entry * (0.20 + 0.08) / 100           # SL 0.20 % + maker in + taker out + slip
-    assert h['pnl'] > -full_sl_loss and h['hold_s'] < 5
+    assert h['pnl'] > -full_sl_loss and 31 <= h['hold_s'] < 36          # after the 30 s breathing room
     assert any('FLOW EXIT' in ev['message'] for ev in e.events)
 
 
@@ -540,10 +553,10 @@ async def btc_long_at(tmp_path, px, **prof):
 
 
 async def test_flow_exit_is_a_maker_queue_and_beats_trade3_by_the_taker_gap(tmp_path):
-    e, venue, feed = await btc_long_at(tmp_path, 85313.5)
+    e, venue, feed = await btc_long_at(tmp_path, 85313.5, regime_flip_exit=False)
     feed.on_message(depth(85326.9, 85327.0))
-    for _ in range(30):
-        feed.on_message(agg(85326.9, 0.25, maker=True))             # $640k dumped on us after entry
+    past_breath(e)
+    dump(feed, 85326.9, 4_000_000)                                    # $4M dumped on us after the 30 s
     await e.tick()
     x = e.pos['exiting']
     assert x['reason'] == 'FLOW' and x['px'] == pytest.approx(85327.0)  # SELL rests at the best ask, post-only
@@ -577,10 +590,10 @@ async def test_soft_breakeven_exit_is_maker_and_net_positive(tmp_path):
 
 
 async def test_soft_exit_repegs_down_the_book_then_fills(tmp_path):
-    e, venue, feed = await opened(tmp_path, exit_repeg_s=0.0)
+    e, venue, feed = await opened(tmp_path, exit_repeg_s=0.0, regime_flip_exit=False)
     entry = e.pos['entry']
-    for _ in range(30):
-        feed.on_message(agg(entry - 1, 0.25, maker=True))
+    past_breath(e)
+    dump(feed, entry - 1, 4_000_000)
     await e.tick()
     first = e.pos['exiting']['px']
     book_at(feed, round(entry - 3.0, 1))                              # touch walks down 3 USD

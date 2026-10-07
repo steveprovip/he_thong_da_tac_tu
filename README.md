@@ -97,3 +97,10 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **S5 SURGE**: tốc độ CVD 10 s ≥ $50k/s và ≥ 2× nhịp 60 s. **WALL**: mất cân bằng sổ L10 ≥ ±0.35 (tính confluence, chặn vào lệnh đâm vào tường ngược). **S6 SQUEEZE**: hộp giá 2 phút ≤ 0.08 % rồi phá vỡ cùng SURGE → TIDAL bỏ phiếu 100 % → đồng thuận ≥ 95 % → IOC.
 - **MARIN 4 tầng (mềm, thoát maker)**: +0.08 % → mức thoát entry +0.03 % · +0.12 % → hoà phí +0.02 % net · TP1 50 % ở +0.35 % · runner trailing 0.20 % từ +0.50 %, siết 0.15 % từ +0.70 %.
 - UI: Win Rate · W/L · Avg Win/Loss · Profit Factor · Expectancy; CVD velocity trên đồng hồ T2.
+
+### 8.6 Cập nhật 07/10/2026 (f) — Chống churn phí
+- Sổ lệnh thật (17 lệnh demo): 15 lần thoát FLOW, 13 lần chỉ có $0.50–0.97M flow ngược (< $2M); 14 lệnh trong 1 giờ cao điểm.
+- **Flow exit**: ngưỡng $2M (× hệ số coin; SOL/DOGE $200k), hoặc 2.5× flow 15 s lúc vào lệnh (trần 3× = $6M). **30 s thở** đầu tiên không có flow exit; SL cứng −0.20 % trên sàn vẫn luôn chạy.
+- **Churn governor**: tối đa 8 lệnh/giờ · nghỉ 30 s sau mỗi lệnh đóng · lệnh AUTO cần điểm swarm ≥ 82 % (điểm thô hoặc JEV/10) **và** edge kỳ vọng ≥ 30 bps. Lệnh TEST không qua bộ lọc này.
+- **Regime-flip exit**: SHORT khi CVD 60 s ≥ +$1M, LONG khi ≤ −$1M → MARIN thoát maker ngay (kể cả trong 30 s thở).
+- Đổi coin không đổi % phí: phí và lãi gộp cùng co theo notional, nên net % như nhau; SOL/DOGE chỉ làm số USDT lời/lỗ nhỏ lại.
