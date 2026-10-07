@@ -114,7 +114,7 @@ async def test_churn_gate_blocks_edge_below_30bps(tmp_path):
 
 
 async def test_churn_gate_lets_super_momentum_through(tmp_path):
-    e, venue, _ = mock_engine(tmp_path, feed=super_feed(), min_edge_bps=30.0)
+    e, venue, _ = mock_engine(tmp_path, feed=super_feed(), min_edge_bps=30.0, super_ker=0.0)
     await e.sync()
     d = await e.tick()
     assert d.allowed and e.pos and e.diag['edge_bps'] >= 30 and e.pos['edge_bps'] >= 30

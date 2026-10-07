@@ -76,6 +76,13 @@ class SignalConfig:
     ker_min_span_s: float = 60.0        # < 60 s of prints -> KER unknown (treated as CHOP)
     ker_lock: float = 0.40              # KER < 0.40 -> CHOP LOCKED
     ker_unlock: float = 0.45            # unlock only at KER >= 0.45 (hysteresis band 0.40-0.45)
+    absorb_window_s: float = 15.0       # price-delta concordance window
+    absorb_usd: float = 500_000.0       # |CVD 15 s| >= $500k (x scale) ...
+    absorb_min_move_pct: float = 0.03   # ... must move price >= 0.03 % the same way, else ABSORPTION TRAP
+    macro_vwap_s: float = 300.0         # rolling 5 m VWAP
+    macro_vwap_min_s: float = 240.0     # VWAP 5 m needs >= 4 min of prints
+    macro_candle_s: float = 300.0       # 5 m candles for the EMA
+    macro_ema_n: int = 20               # EMA-20 of 5 m closes (seeded from REST klines at start)
 
 
 USD_SCALE = {'BTCUSDT': 1.0, 'ETHUSDT': 0.5, 'SOLUSDT': 0.1, 'XRPUSDT': 0.1, 'DOGEUSDT': 0.1}
@@ -112,6 +119,40 @@ def chop_locked(k, was_locked: bool = True, cfg: 'SignalConfig' = None) -> bool:
     return was_locked
 
 
+def absorption(f: dict, cfg: 'SignalConfig' = None) -> dict:
+    """Price-Delta Concordance: heavy aggressor flow that does not move price = a limit wall absorbing it.
+    -> {'state': CLEAR|TRAPPED|UNKNOWN, 'blocks': 'BUY'|'SELL'|None, 'cvd_15s', 'vel_pct', 'why'}"""
+    cfg = cfg or SignalConfig()
+    cvd, vel = f.get('cvd_15s'), f.get('px_vel_15s')
+    if cvd is None or vel is None:
+        return {'state': 'UNKNOWN', 'blocks': None, 'cvd_15s': cvd, 'vel_pct': vel, 'why': 'no 15 s price history'}
+    lim, mv = cfg.absorb_usd * cfg.usd_scale, cfg.absorb_min_move_pct
+    why = f'CVD 15s {cvd / 1e6:+.2f}M · giá {vel:+.3f}%'
+    if cvd >= lim and vel < mv:
+        return {'state': 'TRAPPED', 'blocks': 'BUY', 'cvd_15s': cvd, 'vel_pct': vel,
+                'why': f'{why} < +{mv}% (tường Ask hấp thụ lực mua)'}
+    if cvd <= -lim and vel > -mv:
+        return {'state': 'TRAPPED', 'blocks': 'SELL', 'cvd_15s': cvd, 'vel_pct': vel,
+                'why': f'{why} > -{mv}% (tường Bid hấp thụ lực bán)'}
+    return {'state': 'CLEAR', 'blocks': None, 'cvd_15s': cvd, 'vel_pct': vel, 'why': why}
+
+
+def macro_bias(f: dict, cfg: 'SignalConfig' = None) -> dict:
+    """5 m macro gate: price > VWAP 5 m AND EMA-20(5 m) rising -> LONG ONLY; mirrored -> SHORT ONLY."""
+    cfg = cfg or SignalConfig()
+    px, vw, slope, n = f.get('price'), f.get('vwap_5m'), f.get('ema5_slope'), f.get('ema5_n') or 0
+    span = f.get('vwap_5m_span') or 0.0
+    if not px or vw is None or slope is None or span < cfg.macro_vwap_min_s or n < cfg.macro_ema_n:
+        return {'name': 'WARMUP', 'allow': ('BUY', 'SELL'),
+                'why': f'VWAP5m {span:.0f}/{cfg.macro_vwap_min_s:.0f}s · EMA {n}/{cfg.macro_ema_n} nến'}
+    why = f'giá {(px / vw - 1) * 100:+.3f}% vs VWAP5m · EMA20 dốc {slope:+.1f}'
+    if px > vw and slope > 0:
+        return {'name': 'LONG ONLY', 'allow': ('BUY',), 'why': why}
+    if px < vw and slope < 0:
+        return {'name': 'SHORT ONLY', 'allow': ('SELL',), 'why': why}
+    return {'name': 'MIXED', 'allow': ('BUY', 'SELL'), 'why': why}
+
+
 def config_for(symbol: str) -> SignalConfig:
     return SignalConfig(usd_scale=USD_SCALE.get(symbol.upper(), 0.1))
 
@@ -141,6 +182,12 @@ class MicroFeed:
         self.first_msg = 0.0
         self.n_trades = 0
         self.frames = 0
+        self.vw5: Deque[list] = deque()                          # [second, px*qty, qty] for VWAP 5 m
+        self.vw5_pq = self.vw5_q = 0.0
+        self.c5_bucket = None                                    # open 5 m candle (index, close)
+        self.c5_close = None
+        self.ema5 = self.ema5_prev = None
+        self.ema5_n = 0
 
     # ------------------------------------------------------------------ ingest
     def on_message(self, msg: dict, now: Optional[float] = None) -> None:
@@ -167,6 +214,15 @@ class MicroFeed:
             self.vw.append((now, px * q, q))
             self.vw_pq += px * q
             self.vw_q += q
+            sec = int(now)
+            if self.vw5 and self.vw5[-1][0] == sec:
+                self.vw5[-1][1] += px * q
+                self.vw5[-1][2] += q
+            else:
+                self.vw5.append([sec, px * q, q])
+            self.vw5_pq += px * q
+            self.vw5_q += q
+            self._candle(now, px)
             self._expire(now)
         elif '@depth' in stream:
             self.flow.on_depth(d, now)
@@ -192,7 +248,34 @@ class MicroFeed:
             if o.get('s') == self.symbol and usd > 0:
                 self.liq.append((now, 'LONG' if o.get('S') == 'SELL' else 'SHORT', usd))
 
+    def _candle(self, now: float, px: float) -> None:
+        b = int(now // self.cfg.macro_candle_s)
+        if self.c5_bucket is not None and b > self.c5_bucket and self.c5_close is not None:
+            self._close_candle(self.c5_close)
+        if self.c5_bucket is None or b >= self.c5_bucket:
+            self.c5_bucket, self.c5_close = b, px
+
+    def _close_candle(self, close: float) -> None:
+        a = 2.0 / (self.cfg.macro_ema_n + 1)
+        self.ema5_prev = self.ema5
+        self.ema5 = close if self.ema5 is None else self.ema5 + a * (close - self.ema5)
+        self.ema5_n += 1
+
+    def seed_candles(self, closes, now: Optional[float] = None) -> int:
+        """Seed the 5 m EMA with closed candles [(close_time_s, close)], oldest first (REST klines)."""
+        now = time.time() if now is None else now
+        n = 0
+        for ct, c in sorted(closes):
+            if ct <= now and c:
+                self._close_candle(float(c))
+                n += 1
+        return n
+
     def _expire(self, now: float) -> None:
+        while self.vw5 and now - self.vw5[0][0] > self.cfg.macro_vwap_s:
+            _, pq, q = self.vw5.popleft()
+            self.vw5_pq -= pq
+            self.vw5_q -= q
         while self.vw and now - self.vw[0][0] > self.cfg.vwap_window_s:
             _, pq, q = self.vw.popleft()
             self.vw_pq -= pq
@@ -203,6 +286,18 @@ class MicroFeed:
             self.cvd_long_sum -= self.cvd_long.popleft()[1]
         while self.cvd_long and now - self.cvd_long[0][0] > max(self.cfg.long_window_s, self.cfg.squeeze_box_s):
             self.cvd_long_sum -= self.cvd_long.popleft()[1]
+
+    def _concordance(self, now: float) -> dict:
+        """CVD and price change over the last absorb_window_s (price = last print at/before t-15 s)."""
+        w = self.cfg.absorb_window_s
+        ref, cvd = None, 0.0
+        for t, s, px in self.cvd_long:
+            if now - t >= w:
+                ref = px
+            elif now - t >= 0:
+                cvd += s
+        vel = (self.last / ref - 1) * 100 if (ref and self.last) else None
+        return {'cvd_15s': cvd if ref is not None else None, 'px_vel_15s': vel}
 
     # ------------------------------------------------------------------ features
     def price(self) -> Optional[float]:
@@ -250,6 +345,11 @@ class MicroFeed:
                 'trades_silent': (trade_age is None and self.first_msg and now - self.first_msg > self.cfg.trade_silent_s)
                 or (trade_age is not None and trade_age > self.cfg.trade_silent_s),
                 'trades': self.n_trades,
+                **self._concordance(now),
+                'vwap_5m': self.vw5_pq / self.vw5_q if self.vw5_q > 0 else None,
+                'vwap_5m_span': now - self.vw5[0][0] if self.vw5 else 0.0,
+                'ema5_20': self.ema5, 'ema5_n': self.ema5_n,
+                'ema5_slope': (self.ema5 - self.ema5_prev) if self.ema5_prev is not None else None,
                 **dict(zip(('ker', 'ker_span_s'), ker(((t, x) for t, _, x in self.cvd_long), now,
                                                        self.cfg.ker_window_s, self.cfg.ker_bucket_s,
                                                        self.cfg.ker_min_span_s)))}

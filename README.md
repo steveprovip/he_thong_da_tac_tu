@@ -110,3 +110,10 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **Regime-flip exit**: không thoát trong 60 s đầu; CVD lật phải giữ liên tục 20 s mới thoát (maker, không market).
 - **TP1 +0.45 %** cho 50 % khối lượng. 0.002 BTC @84k: TP1 = 0.378 U gộp; nếu runner về hoà phí, cả lệnh ≈ +0.36 U net (không phải +0.75 U).
 - UI: chip `KER 0.52 (TRENDING)` / `KER 0.28 (CHOPPY - LOCKED)` trên header và badge regime; ô QUYẾT ĐỊNH ghi `CHOP LOCKED KER …`.
+
+### 8.8 Cập nhật 07/10/2026 (h) — Bẫy hấp thụ, khiên phí 2 tầng, maker nghiêm, macro 5 phút
+- **ABSORPTION TRAP**: |CVD 15 s| ≥ $500k (× hệ số coin) mà giá không đi ≥ 0.03 % cùng chiều → cấm vào lệnh chiều đó.
+- **Khiên phí**: MFE +0.12 % → mức thoát ≥ entry + 0.04 % (thực tế dùng hoà phí thật entry + phí 2 đầu + 0.02 % nếu cao hơn: GTX +0.06 %, IOC +0.09 %). MFE +0.25 % → khoá entry + 0.15 % (≈ +0.11 % net với GTX). Đây là lệnh thoát maker: giá rơi một mạch qua mức khoá thì vẫn có thể lỗ nhỏ (SL cứng −0.20 % chặn đáy).
+- **IOC** chỉ khi CVD 10 s cùng chiều ≥ $3M **và** KER ≥ 0.60 **và** (JEV ≥ 9.2 hoặc swarm ≥ 85 %); còn lại pegged GTX 5 s, không đuổi taker.
+- **MACRO 5m**: giá > VWAP 5 phút và EMA-20 nến 5 phút dốc lên → chỉ LONG; ngược lại → chỉ SHORT. EMA được nạp 40 nến 5m từ REST công khai của Binance lúc khởi động; VWAP 5 phút cần 4 phút dữ liệu (trước đó = WARMUP, không chặn).
+- UI: chip `ABSORPTION`, `MACRO 5m`, `SHIELD` cạnh Win Rate.

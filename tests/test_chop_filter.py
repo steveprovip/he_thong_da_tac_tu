@@ -10,15 +10,15 @@ from tests.test_two_mode_engine import agg, depth, dump, mock_engine, opened_sho
 PX = 84_060.0
 
 
-def tape(path, now, size=0.02):
+def tape(path, now, size=0.02, burst_px=PX):
     """One print per second for 120 s: path(i) -> price, alternating aggressor side (net CVD ~ 0)."""
     f = msig.MicroFeed('BTCUSDT')
     for i in range(110):
         f.on_message(agg(path(i), size, maker=i % 2 == 0), now - 120 + i)
     for i in range(30):                                                 # 10 s burst of buying: $750k
-        f.on_message(agg(PX, 0.3, maker=False), now - 10 + i * 0.3)
+        f.on_message(agg(burst_px, 0.3, maker=False), now - 10 + i * 0.3)
     for _ in range(10):
-        f.on_message(depth(PX, PX + 0.1, bq=6.0, aq=1.0), now)
+        f.on_message(depth(burst_px, burst_px + 0.1, bq=6.0, aq=1.0), now)
     return f
 
 
@@ -31,7 +31,7 @@ def chop_feed(now=None):
 def smooth_trend_feed(now=None):
     """Same flow burst, but price climbed 0.36 % in a straight line over 2 min."""
     now = time.time() if now is None else now
-    return tape(lambda i: PX - 300.0 + i * 300.0 / 110, now)
+    return tape(lambda i: PX - 300.0 + i * 300.0 / 110, now, burst_px=PX + 30.0)   # the burst lifts price +0.04 %
 
 
 # ----------------------------------------------------------------------------- KER math

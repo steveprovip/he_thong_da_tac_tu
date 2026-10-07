@@ -195,6 +195,26 @@
     const gv = s.governor;
     if (gv) wr.title = `CHURN GOVERNOR · ${gv.trades_hour}/${gv.max_trades_hour} lệnh/h · nghỉ ${fx(gv.cooldown_s, 0)}s sau đóng · vào khi ≥${fx(gv.min_score * 100, 0)}% & edge ≥${fx(gv.min_edge_bps, 0)}bps · flow exit $${fx(gv.flow_exit_usd / 1e6, 1)}M sau ${fx(gv.flow_breath_s, 0)}s · regime-flip ±$${fx(gv.regime_flip_usd / 1e6, 1)}M`;
     txt('gov', gv ? `GOV ${gv.trades_hour}/${gv.max_trades_hour}/h · ≥${fx(gv.min_score * 100, 0)}% · edge ≥${fx(gv.min_edge_bps, 0)}bps` : 'GOV —');
+    const ab = s.absorption || {};
+    const abn = $('absorb-badge');
+    if (abn) {
+      abn.textContent = ab.state === 'TRAPPED' ? `ABSORPTION: TRAPPED (cấm ${ab.blocks})` : `ABSORPTION: ${ab.state || '—'}`;
+      abn.className = 'chip ' + (ab.state === 'TRAPPED' ? 'red' : ab.state === 'CLEAR' ? 'green' : '');
+      abn.title = ab.why || '';
+    }
+    const mc = s.macro || {};
+    const mcn = $('macro-chip');
+    if (mcn) {
+      mcn.textContent = `MACRO 5m: ${mc.name || '—'}`;
+      mcn.className = 'chip ' + (mc.name === 'LONG ONLY' ? 'green' : mc.name === 'SHORT ONLY' ? 'red' : '');
+      mcn.title = mc.why || '';
+    }
+    const shn = $('shield-chip');
+    if (shn) {
+      shn.textContent = !pos ? 'SHIELD: —' : pos.plock ? `SHIELD: PROFIT LOCK (+${fx(pos.lock_trigger_pct, 2)}%)`
+        : pos.shield ? `SHIELD: ARMED (+${fx(pos.fee_shield_trigger_pct, 2)}%)` : `SHIELD: chờ MFE +${fx(pos.fee_shield_trigger_pct, 2)}%`;
+      shn.className = 'chip ' + (pos && (pos.shield || pos.plock) ? 'green' : '');
+    }
     const ss = s.session || {};
     const split = $('pnl-split');
     split.textContent = `GROSS ${sg(ss.gross, 4)} · PHÍ ${sg(-(ss.fees || 0), 4)} · NET ${sg(ss.realized, 4)} U`;

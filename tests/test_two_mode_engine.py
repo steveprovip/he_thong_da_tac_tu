@@ -29,12 +29,12 @@ def liq(side, usd, px=100_000.0, sym=SYM):
                                                                   'ap': str(px), 'z': str(usd / px)}}}
 
 
-def trend_feed(side='BUY', now=None, sym=SYM, px=99_800.0):
+def trend_feed(side='BUY', now=None, sym=SYM, px=99_800.0, f=None):
     """Trend leg: earlier opposite prints, then $600k of aggressive flow with a one-sided book,
     price through the 60 s VWAP in the direction of the flow."""
     now = time.time() if now is None else now
     d = 1 if side == 'BUY' else -1
-    f = msig.MicroFeed(sym)
+    f = f or msig.MicroFeed(sym)
     for i in range(30):
         f.on_message(agg(px - d * (100 + (i % 2) * 250), 0.05, maker=d > 0), now - 50 + i)  # earlier, wide range
     for i in range(30):
@@ -682,7 +682,7 @@ def super_feed(usd=7_490_000.0, px=99_800.0):
 
 async def test_super_momentum_cvd_749m_jev_96_routes_ioc_and_fills_under_100ms(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0)     # KER gate of IOC: test_winrate_maximizer
     await e.sync()
     t0 = time.perf_counter()
     d = await e.tick()
@@ -702,17 +702,24 @@ def test_router_thresholds(tmp_path):
     e, _, feed = mock_engine(tmp_path)
     dec = ms.evaluate(sig(FLOW=('BUY', 1.0, 3), TREND=('BUY', 1.0, 3)), ms.Gates())[0]
     e.diag = {'consensus': 0.80, 'jev': 9.6}
-    assert e.route(dec, {'cvd_60s': 2_900_000.0}) == 'gtx'               # JEV high but CVD < $3M
-    assert e.route(dec, {'cvd_60s': -3_100_000.0}) == 'ioc'              # |CVD| counts both ways
+    hot = {'cvd_10s': 3_100_000.0, 'ker': 0.65}
+    assert e.route(dec, hot) == 'ioc'                                     # CVD 10 s >= $3M, KER >= 0.60, JEV >= 9.2
+    assert e.route(dec, dict(hot, cvd_10s=2_900_000.0)) == 'gtx'          # CVD 10 s < $3M
+    assert e.route(dec, dict(hot, cvd_10s=-3_100_000.0)) == 'gtx'         # flow AGAINST the BUY
+    assert e.route(dec, dict(hot, ker=0.55)) == 'gtx'                     # tape not straight enough
     e.diag = {'consensus': 0.86, 'jev': 5.0}
-    assert e.route(dec, {'cvd_60s': 0.0}) == 'ioc'                       # raw consensus >= 85 %
+    assert e.route(dec, hot) == 'ioc'                                     # raw consensus >= 85 % instead of JEV
+    assert e.route(dec, {'cvd_60s': 9e6}) == 'gtx'                        # consensus alone no longer buys IOC
+    e.diag = {'consensus': 0.80, 'jev': 9.1}
+    assert e.route(dec, hot) == 'gtx'
     e.p = replace(e.p, super_edge=False)
-    assert e.route(dec, {'cvd_60s': 9e6}) == 'gtx'
+    e.diag = {'consensus': 0.99, 'jev': 9.9}
+    assert e.route(dec, hot) == 'gtx'
 
 
 async def test_ioc_without_liquidity_inside_slip_expires_and_rescans_in_1s(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed, ioc_max_slip_pct=0.0)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, ioc_max_slip_pct=0.0, super_ker=0.0)
     await e.sync()
     orig = venue.quote
     venue.quote = lambda s: (orig(s)[0], orig(s)[1] + 50)              # the ask gapped away before our IOC
@@ -731,7 +738,7 @@ async def test_unfilled_gtx_resets_to_scanning_with_1s_cooldown(tmp_path):
 
 async def test_ioc_entry_uses_taker_aware_breakeven(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0)     # KER gate of IOC: test_winrate_maximizer
     await e.sync()
     await e.tick()
     await e.sync()
@@ -746,8 +753,9 @@ async def test_ioc_entry_uses_taker_aware_breakeven(tmp_path):
 
 def test_default_execution_profile_values():
     p = eng.PROFILES['demo']
-    assert (p.gtx_ttl_s, p.peg_max_drift_pct, p.peg_min_score, p.unfilled_cooldown_s) == (6.0, 0.15, 0.768, 1.0)
-    assert (p.super_consensus, p.super_jev, p.super_cvd_usd, p.ioc_max_slip_pct) == (0.85, 9.0, 3_000_000.0, 0.03)
+    assert (p.gtx_ttl_s, p.peg_max_drift_pct, p.peg_min_score, p.unfilled_cooldown_s) == (5.0, 0.15, 0.768, 1.0)
+    assert (p.super_consensus, p.super_jev, p.super_cvd_usd, p.ioc_max_slip_pct) == (0.85, 9.2, 3_000_000.0, 0.03)
+    assert p.super_ker == 0.60
 
 
 # ----------------------------------------------------------------------------- velocity / wall / squeeze / tiers / stats
@@ -792,11 +800,12 @@ async def test_squeeze_breakout_lifts_consensus_to_super_edge(tmp_path):
     fx = feed.features()
     s = msig.signals(fx)
     assert fx['box_pct'] <= 0.08 and s['SQUEEZE']['side'] == 'BUY' and s['SURGE']['side'] == 'BUY'
-    e, venue, _ = mock_engine(tmp_path, feed=feed)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0, gtx_ttl_s=0.2)
     await e.sync()
     d = await e.tick()
     assert e.diag['consensus'] >= 0.95 and e.diag['confluence']['C5_SQUEEZE']
-    assert d.allowed and e.pos and e.pos['entry_type'] == 'IOC'
+    # 2026-10-07h strict maker: consensus 100 % alone no longer buys IOC - CVD 10 s is $0.87M < $3M -> pegged GTX
+    assert d.allowed and e.route(d, fx) == 'gtx' and not any(not f['maker'] for f in venue.fills)
 
 
 async def test_four_tier_profit_ladder_and_tight_trail(tmp_path):

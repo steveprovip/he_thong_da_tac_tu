@@ -70,3 +70,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Ledger 19 trades: gross +0.8500, fees 1.5476, net -0.6976; trades 18/19 (REGIME exits) held 261 s / 206 s with MFE ~0 % - the 60 s min hold alone would not have saved them; the KER lock and 20 s debounce target them.
 - micro_signals.ker() (5 s buckets, 120 s window, 60 s min span), chop_locked() hysteresis 0.40/0.45, features ker/ker_span_s; Engine.chop_locked + chop_reason in churn_gate; Profile tp_pct 0.45, regime_flip_min_hold_s 60, regime_flip_debounce_s 20, ker_gate; snapshot['chop'].
 - tests/test_chop_filter.py (10). Verification: pytest 861 passed.
+
+## 2026-10-07 (h) Absorption trap, 2-tier fee shield, strict maker routing, 5 m macro gate
+- micro_signals: absorption() (CVD 15 s vs price velocity 15 s), macro_bias() (VWAP 5 m + EMA-20 of 5 m closes), MicroFeed vw5 per-second buckets, 5 m candles + EMA, seed_candles(); features cvd_15s, px_vel_15s, vwap_5m(_span), ema5_20/slope/n.
+- engine: churn_gate adds MACRO + ABSORPTION; shield_price (max(entry+0.04 %, fee-true BE)) and plock_price (+0.15 % at MFE +0.25 %) in soft and hard modes; route() IOC = CVD10 with side >= $3M AND KER >= 0.60 AND (JEV >= 9.2 or consensus >= 85 %); gtx_ttl_s 5; fetch_klines_5m + Runner.seed_macro; snapshot absorption/macro; ledger px_vel_15s/macro/plock.
+- Legacy IOC mechanics tests pin super_ker=0 (squeeze box has KER ~0.22 by construction).
+- tests/test_winrate_maximizer.py (17). Verification: pytest 878 passed. Kline fetch not verifiable from the sandbox VM (proxy 403).

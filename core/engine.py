@@ -58,7 +58,7 @@ class Profile:
     leverage: int = 5
     margin_type: str = 'CROSSED'
     entry: str = 'gtx'                  # Post-Only GTX only; MARKET is kept for emergency reduce-only exits
-    gtx_ttl_s: float = 6.0              # pegged maker window; unfilled -> cancel, cooldown 1 s
+    gtx_ttl_s: float = 5.0              # pegged maker window; unfilled -> cancel, cooldown 1 s, never chase taker
     qty: float = 0.0                    # 0 -> smallest tradable size (min_qty / min_notional x 1.02)
     tp_pct: float = 0.45                # TP1: reduce-only GTX for tp1_frac of the size (0.35 -> 0.45, 2026-10-07g)
     tp1_frac: float = 0.5
@@ -86,10 +86,16 @@ class Profile:
     unfilled_cooldown_s: float = 1.0
     super_edge: bool = True             # IOC taker entry on super-momentum
     super_consensus: float = 0.85       # raw swarm consensus (not the JEV-lifted score)
-    super_jev: float = 9.0
-    super_cvd_usd: float = 3_000_000.0  # |CVD 60 s|, x symbol usd_scale
+    super_jev: float = 9.2
+    super_cvd_usd: float = 3_000_000.0  # CVD 10 s IN the trade direction, x symbol usd_scale
+    super_ker: float = 0.60             # IOC also needs KER(2 min) >= 0.60 (straight, steep tape)
     ioc_max_slip_pct: float = 0.03      # IOC limit = touch +/- 0.03 %: bounded taker, never a blind MARKET
     be_offset_pct: float = 0.02         # breakeven stop = entry + all fees + slip + 0.02 %
+    fee_shield_pct: float = 0.04        # T2 at +0.12 %: exit level >= entry + 0.04 % (fee-true BE when higher)
+    lock_trigger_pct: float = 0.25      # T2b PROFIT LOCK: MFE >= +0.25 % ...
+    lock_pct: float = 0.15              # ... -> exit level entry + 0.15 %
+    absorb_gate: bool = True            # block entries into an ABSORPTION TRAP (flow without price)
+    macro_gate: bool = True             # block entries against the 5 m VWAP + EMA-20 bias
     trail_activate_pct: float = 0.50    # MARIN phase 2: runner trails once +0.50 % was reached
     trail_gap_pct: float = 0.20         # trail = peak -/+ 0.20 %
     trail_tight_pct: float = 0.70       # tier 4b: from +0.70 % the runner trails 0.15 % behind the peak
@@ -441,6 +447,8 @@ class Engine:
         self.events = deque(maxlen=60)
         self.cooldown_until = 0.0
         self.chop_locked = True                       # KER unknown at start -> locked
+        self.absorb = {'state': 'UNKNOWN', 'blocks': None}
+        self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
         self.pause_until = 0.0
         self.trade_times = deque()
         self.consec_losses = 0
@@ -597,6 +605,8 @@ class Engine:
         if self.pos:                                  # MARIN reacts on every WS tick, not every REST poll
             await self.manage()
         self.chop_locked = msig.chop_locked(f.get('ker'), self.chop_locked, self.sig_cfg)
+        self.absorb = msig.absorption(f, self.sig_cfg)
+        self.macro = msig.macro_bias(f, self.sig_cfg)
         self.reg = msig.regime(f, self.sig_cfg)
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
         d, votes, diag = swarm.evaluate(self.sig, self.gates(f), self.consensus, self.p.jev_min,
@@ -629,6 +639,10 @@ class Engine:
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
         if self.p.ker_gate and self.chop_locked:
             return False, self.chop_reason()
+        if self.p.macro_gate and d.side not in self.macro.get('allow', ('BUY', 'SELL')):
+            return False, f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'
+        if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
+            return False, f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'
         if score < self.p.min_score:
             return False, f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'
         if edge < self.p.min_edge_bps:
@@ -658,9 +672,10 @@ class Engine:
             return 'gtx'
         diag = self.diag or {}
         cons, jev = diag.get('consensus', 0.0), diag.get('jev', 0.0)
-        cvd = abs(f.get('cvd_60s') or 0.0)
+        cvd10 = (f.get('cvd_10s') or 0.0) * (1 if decision.side == 'BUY' else -1)   # flow WITH the trade
         need = self.p.super_cvd_usd * self.feed.cfg.usd_scale
-        if cons >= self.p.super_consensus or (jev >= self.p.super_jev and cvd >= need):
+        ker = f.get('ker') or 0.0
+        if cvd10 >= need and ker >= self.p.super_ker and (cons >= self.p.super_consensus or jev >= self.p.super_jev):
             return 'ioc'
         return 'gtx'
 
@@ -769,6 +784,7 @@ class Engine:
                         'adverse_usd': 0.0, 'regime': (self.reg or {}).get('name'),
                         'trigger_usd': abs(f.get('cvd_exit_win') or 0.0), 'flow_limit': self.flow_limit(f),
                         'edge_bps': (self.diag or {}).get('edge_bps'), 'ker': f.get('ker'),
+                        'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
                         'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'], 'entry_type': route.upper(),
@@ -839,6 +855,18 @@ class Engine:
         d = 1 if p['side'] == 'BUY' else -1
         off = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0 + self.p.be_offset_pct
         return round_tick(p['entry'] * (1 + d * off / 100.0), self.spec['tick'], 'up' if d > 0 else 'down')
+
+    def shield_price(self, p: dict) -> float:
+        """Fee shield: the better of entry + fee_shield_pct and the fee-true maker breakeven."""
+        d = 1 if p['side'] == 'BUY' else -1
+        fixed = round_tick(p['entry'] * (1 + d * self.p.fee_shield_pct / 100.0), self.spec['tick'],
+                           'up' if d > 0 else 'down')
+        be = self.soft_be_price(p)
+        return max(fixed, be) if d > 0 else min(fixed, be)
+
+    def plock_price(self, p: dict) -> float:
+        d = 1 if p['side'] == 'BUY' else -1
+        return round_tick(p['entry'] * (1 + d * self.p.lock_pct / 100.0), self.spec['tick'], 'up' if d > 0 else 'down')
 
     def adverse_flow(self, p: dict) -> float:
         """USD of aggressor flow AGAINST the position, since entry, inside the last flow_exit_s."""
@@ -972,7 +1000,9 @@ class Engine:
         if p['mfe_pct'] >= self.p.microbe_trigger_pct:
             cands.append((self.mbe_price(p), 'LOCK'))
         if p['mfe_pct'] >= self.p.be_trigger_pct:
-            cands.append((self.soft_be_price(p), 'BE'))
+            cands.append((self.shield_price(p), 'BE'))
+        if p['mfe_pct'] >= self.p.lock_trigger_pct:
+            cands.append((self.plock_price(p), 'PROFIT'))
         if p['mfe_pct'] >= self.p.trail_activate_pct:
             gap = self.p.trail_tight_gap_pct if p['mfe_pct'] >= self.p.trail_tight_pct else self.p.trail_gap_pct
             cands.append((round_tick(p['peak'] * (1 - d * gap / 100.0), self.spec['tick'], 'down' if d > 0 else 'up'),
@@ -983,12 +1013,16 @@ class Engine:
                 if k != kind:
                     self.event({'LOCK': f'MARIN T1 MICRO-LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
                                         f'{self.p.microbe_lock_pct}%, loss <= fees)',
-                                'BE': f'MARIN T2 BREAKEVEN at {fav:+.3f}% -> exit level {px:g} (entry + fees + '
-                                      f'{self.p.be_offset_pct}% net)',
+                                'BE': f'MARIN T2 FEE-SHIELD at {fav:+.3f}% -> exit level {px:g} (>= entry +'
+                                      f'{self.p.fee_shield_pct}% and entry + fees + {self.p.be_offset_pct}%)',
+                                'PROFIT': f'MARIN T2b PROFIT LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
+                                          f'{self.p.lock_pct}%)',
                                 'TRAIL': f'MARIN T4 TRAIL {p.get("trail_gap")}% behind peak {p["peak"]:g} -> {px:g}'}[k])
                 level, kind = px, k
-        if kind in ('BE', 'TRAIL'):
+        if kind in ('BE', 'PROFIT', 'TRAIL'):
             p['be_locked'] = True
+        if kind in ('PROFIT', 'TRAIL'):
+            p['plock'] = True
         if kind == 'LOCK':
             p['mbe_locked'] = True
         p['trail_on'] = kind == 'TRAIL'
@@ -1004,6 +1038,10 @@ class Engine:
             target, kind = self.mbe_price(p), 'MBE'
         if not p['be_locked'] and p['mfe_pct'] >= self.p.be_trigger_pct:
             target, kind = self.be_price(p), 'BE'
+        if not p.get('plock') and p['mfe_pct'] >= self.p.lock_trigger_pct:
+            lk = max(self.plock_price(p), self.be_price(p)) if d > 0 else min(self.plock_price(p), self.be_price(p))
+            if d * (lk - (target if target is not None else p['sl'])) > 0:
+                target, kind = lk, 'PROFIT'
         if p['mfe_pct'] >= self.p.trail_activate_pct:
             trail = round_tick(p['peak'] * (1 - d * self.p.trail_gap_pct / 100.0), self.spec['tick'],
                                'down' if d > 0 else 'up')
@@ -1020,9 +1058,12 @@ class Engine:
                 elif kind == 'BE' and not p['be_locked']:
                     p['be_locked'] = True
                     self.event(f'MARIN BREAKEVEN LOCK at +{fav:.3f}% -> stop {target:g} (net >= +{self.p.be_offset_pct}%)')
+                elif kind == 'PROFIT':
+                    p['be_locked'] = p['plock'] = True
+                    self.event(f'MARIN PROFIT LOCK at +{fav:.3f}% -> stop {target:g} (entry +{self.p.lock_pct}%)')
                 elif kind == 'TRAIL':
                     p['be_locked'] = p['trail_on'] = True
-        elif (target is not None and d * (mark - target) <= 0 and kind in ('MBE', 'BE')
+        elif (target is not None and d * (mark - target) <= 0 and kind in ('MBE', 'BE', 'PROFIT')
               and d * (target - p['sl']) > 0):
             self.event(f'MARIN {kind} {target:g} already crossed at mark {mark:g} -> close reduce-only')
             await self.close(kind)
@@ -1105,7 +1146,8 @@ class Engine:
                'mfe_pct': p['mfe_pct'], 'adverse_usd': p.get('adverse_usd'), 'regime': p.get('regime'),
                'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
                'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
-               'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'hold_s': self.clock() - p['opened'],
+               'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
+               'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False), 'hold_s': self.clock() - p['opened'],
                'latency_ms': p['latency_ms'], 'entry_type': p.get('entry_type', 'GTX')}
         self.pos = None
         self.phase = 'SCANNING'
@@ -1209,6 +1251,8 @@ class Engine:
                 'flow_exit_usd': p.get('flow_limit') or self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
                 'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - p['opened'])) if p else None,
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
+                'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
+                'fee_shield_trigger_pct': self.p.be_trigger_pct, 'lock_trigger_pct': self.p.lock_trigger_pct,
                 'microbe_trigger_pct': self.p.microbe_trigger_pct,
                 'tp1_filled': p.get('tp1_filled'), 'tp_qty': p.get('tp_qty'), 'mfe_pct': p.get('mfe_pct'),
                 'be_price': self.be_price(p) if p and self.spec else None,
@@ -1255,7 +1299,9 @@ class Engine:
                                                'liq_long_usd', 'liq_short_usd', 'stale', 'trades_silent',
                                                'book_age_s', 'trade_age_s', 'trades', 'cvd_3m', 'cvd_vel_10s',
                                                'cvd_vel_60s', 'depth10_imb', 'box_pct', 'box_lo', 'box_hi',
-                                               'ker', 'ker_span_s')},
+                                               'ker', 'ker_span_s', 'cvd_15s', 'px_vel_15s', 'vwap_5m',
+                                               'vwap_5m_span', 'ema5_20', 'ema5_slope', 'ema5_n')},
+            'absorption': self.absorb, 'macro': {k: v for k, v in self.macro.items() if k != 'allow'},
             'chop': {'ker': f.get('ker'), 'locked': self.chop_locked, 'gate': self.p.ker_gate,
                      'lock': self.sig_cfg.ker_lock, 'unlock': self.sig_cfg.ker_unlock,
                      'reason': self.chop_reason() if self.chop_locked else None},
@@ -1282,6 +1328,16 @@ class Engine:
 
 
 # ============================================================================ runner (one process: WS + engine + UI)
+def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
+    """Closed 5 m candles [(close_time_s, close)] from Binance USD-M mainnet public REST."""
+    import urllib.request
+    url = f'https://fapi.binance.com/fapi/v1/klines?symbol={symbol.upper()}&interval=5m&limit={int(limit)}'
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        rows = json.loads(r.read().decode())
+    now_ms = time.time() * 1000
+    return [(k[6] / 1000.0, float(k[4])) for k in rows if k[6] < now_ms]
+
+
 class Runner:
     def __init__(self, mode: str, allow_live: bool, env: Optional[dict] = None, symbol: Optional[str] = None,
                  port: int = 8765, serve: bool = True, overrides: Optional[dict] = None):
@@ -1423,10 +1479,20 @@ class Runner:
             self.client = None
         e = await self.build(mode)
         self.mode, self.engine = mode, e
-        self.tasks = [asyncio.create_task(self.pump(e.feed, 'public')), asyncio.create_task(self.pump(e.feed, 'market')),
+        self.tasks = [asyncio.create_task(self.seed_macro(e)),
+                      asyncio.create_task(self.pump(e.feed, 'public')), asyncio.create_task(self.pump(e.feed, 'market')),
                       asyncio.create_task(self.sync_loop(e)), asyncio.create_task(self.vbook_loop(e)),
                       asyncio.create_task(self.decide_loop(e))]
         return e
+
+    async def seed_macro(self, e: Engine) -> None:
+        """EMA-20(5 m) needs 100 min of candles: seed it once from mainnet public klines (no key)."""
+        try:
+            closes = await asyncio.to_thread(fetch_klines_5m, e.feed.symbol)
+            n = e.feed.seed_candles(closes)
+            e.event(f'MACRO 5m: seeded EMA-20 with {n} closed 5 m candles (VWAP 5 m warms from live prints)')
+        except Exception as exc:
+            e.event(f'MACRO 5m: kline seed failed ({type(exc).__name__}) -> EMA warms live (100 min)')
 
     async def switch_mode(self, mode: str, confirm: str = '') -> dict:
         if mode not in MODES:
