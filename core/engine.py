@@ -37,6 +37,56 @@ from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, roun
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / 'data' / 'engine_trades.jsonl'
+LEDGER_SCHEMA = 2                      # 2026-10-07q: + policy/code, basis, stage latency, markouts (additive)
+MARKOUT_S = (1.0, 5.0, 30.0)           # post-fill markouts of the venue mid, signed with the trade (bps)
+
+
+def code_version(root: Path = ROOT) -> Optional[str]:
+    """Short commit of the checkout (read from .git, no subprocess); None when unknown. Dirty state not tracked."""
+    try:
+        head = (root / '.git' / 'HEAD').read_text(encoding='utf-8').strip()
+        if not head.startswith('ref:'):
+            return head[:10]
+        ref = head.split(' ', 1)[1].strip()
+        f = root / '.git' / ref
+        if f.exists():
+            return f.read_text(encoding='utf-8').strip()[:10]
+        for line in (root / '.git' / 'packed-refs').read_text(encoding='utf-8').splitlines():
+            if line.endswith(' ' + ref):
+                return line.split(' ', 1)[0][:10]
+    except OSError:
+        pass
+    return None
+
+
+CODE_VERSION = code_version()
+
+
+def policy_id(p) -> str:
+    """Stable 10-hex id of the exact profile (every threshold/flag): rows of different configs never mix."""
+    import hashlib
+    return hashlib.sha1(json.dumps(asdict(p), sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def basis_bps(signal_mid: Optional[float], venue_mid: Optional[float]) -> Optional[float]:
+    """Execution venue mid vs signal feed mid (bps). Demo venue = USD-M testnet book, independent of mainnet."""
+    if not signal_mid or not venue_mid:
+        return None
+    return round((venue_mid / signal_mid - 1.0) * 1e4, 3)
+
+
+async def kill_switch(engines) -> None:
+    """Dashboard KILL: tracked positions close through Engine.close('KILL') so the ledger records them;
+    untracked venue positions are flattened as before."""
+    for x in engines:
+        try:
+            if x.pos:
+                async with x.lock:
+                    await x.close('KILL')
+            else:
+                await x.venue.flatten(x.p.symbol)
+        except Exception as exc:
+            x.event(f'flatten error {exc}')
 SHUTDOWN_FILE = ROOT / 'data' / 'shutdown_request.json'
 MODES = ('demo', 'live')
 SYMBOLS = ('BTCUSDT', 'DOGEUSDT', 'SOLUSDT')
@@ -106,7 +156,8 @@ class Profile:
     max_positions: int = 3              # ... at most 3 at once ...
     portfolio_risk_usdt: float = 1.0    # ... money at all stops (fees included) <= 1.0 U ...
     portfolio_margin_frac: float = 0.20  # ... and margin in use <= 20 % of the wallet
-    convex_sizing: bool = True          # score >= 0.90 + OFI >= 0.65 + CVD 60 s >= $1M with the trade -> 1.5x
+    convex_sizing: bool = False         # score >= 0.90 + OFI >= 0.65 + CVD 60 s >= $1M -> 1.5x (OFF 10-07q: the
+                                        # swarm score is not a calibrated probability; no out-of-sample evidence)
     convex_score: float = 0.90
     convex_ofi: float = 0.65
     convex_cvd60_usd: float = 1_000_000.0
@@ -127,9 +178,12 @@ class Profile:
     eject_hard_s: float = 360.0         # BE order still unfilled at 360 s -> re-peg at the touch (thesis is dead)
     alt_boost: bool = True              # SOL/DOGE at swarm vote >= 0.90 -> size base..max of ALT_SIZE (Kelly-scaled)
     alt_boost_score: float = 0.90
+    alt_size_boost: bool = False        # the vote >= 90 % SIZE lift itself (OFF 10-07q, same reason as convex);
+                                        # alt_boost keeps the BTC 15 % risk share and the BTC probe rule
+    order_log: bool = True              # every entry attempt -> engine_orders.jsonl (fill / cancel / reject stats)
     alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
-    alt_kelly_min_n: int = 5            # ... needs >= 5 of them, else the boost stays at the base size
+    alt_kelly_min_n: int = 20           # ... needs >= 20 of them (was 5: 7 SOL trades sized 0.45 -> 1.06 SOL)
     alt_kelly_full: float = 0.10        # quarter-Kelly f >= 0.10 -> the boost reaches ALT_SIZE max
     btc_probe_qty: float = 0.0001       # BTC outside a clean high-VFR tape, or over its 15 % budget: probe size only
     probe_refuse_cooldown_s: float = 30.0   # probe below the venue minimum -> BTC rests 30 s before re-asking
@@ -703,7 +757,7 @@ class Engine:
 
     def alt_boosted(self, d: Decision, diag: dict) -> bool:
         """SOL/DOGE priority: raw swarm vote (not the JEV lift) >= 0.90."""
-        if not self.p.alt_boost or not self.is_alt() or d is None or not d.side:
+        if not (self.p.alt_boost and self.p.alt_size_boost) or not self.is_alt() or d is None or not d.side:
             return False
         return max(d.score, (diag or {}).get('consensus') or 0.0) >= self.p.alt_boost_score - 1e-9
 
@@ -781,11 +835,13 @@ class Engine:
         wins, losses = [x for x in pnl if x > 0], [x for x in pnl if x <= 0]
         gw, gl = sum(wins), -sum(losses)
         n = len(pnl)
+        known = [r for r in rows if r.get('gross') is not None and r.get('fee') is not None]
         return {'n': n, 'wins': len(wins), 'losses': len(losses), 'win_rate': len(wins) / n if n else None,
+                'rows_unknown_cost': n - len(known), 'gross_known': sum(float(r['gross']) for r in known),
                 'avg_win': gw / len(wins) if wins else None, 'avg_loss': -gl / len(losses) if losses else None,
                 'profit_factor': gw / gl if gl > 0 else None, 'no_losses': gl == 0 and gw > 0,
                 'expectancy': sum(pnl) / n if n else None, 'net': sum(pnl),
-                'fees': sum(float(r.get('fee') or 0) for r in rows)}
+                'fees': sum(float(r['fee']) for r in known)}
 
     @property
     def own_book(self) -> bool:
@@ -1196,15 +1252,61 @@ class Engine:
 
     async def execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                       entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
+        """Entry + one engine_orders.jsonl row per attempt that got past the slot check."""
+        self._xm = None
+        res = await self._execute(side, decision, path, tag, entry, hold_s)
+        if self._xm is not None and self.p.order_log:
+            self._log_order(res, self._xm, decision)
+        return res
+
+    def _log_order(self, res: dict, xm: dict, decision: Decision) -> None:
+        err = str(res.get('error') or '')
+        if res.get('ok'):
+            q = float(res.get('qty') or 0)
+            outcome = 'FILLED' if q >= (xm.get('qty_req') or 0) - 1e-12 else 'PARTIAL'
+        elif 't_send' not in xm:
+            outcome = 'REFUSED'
+        elif 'post-only' in err:
+            outcome = 'REJECTED'
+        elif 'VPIN' in err:
+            outcome = 'TOXIC'
+        elif 'khớp' in err:
+            outcome = 'UNFILLED'
+        else:
+            outcome = 'ERROR'
+        ms = lambda a, b: round((xm[b] - xm[a]) * 1000, 1) if xm.get(a) and xm.get(b) else None
+        row = {'t': self.clock(), 'schema': 1, 'mode': self.p.mode, 'venue': self.venue.label, 'symbol': self.p.symbol,
+               'side': xm.get('side'), 'path': xm.get('path'), 'tag': xm.get('tag'), 'route': xm.get('route'),
+               'outcome': outcome, 'qty_req': xm.get('qty_req'), 'qty_filled': float(res.get('qty') or 0) or None,
+               'px_first': xm.get('px_first'), 'px_last': xm.get('px_last'), 'reprices': xm.get('reprices'),
+               'post_rejects': xm.get('post_rejects', 0), 'signal_mid': xm.get('signal_mid'),
+               'venue_mid': xm.get('venue_mid'), 'basis_bps': basis_bps(xm.get('signal_mid'), xm.get('venue_mid')),
+               'decide_to_send_ms': ms('t0', 't_send'), 'ack_ms': xm.get('ack_ms'),
+               'fill_wait_ms': ms('t_ack', 't_fill'), 'total_ms': ms('t0', 't_done'),
+               'score': decision.score, 'consensus': (self.diag or {}).get('consensus'),
+               'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
+               'error': err[:160] or None}
+        try:
+            path = self.ledger.parent / 'engine_orders.jsonl'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, 'a', encoding='utf-8') as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + '\n')
+        except OSError:
+            pass
+
+    async def _execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
+                       entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
         if self.busy or self.pos or self.slot_block():
             why = self.slot_block()
             return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
+        xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag}
         try:
             await self.refresh_book(0.0)
             f = {**self.feed.features(self.clock()), **{k: v for k, v in self.book().items() if v is not None}}
+            xm.update(signal_mid=self.feed.price(), venue_mid=self.book().get('price'))
             px = self.gtx_price(side, f)
             if px is None:
                 return {'ok': False, 'error': 'no book'}
@@ -1263,6 +1365,7 @@ class Engine:
                 self.event(f'RUNE portfolio refused {side} {pl["qty_str"]}: {why}')
                 return {'ok': False, 'error': why}
             self.pending_risk = pl['loss_at_sl']
+            xm.update(qty_req=pl['qty'], route=route, px_first=px)
             intent = MicroIntent(sym, side, pl['qty_str'], route, tag, int(self.clock() * 1000))
             token = self.authority.issue(intent, decision)
             self.authorized += 1
@@ -1274,15 +1377,23 @@ class Engine:
             if route == 'ioc':
                 d = 1 if side == 'BUY' else -1
                 lim = round_tick(touch * (1 + d * self.p.ioc_max_slip_pct / 100.0), tick, 'up' if d > 0 else 'down')
+                xm['t_send'] = time.perf_counter()
                 fill, filled = await self.venue.ioc(sym, side, pl['qty_str'], fmt(lim, tick), cid)
+                xm['t_ack'] = xm['t_fill'] = time.perf_counter()
+                xm['ack_ms'] = round((xm['t_ack'] - xm['t_send']) * 1000, 1)
                 px = lim
             else:
                 backoff = 0
+                xm['t_send'] = time.perf_counter()
                 while True:
                     try:
+                        tc = time.perf_counter()
                         await self.venue.limit_gtx(sym, side, pl['qty_str'], fmt(px, tick), cid)
+                        xm['t_ack'] = time.perf_counter()
+                        xm['ack_ms'] = round((xm['t_ack'] - tc) * 1000, 1)       # send -> REST ack (network)
                         break
                     except PostOnlyReject:
+                        xm['post_rejects'] = backoff + 1
                         if backoff >= self.p.gtx_backoff_ticks:
                             self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
                             self.event(f'GTX {side} @ {fmt(px, tick)} rejected post-only x{backoff + 1} (book moved)'
@@ -1301,6 +1412,7 @@ class Engine:
                 while time.monotonic() < deadline:
                     st = await self.venue.order(sym, cid)
                     if st.get('status') == 'FILLED':
+                        xm['t_fill'] = time.perf_counter()               # seen by polling (+<= 0.1 s + REST)
                         break
                     v = self.feed.vpin_now() if self.p.vpin_gate else None
                     vs = self.feed.vpin_side() if v is not None else None
@@ -1338,6 +1450,9 @@ class Engine:
                 self.event(f'PEG {side} repriced x{reprices} {fmt(px0, tick)} -> {fmt(px, tick)} '
                            f'({"filled" if filled > 0 else "unfilled"})')
             ms = (time.perf_counter() - t0) * 1000
+            xm.update(t_done=time.perf_counter(), reprices=reprices, px_last=px)
+            if filled > 0 and not xm.get('t_fill'):
+                xm['t_fill'] = xm['t_done']                       # partial fill found at cancel time
             self.latency.append(ms)
             if filled <= 0:
                 self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
@@ -1379,7 +1494,13 @@ class Engine:
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
                         'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'], 'entry_type': route.upper(),
-                        'entry_fee_bps': self.p.taker_bps if route == 'ioc' else self.p.maker_bps}
+                        'entry_fee_bps': self.p.taker_bps if route == 'ioc' else self.p.maker_bps,
+                        'signal_mid': xm.get('signal_mid'), 'venue_mid': xm.get('venue_mid'),
+                        'basis_bps': basis_bps(xm.get('signal_mid'), xm.get('venue_mid')),
+                        'ack_ms': xm.get('ack_ms'),
+                        'fill_wait_ms': round((xm['t_fill'] - xm['t_ack']) * 1000, 1)
+                        if xm.get('t_fill') and xm.get('t_ack') else None,
+                        'markout_bps': {}}
             self.trade_times.append(self.clock())
             how = (f'IOC TAKER super-edge, cons {(self.diag or {}).get("consensus", 0) * 100:.1f}% JEV '
                    f'{(self.diag or {}).get("jev", 0):.1f}' if route == 'ioc' else 'POST-ONLY GTX maker')
@@ -1592,6 +1713,12 @@ class Engine:
         fav = d * (mark / p['entry'] - 1) * 100
         peak_fav = d * (p['peak'] / p['entry'] - 1) * 100
         p['mfe_pct'] = max(p['mfe_pct'], peak_fav)
+        age = self.clock() - p['opened']
+        mk = p.setdefault('markout_bps', {})
+        for h in MARKOUT_S:
+            k = f'{h:g}s'
+            if k not in mk and age >= h:
+                mk[k] = [round(fav * 100, 3), round(age, 2)]    # [bps with the trade, actual age at sample]
         if p.get('exiting'):
             x = p['exiting']
             if x.get('floor') and self.clock() - p['opened'] >= self.p.eject_hard_s:
@@ -1916,7 +2043,10 @@ class Engine:
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
-               'probe': p.get('probe'),
+               'probe': p.get('probe'), 'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
+               'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
+               'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),
+               'ack_ms': p.get('ack_ms'), 'fill_wait_ms': p.get('fill_wait_ms'), 'markout_bps': p.get('markout_bps'),
                'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
                'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
                'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],
@@ -2100,8 +2230,12 @@ class Engine:
             'position': self.position_row(), 'open_orders': self.orders, 'trade_history': list(self.history)[:30],
             'session': {'trades': len(self.history), 'wins': sum(1 for r in self.history if (r.get('pnl') or 0) > 0),
                         'realized': self.day_pnl, 'kill': self.p.daily_kill_usdt,
-                        'gross': sum(r.get('gross', r.get('pnl') or 0) or 0 for r in self.history),
-                        'fees': sum(r.get('fee') or 0 for r in self.history)},
+                        'gross': sum(r['gross'] for r in self.history if r.get('gross') is not None
+                                     and r.get('fee') is not None),
+                        'fees': sum(r['fee'] for r in self.history if r.get('gross') is not None
+                                    and r.get('fee') is not None),
+                        'rows_unknown_cost': sum(1 for r in self.history if r.get('gross') is None
+                                                 or r.get('fee') is None)},
             'cost': self.cost.view(),
             'stats': self.stats(), 'stats_today': self.stats(list(self.history)),
             'exec_book': {k: v for k, v in self.book().items()} if self.spec else None,
@@ -2323,11 +2457,7 @@ class Runner:
                 if self.tel.state.get('shutdown'):
                     e.event('KILL SWITCH -> flatten + halt')
                     e.halted = 'KILL SWITCH'
-                    for x in (self.engines.values() or [e]):
-                        try:
-                            await x.venue.flatten(x.p.symbol)
-                        except Exception as exc:
-                            x.event(f'flatten error {exc}')
+                    await kill_switch(list(self.engines.values()) or [e])
                     await asyncio.sleep(1.0)
                     raise SystemExit(0)
             await asyncio.sleep(0.5)

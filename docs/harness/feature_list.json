@@ -7,6 +7,22 @@
       "dependencies": [],
       "status": "done",
       "evidence": "3 MCP handshake passes; local search and DBX read call passed; 12 adapter tests passed, 1 skipped; separate live account/API prerequisites documented in docs/AI_TOOLKIT.md."
+    },
+    {
+      "id": "claude-evidence-led-brief-20261007",
+      "name": "Claude profitability research prompt and setup guidance",
+      "description": "Prepare source-backed log-first prompts and repo guidance; no trading runtime changes or app settings applied",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "4 prompts/setup/source files; dated 34-row DEMO audit; CLAUDE.md guidance; post-edit init.sh 1033 project tests passed and toolkit 15 passed/1 skipped; artifact consistency checks passed. Cowork Instructions/model selection require app entry."
+    },
+    {
+      "id": "research-instrumentation-20261007q",
+      "name": "Ledger accounting, order/latency instrumentation, sizing safety",
+      "description": "UNKNOWN-aware stats, KILL settles to ledger, engine_orders.jsonl attempt log with stage latency/basis, ledger schema 2 with policy/code/markouts, size lifts off and Kelly n>=20",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "pytest 1052 passed 0 skipped; ledger_audit reproduces gross 0.95817999 fee 2.1141432 net -1.22563407; decision tick p99 1.46 ms (VM mock); no economic improvement claimed"
     }
   ]
 }

@@ -98,13 +98,13 @@ async def test_single_slot_mode_still_available(tmp_path):
     (0.95, 0.70, 1_200_000.0, 1.5), (0.99, 0.70, 1_200_000.0, 2.0), (0.85, 0.90, 5e6, 1.0),
     (0.95, 0.50, 1_200_000.0, 1.0), (0.95, 0.70, 900_000.0, 1.0)])
 def test_convex_size_multiplier(tmp_path, score, ofi, cvd, mult):
-    e, _, _ = mock_engine(tmp_path)
+    e, _, _ = mock_engine(tmp_path, convex_sizing=True)   # OFF by default since 10-07q
     d = replace(DEC95, score=score)
     assert e.size_mult(d, {'consensus': score, 'jev': 9.9}, {'ofi_10s': ofi, 'cvd_60s': cvd}) == mult
 
 
 def test_convex_is_directional_scaled_and_off_live(tmp_path):
-    e, _, _ = mock_engine(tmp_path)
+    e, _, _ = mock_engine(tmp_path, convex_sizing=True)
     sell = replace(ms.evaluate(sig(FLOW=('SELL', 1.0, 20), TREND=('SELL', 1.0, 20)), ms.Gates())[0], score=0.95)
     assert e.size_mult(sell, {}, {'ofi_10s': -0.7, 'cvd_60s': -1.2e6}) == 1.5
     assert e.size_mult(sell, {}, {'ofi_10s': 0.7, 'cvd_60s': 1.2e6}) == 1.0
@@ -123,7 +123,7 @@ async def test_strong_concordant_setup_opens_1_5x(tmp_path):
     ofi_frames(feed)
     x = feed.features()
     assert x['ofi_10s'] >= 0.65 and x['cvd_60s'] >= 1_000_000
-    e, venue, _ = mock_engine(tmp_path, feed=feed)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, convex_sizing=True)
     await e.sync()
     d = await fill_through(e, feed, e.tick())
     assert d.allowed and e.diag['consensus'] >= 0.90 and e.pos['size_mult'] == 1.5

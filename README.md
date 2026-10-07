@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.17 Cập nhật 07/10/2026 (q) — Kế toán, đo khớp/độ trễ, sizing an toàn
+- Gross/phí trên dashboard chỉ cộng dòng có đủ dữ liệu (dòng TEST thiếu gross/fee được đếm riêng). KILL từ dashboard giờ đóng vị thế qua MARIN và ghi ledger.
+- Mỗi lần vào lệnh ghi `data/engine_orders.jsonl` (FILLED/PARTIAL/UNFILLED/REJECTED/TOXIC/REFUSED, decide→send, send→ack, ack→fill, basis tín hiệu↔venue). Ledger schema 2 thêm policy id, commit, basis, markout 1/5/30 s.
+- Tắt mặc định: size lồi (convex) và tăng size SOL/DOGE theo phiếu swarm; Kelly cuộn cần ≥ 20 lệnh. Lý do: điểm swarm chưa hiệu chuẩn, 7 lệnh không đủ.
+- `python tools/ledger_audit.py`: baseline có khoảng tin cậy. Báo cáo: `docs/research_upgrade/`. Test: 1052 passed.
+
 ### 8.13 Phiên bản v2.3.1 (07/10/2026) — 🏆 Bản Ổn Định Sinh Lời Chậm (Stable Slow-Profit Alpha Engine)
 - **Đặc điểm thực tế**: Đã kiểm chứng sinh lời ổn định thực tế (Số dư tài khoản tăng từ 4,922.00 U lên 4,923.45 U, PnL vị thế xanh đậm +0.1781 U / +1.06% ROE).
 - **Cơ chế**: Sửa triệt để lỗi Binance code -4067 (đồng bộ khởi động êm ái khi còn vị thế/lệnh chờ).

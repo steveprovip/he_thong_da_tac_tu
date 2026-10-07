@@ -49,6 +49,7 @@ def seed(feed, rng_pct, n=240, px=None, now=None):
 
 def engine_for(tmp_path, sym, **prof):
     prof.setdefault('alt_boost', True)
+    prof.setdefault('alt_size_boost', True)        # size lift is OFF by default since 2026-10-07q
     e, venue, feed = mock_engine(tmp_path, **prof)
     e.p = replace(e.p, symbol=sym, qty=eng.SYMBOL_QTY.get(sym, 0.0))
     e.spec = dict(eng.FALLBACK_SPECS[sym])
@@ -268,7 +269,7 @@ async def test_eject_escalates_at_360s(tmp_path):
 
 # ============================================================================= Pillar 4: Thorp-Kelly scaling
 def test_rolling_kelly_on_the_7_sol_trades(tmp_path):
-    sol = engine_for(tmp_path, SOL)
+    sol = engine_for(tmp_path, SOL, alt_kelly_min_n=5)   # the 10-07p arithmetic; default min_n is 20 now
     sol.all_rows = [r for r in ledger_rows() if r.get('symbol') == SOL]
     k = sol.alt_kelly()
     assert k['n'] == 7 and k['p'] == pytest.approx(3 / 7)
@@ -276,10 +277,14 @@ def test_rolling_kelly_on_the_7_sol_trades(tmp_path):
     assert k['f_star'] == pytest.approx(0.296, abs=0.005) and k['f'] == pytest.approx(0.074, abs=0.002)
     assert sol.alt_cap(117.0, boosted=True) == pytest.approx(1.06)        # 0.70 + 0.50 x 0.74, floor 0.01
     assert sol.alt_cap(117.0) == pytest.approx(0.70)                        # no boost -> base
+    dflt = engine_for(tmp_path, SOL)
+    dflt.all_rows = sol.all_rows
+    assert dflt.p.alt_kelly_min_n == 20 and dflt.alt_kelly()['scale'] == 0.0      # 7 trades never scale (10-07q)
+    assert dflt.alt_cap(117.0, boosted=True) == pytest.approx(0.70)
 
 
 def test_kelly_floor_window_and_caps(tmp_path):
-    sol = engine_for(tmp_path, SOL)
+    sol = engine_for(tmp_path, SOL, alt_kelly_min_n=5)    # window mechanics at the old floor
     sol.all_rows = [{'symbol': SOL, 'pnl': x} for x in (0.2, -0.05, 0.2, 0.2)]
     assert sol.alt_kelly()['scale'] == 0.0                                  # 4 < 5 trades
     sol.all_rows = [{'symbol': SOL, 'pnl': x} for x in [-0.1] * 20 + [0.3] * 10 + [-0.05] * 5]
@@ -296,7 +301,7 @@ def test_kelly_floor_window_and_caps(tmp_path):
 
 async def test_sol_90pct_vote_scales_with_the_real_ledger(tmp_path):
     feeds = {'BTCUSDT': bullish_feed(), SOL: sol_feed()}
-    es, venue, _ = await scanner(tmp_path, feeds, alt_boost=True, ker_gate=False, min_edge_bps=0.0,
+    es, venue, _ = await scanner(tmp_path, feeds, alt_boost=True, alt_size_boost=True, ker_gate=False, min_edge_bps=0.0,
                                  concordance_gate=False, min_velocity_pct=0.0, fee_hurdle=False)
     sol = es[SOL]
     sol.risk.all_rows[:] = [r for r in ledger_rows() if r.get('symbol') == SOL]
@@ -304,9 +309,9 @@ async def test_sol_90pct_vote_scales_with_the_real_ledger(tmp_path):
     await sol.sync()
     p = sol.pos
     assert d.allowed and p['alt_boost'] and p['qty'] == pytest.approx(sol.alt_cap(p['entry'], True))
-    assert 0.90 <= p['qty'] <= 1.20 and p['qty'] * p['entry'] <= 140.0 + 1e-6      # $140 binds at SOL 150
+    assert p['qty'] == pytest.approx(0.70)                     # 10-07q: 7 trades < 20 -> Kelly scale 0, base size
     assert sol.risk_at_stop() <= 0.85 + 1e-9
-    assert any('ALPHA PRIORITY SOL' in ev['message'] and 'Kelly 7' in ev['message'] for ev in sol.events)
+    assert any('ALPHA PRIORITY SOL' in ev['message'] and 'scale 0.00' in ev['message'] for ev in sol.events)
 
 
 def demo_spec():

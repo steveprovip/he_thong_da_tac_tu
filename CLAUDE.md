@@ -1,6 +1,6 @@
 # 🐙 GROKTOPUS 2.0 SOTA CLAUDE CODE & OPUS 5.5 COWORK HARNESS
 
-## 1. Core Directives & Token Minimization (80% Reduction Stack)
+## 1. Core Directives & Context Efficiency (measure savings per task)
 - **Style**: Caveman + Ponytail mode. Zero conversational fluff, zero throat-clearing preambles ("Sure", "Here is..."), zero unsolicited markdown tables.
 - **Context Engineering**: Strict XML tag boundary separation (`<system_role>`, `<context>`, `<task_directive>`, `<decision_ladder>`, `<verification_gate>`).
 - **Surgical Edits**: Line-range targeted modifications only. Never re-dump full files when targeted diff chunks suffice.
@@ -30,3 +30,9 @@
 - **Multi-Asset Engine**: Live WebSocket multiplexing across `BTCUSDT`, `SOLUSDT`, `DOGEUSDT` in DEMO; Dual-Mode (Trend + Mean Reversion).
 - **Telemetry & UI**: Atomic SSE stream `/api/stream` at `http://127.0.0.1:8765`, Multi-Asset Radar Bar, Realtime Position Card.
 - **Release Tags**: Semantic version tags maintained on GitHub (`v1.0.0` through `v2.1.0`).
+
+## 5. Evidence-led research brief (2026-10-07)
+For profitability research requested by the user, read `prompts/FORM_CLAUDE_NANG_CAP_2026-10-07.md`; consult `prompts/NGUON_NANG_CAP_2026-10-07.md` only as needed. Historical milestone parameters above are not a substitute for the current code/config/logs. Read git status and the harness checkpoint before edits.
+Optimize net expectancy after actual costs within existing risk limits, then latency. Missing ledger fields are UNKNOWN, never silently zero. Heuristic edge_bps and consensus are not calibrated probabilities. Small samples do not authorize size increases; trace NO EDGE/minimum-size fallbacks. Skills and old prompts supply hypotheses, not proof of profitability or current API/fee constants.
+Use targeted context and 1–3 relevant skills. Freeze baselines, record experiments, validate strategy changes on time-separated holdout/replay with realistic fills and costs, and distinguish code tests from economic evidence. Preserve VESKA/AuthToken, RUNE veto and risk caps. Do not start/restart trading, enable live, or raise capital/leverage as part of research. Run required repo checks and record actual results/limitations and rollback in the harness.
+This file configures repository guidance for Claude Code; Cowork Instructions and model/effort must be selected in the app, not inferred from this file.

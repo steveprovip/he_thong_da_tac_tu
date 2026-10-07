@@ -42,6 +42,7 @@ def ker_tape(cfg, zig, now=None, sym='BTCUSDT'):
 
 def engine_for(tmp_path, sym, **prof):
     prof.setdefault('alt_boost', True)
+    prof.setdefault('alt_size_boost', True)        # size lift is OFF by default since 2026-10-07q
     e, venue, feed = mock_engine(tmp_path, **prof)
     e.p = replace(e.p, symbol=sym, qty=eng.SYMBOL_QTY.get(sym, 0.0))
     e.spec = dict(eng.FALLBACK_SPECS[sym])
@@ -196,7 +197,7 @@ def test_boost_needs_raw_vote_090(tmp_path):
 
 async def test_sol_100pct_vote_sizes_up_to_the_cap(tmp_path):
     feeds = {'BTCUSDT': ker_tape(msig.config_for('BTCUSDT'), 47.0), SOL: sol_feed()}
-    es, venue, _ = await scanner(tmp_path, feeds, alt_boost=True, ker_gate=False, min_edge_bps=0.0,
+    es, venue, _ = await scanner(tmp_path, feeds, alt_boost=True, alt_size_boost=True, ker_gate=False, min_edge_bps=0.0,
                                  concordance_gate=False, min_velocity_pct=0.0, fee_hurdle=False)
     sol = es[SOL]
     d = await fill_sol(sol, feeds[SOL], sol.tick())
