@@ -88,10 +88,10 @@ async def test_btc_sideway_sol_breakout_scanner_trades_sol(tmp_path):
     assert fee_rt < 0.005                                                   # ~$5 notional: 0.002 U maker round trip
 
 
-async def test_one_slot_blocks_every_other_symbol(tmp_path):
+async def test_one_slot_blocks_every_other_symbol(tmp_path):                 # legacy single-slot mode
     from tests.test_two_mode_engine import bullish_feed
     feeds = {'BTCUSDT': bullish_feed(), SOL: sol_feed()}
-    es, venue, _ = await scanner(tmp_path, feeds, ker_gate=False, min_edge_bps=0.0)
+    es, venue, _ = await scanner(tmp_path, feeds, ker_gate=False, min_edge_bps=0.0, multi_slot=False)
     sol, btc = es[SOL], es['BTCUSDT']
     await fill_sol(sol, feeds[SOL], sol.tick())
     assert sol.pos and btc.peer() is sol

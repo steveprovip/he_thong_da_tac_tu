@@ -378,7 +378,7 @@ async def test_force_test_trade_uses_gtx_and_demo_only(tmp_path):
 
 
 async def test_rune_blocks_external_position_and_daily_kill(tmp_path):
-    e, venue, feed = mock_engine(tmp_path)
+    e, venue, feed = mock_engine(tmp_path, adopt_external=False)   # demo default re-adopts: test_portfolio_multi_slot
     await venue.market(SYM, 'SELL', '0.001', 'manual')            # user opened by hand on the venue
     await e.sync()
     d = await e.tick()

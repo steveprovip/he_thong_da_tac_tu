@@ -98,3 +98,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - 15:25 SHORT (telemetry_state.json): VESKA AUTO SELL @ 83,979.2 (SWARM 80 %, ATR SL 84,105.2 / TP1 83,664.2); REGIME exit fired at 15:26:26 (gross +0.029 %, held by HOLD 79/90 s) and 15:31:34 (gross +0.011 %, held by FEE HURDLE); later -0.068 %. VPIN tripped 5x in 17 min (BTC 1.00/0.76, SOL 0.89/0.84).
 - micro_signals.concordance(); engine: Profile concordance_gate/concordance_mr/drift_lock/slot_yield/hurdle_concordance_override, churn_gate DRIFT LOCK + FLOW CONFLICT, quality()/better_peer()/candidate (SCANNER YIELD), hurdle override hook, radar flow + DRIFT LOCK, snapshot['flow']; UI flow-chip.
 - tests/test_concordance_guard.py (17). Verification: pytest 951 passed.
+
+## 2026-10-07 (m) Multi-slot portfolio, convex sizing, exchange-stop ratchet, orphan adoption
+- 17:21 screen: SHORT 0.001 @ 83,979.2 shown EXTERNAL (engine restarted): only the original stop 84,105.2 (+0.15 %, a loss) protected a +0.13 % position; RUNE vetoed every BTC entry. Telemetry 09:39-10:22 UTC: ~40 VPIN vetoes across 3 symbols in 45 min; 10:22:45 KILL SWITCH flatten.
+- engine: Profile multi_slot/max_positions 3/portfolio_risk_usdt 1.0/portfolio_margin_frac 0.20, convex_* (swarm vote >= 0.90 + OFI >= 0.65 + CVD60 >= $1M -> 1.5x, >= 0.98 -> 2.0x), ratchet 0.15 -> 0.08, adopt_external (demo); risk_at_stop/margin_used/open_peers/slot_block/portfolio_check/portfolio_view/size_mult/min_qty/ratchet_stop/adopt; pending_risk for in-flight entries; better_peer off in multi-slot; snapshot['portfolio']; UI multi-row positions + portfolio chip.
+- Fixed 2 time-boundary flaky tests in test_winrate_maximizer.py (live 5 m candle closing mid-test).
+- tests/test_portfolio_multi_slot.py (20). Verification: pytest 971 passed.

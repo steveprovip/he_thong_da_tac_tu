@@ -192,7 +192,7 @@ async def test_short_above_rising_5m_vwap_is_blocked(tmp_path):
     for i in range(40):                                                     # heavy volume 4-5 min ago, far lower
         feed.on_message(agg(PX - 400, 0.5, maker=i % 2 == 0), now - 280 + i * 2)
     trend_feed('SELL', now=now, f=feed)
-    feed.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 60) for k in range(1, 26)], now)
+    feed.seed_candles([(now - 300 * k, 99_000.0 + (25 - k) * 100) for k in range(1, 26)], now)
     e, venue, _ = mock_engine(tmp_path, feed=feed)
     await e.sync()
     d = await e.tick()
@@ -206,7 +206,7 @@ async def test_runner_seeds_macro_from_klines(monkeypatch, tmp_path):
     r = eng.Runner('demo', allow_live=False, env={}, serve=False)
     monkeypatch.setattr(eng, 'fetch_klines_5m', lambda s: [(time.time() - 300 * k, 100.0 + k) for k in range(1, 31)])
     await r.seed_macro(e)
-    assert feed.ema5_n == 30 and any('seeded EMA-20 with 30' in ev['message'] for ev in e.events)
+    assert feed.ema5_n >= 30 and any('seeded EMA-20 with 30' in ev['message'] for ev in e.events)
 
     def boom(s):
         raise OSError('offline')

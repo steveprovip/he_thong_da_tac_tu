@@ -101,6 +101,21 @@ class Profile:
     drift_lock: bool = True             # regime DRIFT (60 s / 3 m not aligned): no AUTO entry at all
     slot_yield: bool = True             # scanner: a better-qualified symbol waiting for the slot goes first
     hurdle_concordance_override: bool = False   # REGIME/FLOW exit skips the fee hurdle when all 3 flows oppose
+    multi_slot: bool = True             # scanner: one position PER SYMBOL (not one for the whole desk) ...
+    max_positions: int = 3              # ... at most 3 at once ...
+    portfolio_risk_usdt: float = 1.0    # ... money at all stops (fees included) <= 1.0 U ...
+    portfolio_margin_frac: float = 0.20  # ... and margin in use <= 20 % of the wallet
+    convex_sizing: bool = True          # score >= 0.90 + OFI >= 0.65 + CVD 60 s >= $1M with the trade -> 1.5x
+    convex_score: float = 0.90
+    convex_ofi: float = 0.65
+    convex_cvd60_usd: float = 1_000_000.0
+    convex_mult: float = 1.5
+    convex_top_score: float = 0.98      # ... >= 0.98 -> 2.0x
+    convex_top_mult: float = 2.0
+    ratchet: bool = True                # MFE >= +0.15 % -> exchange stop moves to entry +/- 0.08 %
+    ratchet_trigger_pct: float = 0.15
+    ratchet_lock_pct: float = 0.08
+    adopt_external: bool = True         # demo: a position left on the venue (restart) is re-adopted by MARIN
     fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
@@ -163,7 +178,7 @@ PROFILES = {
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0),
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
-                    atr_scaler=False, kelly=False),      # live: stop from max loss 0.05 U, fixed minimum size
+                    atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False),  # live: max loss 0.05 U, minimum size
 }
 
 
@@ -523,6 +538,7 @@ class Engine:
         self.chop_locked = True                       # KER unknown at start -> locked
         self.flow = {'state': 'UNKNOWN', 'buy_ok': False, 'sell_ok': False, 'why': ''}
         self.candidate: Optional[tuple] = None        # (t, quality) of an entry this engine wants (slot routing)
+        self.pending_risk = 0.0                       # loss at stop of an entry being worked (portfolio cap)
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
         self.tox = {'vpin': None, 'buckets': 0, 'toxic': False, 'state': 'WARMUP'}
@@ -551,6 +567,79 @@ class Engine:
             if o is not self and (o.pos or o.busy or abs(o.view.get('amt') or 0) > 0):
                 return o
         return None
+
+    def risk_at_stop(self) -> float:
+        """U lost if this symbol's stop fills now (stop distance + in/out fees); in-flight entries count too."""
+        p = self.pos
+        if p:
+            fee = p['qty'] * p['entry'] * (p.get('entry_fee_bps', self.p.maker_bps) + self.p.taker_bps
+                                          + self.p.slip_bps) / 1e4
+            d = 1 if p['side'] == 'BUY' else -1
+            return max(0.0, p['qty'] * d * (p['entry'] - p['sl']) + fee)
+        amt = abs(self.view.get('amt') or 0.0)
+        if amt:
+            mark = self.view.get('mark') or self.feed.price() or 0.0
+            return amt * mark * (max(self.p.sl_pct, self.p.min_sl_pct) + 0.08) / 100.0
+        return self.pending_risk if self.busy else 0.0
+
+    def margin_used(self) -> float:
+        if self.pos:
+            return self.pos['qty'] * self.pos['entry'] / self.p.leverage
+        amt = abs(self.view.get('amt') or 0.0)
+        return amt * (self.view.get('mark') or self.feed.price() or 0.0) / self.p.leverage
+
+    def open_peers(self) -> list:
+        return [o for o in self.risk.engines if o is not self and (o.pos or o.busy or abs(o.view.get('amt') or 0) > 0)]
+
+    def slot_block(self) -> Optional[str]:
+        """Why this symbol may not open now: single-slot owner, or portfolio count / risk budget used up."""
+        if not self.p.multi_slot:
+            o = self.peer()
+            return None if o is None else (f'SCANNER slot: {o.p.symbol} '
+                                           f'{"position" if o.pos or o.view.get("amt") else "order"} active')
+        peers = self.open_peers()
+        if len(peers) + 1 > self.p.max_positions:
+            return f'PORTFOLIO FULL {len(peers)}/{self.p.max_positions}'
+        risk = sum(o.risk_at_stop() for o in peers)
+        if risk >= self.p.portfolio_risk_usdt:
+            return f'PORTFOLIO RISK {risk:.2f} >= {self.p.portfolio_risk_usdt:g} U'
+        return None
+
+    def portfolio_check(self, pl: dict) -> Optional[str]:
+        """The new trade must fit: risk at all stops <= cap, margin <= frac x wallet."""
+        if not self.p.multi_slot:
+            return None
+        peers = self.open_peers()
+        risk = sum(o.risk_at_stop() for o in peers) + pl['loss_at_sl']
+        if risk > self.p.portfolio_risk_usdt + 1e-9:
+            return f'PORTFOLIO RISK {risk:.3f} U > {self.p.portfolio_risk_usdt:g} U (gồm lệnh mới {pl["loss_at_sl"]:.3f})'
+        wallet = self.account.get('wallet') or self.account.get('available')
+        margin = sum(o.margin_used() for o in peers) + pl['margin']
+        if wallet and margin > self.p.portfolio_margin_frac * wallet + 1e-9:
+            return f'PORTFOLIO MARGIN {margin:.2f} U > {self.p.portfolio_margin_frac * 100:.0f}% ví'
+        return None
+
+    def portfolio_view(self) -> dict:
+        rows = [r for r in (o.position_row() for o in self.risk.engines) if r]
+        return {'multi_slot': self.p.multi_slot, 'rows': rows, 'count': len(rows), 'max': self.p.max_positions,
+                'upnl': sum(r.get('upnl') or 0.0 for r in rows),
+                'risk': sum(o.risk_at_stop() for o in self.risk.engines), 'risk_cap': self.p.portfolio_risk_usdt}
+
+    def size_mult(self, d: Decision, diag: dict, f: dict) -> float:
+        """Convex sizing: 1.0x normally; 1.5x at score >= 0.90 with OFI and CVD 60 s strongly with the trade;
+        2.0x at score >= 0.98."""
+        if not self.p.convex_sizing or d is None or not d.side:
+            return 1.0
+        sgn = 1 if d.side == 'BUY' else -1
+        ofi, cvd = (f.get('ofi_10s') or 0.0) * sgn, (f.get('cvd_60s') or 0.0) * sgn
+        score = max(d.score, (diag or {}).get('consensus') or 0.0)      # swarm vote, not the JEV lift
+        if score < self.p.convex_score or ofi < self.p.convex_ofi or \
+                cvd < self.p.convex_cvd60_usd * self.feed.cfg.usd_scale:
+            return 1.0
+        return self.p.convex_top_mult if score >= self.p.convex_top_score else self.p.convex_mult
+
+    def min_qty(self, price: float) -> float:
+        return ceil_step(max(self.spec['min_qty'], self.spec['min_notional'] * 1.02 / price), self.spec['step'])
 
     def event(self, msg: str) -> None:
         if len(self.risk.engines) > 1:
@@ -665,8 +754,8 @@ class Engine:
             r = (False, 'position open' if self.pos else 'EXTERNAL position on venue')
         elif self.busy:
             r = (False, 'order in flight')
-        elif (o := self.peer()) is not None:
-            r = (False, f'SCANNER slot: {o.p.symbol} {"position" if o.pos or o.view.get("amt") else "order"} active')
+        elif (why := self.slot_block()) is not None:
+            r = (False, why)
         elif self.p.vpin_gate and now < self.toxic_until:
             r = (False, f'VPIN TOXIC {(self.tox.get("vpin") or 0):.2f} > {self.sig_cfg.vpin_max} · '
                         f'pause {self.toxic_until - now:.0f}s')
@@ -738,7 +827,7 @@ class Engine:
 
     def better_peer(self, q: float, max_age: float = 1.0) -> Optional[tuple]:
         """A peer whose fresh candidate beats ours (ties: SCAN_SYMBOLS order) -> (engine, quality)."""
-        if not self.p.slot_yield:
+        if not self.p.slot_yield or self.p.multi_slot:            # one slot per symbol: nobody has to yield
             return None
         now, best = self.clock(), None
         order = {s: i for i, s in enumerate(SCAN_SYMBOLS)}
@@ -953,9 +1042,9 @@ class Engine:
 
     async def execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                       entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
-        if self.busy or self.pos or self.peer():
-            return {'ok': False, 'error': 'busy or position open' if not self.peer() else
-                    f'SCANNER: {self.peer().p.symbol} đang giữ slot vị thế'}
+        if self.busy or self.pos or self.slot_block():
+            why = self.slot_block()
+            return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
@@ -972,12 +1061,21 @@ class Engine:
             if path == 'MR':
                 px = self.mr_quote(side, f, px)
             kq = self.kelly_qty(px if route == 'gtx' else touch, base, route)
+            mult = self.size_mult(decision, self.diag, f) if tag == 'AUTO' else 1.0
+            if mult > 1.0:
+                ref = px if route == 'gtx' else touch
+                kq = ceil_step(max(kq or base.qty or 0.0, self.min_qty(ref)) * mult, step)
             pl = plan(side, px if route == 'gtx' else touch, self.spec,
                       replace(base, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'),
                       qty=kq)
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
+            why = self.portfolio_check(pl)
+            if why:
+                self.event(f'RUNE portfolio refused {side} {pl["qty_str"]}: {why}')
+                return {'ok': False, 'error': why}
+            self.pending_risk = pl['loss_at_sl']
             intent = MicroIntent(sym, side, pl['qty_str'], route, tag, int(self.clock() * 1000))
             token = self.authority.issue(intent, decision)
             self.authorized += 1
@@ -1076,7 +1174,7 @@ class Engine:
                         'atr_pct': bp['atr_pct'], 'atr_trail_pct': bp['trail_pct'], 'bracket_src': bp['src'],
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
-                        'quote_px': px,
+                        'quote_px': px, 'size_mult': mult,
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
@@ -1105,6 +1203,7 @@ class Engine:
             return {'ok': False, 'error': f'{type(exc).__name__}: {exc}'[:200]}
         finally:
             self.busy = False
+            self.pending_risk = 0.0
             if not self.pos:
                 self.phase = 'SCANNING'
 
@@ -1293,6 +1392,9 @@ class Engine:
             p['tp1_filled'] = True
             self.event(f'MARIN TP1 filled {fmt(p["tp_qty"], self.spec["step"])} @ {p["tp"]:g} (maker) · runner trails')
         if self.p.soft_exits:
+            await self.ratchet_stop(p, d, mark, fav)
+            if not self.pos:
+                return
             await self._manage_soft(p, d, mark, fav)
         else:
             await self._manage_hard(p, d, mark, fav)
@@ -1318,6 +1420,19 @@ class Engine:
         p.setdefault('hurdle_first_pct', fav)
         self.event(f'MARIN {why} exit HELD by {gate} - waiting for >= +{self.p.hurdle_pct}% / <= -{self.p.hurdle_pct}% '
                    f'(hard SL {p["sl0"]:g} stays live)')
+
+    async def ratchet_stop(self, p: dict, d: int, mark: float, fav: float) -> None:
+        """MFE >= +0.15 %: move the EXCHANGE stop to entry +/- 0.08 % once - survives a restart or a dead feed."""
+        if not self.p.ratchet or p.get('ratchet') or p['mfe_pct'] < self.p.ratchet_trigger_pct:
+            return
+        tgt = round_tick(p['entry'] * (1 + d * self.p.ratchet_lock_pct / 100.0), self.spec['tick'],
+                         'up' if d > 0 else 'down')
+        if d * (tgt - p['sl']) <= 0 or d * (mark - tgt) <= 0:
+            return
+        if await self.move_stop(tgt, 'RATCHET') and self.pos:
+            p['ratchet'] = True
+            self.event(f'MARIN RATCHET at MFE {p["mfe_pct"]:+.3f}% -> exchange stop {tgt:g} '
+                       f'(entry {"+" if d > 0 else "-"}{self.p.ratchet_lock_pct}%)')
 
     async def _manage_soft(self, p: dict, d: int, mark: float, fav: float) -> None:
         """4 tiers (soft maker exits): T1 +0.08 % -> entry +0.03 % · T2 +0.12 % -> entry + fees + 0.02 %
@@ -1415,6 +1530,45 @@ class Engine:
                 self.event(f'MARIN stop cancel: {type(exc).__name__}')
         await self.sync(force_settle=True)
 
+    async def adopt(self) -> None:
+        """Re-attach MARIN to a position found on the venue (restart / kill of the previous process)."""
+        v, sym, tick, step = self.view, self.p.symbol, self.spec['tick'], self.spec['step']
+        amt = v.get('amt') or 0.0
+        side, qty, entry = ('BUY' if amt > 0 else 'SELL'), abs(amt), v.get('entry') or self.feed.price()
+        if not entry:
+            return
+        d = 1 if side == 'BUY' else -1
+        stop = next((o for o in self.orders if 'STOP' in str(o.get('type')) and o.get('reduce')
+                     and o.get('side') != side), None)
+        mark = v.get('mark') or self.feed.price() or entry
+        if stop:
+            sl, sl_cid, t0 = stop['price'], stop['id'], stop.get('time') or 0.0
+        else:
+            sl = round_tick(min(entry, mark) * (1 - self.p.sl_pct / 100.0) if d > 0
+                            else max(entry, mark) * (1 + self.p.sl_pct / 100.0), tick, 'down' if d > 0 else 'up')
+            sl_cid, t0 = 'gs-' + uuid.uuid4().hex[:28], 0.0
+            try:
+                await self.venue.stop(sym, 'SELL' if d > 0 else 'BUY', fmt(sl, tick), sl_cid)
+            except Exception as exc:
+                self.event(f'MARIN adopt: stop failed ({type(exc).__name__}) - soft exits only')
+        now = self.clock()
+        peak = max(entry, mark) if d > 0 else min(entry, mark)
+        self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': fmt(qty, step), 'entry': entry,
+                    'opened': now, 'opened_ms': int((t0 or now) * 1000) - 1000, 'sl': sl, 'tp': None, 'sl0': sl,
+                    'sl_cid': sl_cid, 'tp_cid': 'gt-adopt-' + uuid.uuid4().hex[:20], 'stop_kind': 'SL',
+                    'tp_qty': qty, 'split': False, 'tp1_filled': False, 'be_locked': False, 'mbe_locked': False,
+                    'trail_on': False, 'peak': peak, 'mfe_pct': d * (peak / entry - 1) * 100, 'adverse_usd': 0.0,
+                    'regime': (self.reg or {}).get('name'), 'trigger_usd': 0.0, 'flow_limit': self.flow_limit({}),
+                    'edge_bps': None, 'ker': None, 'atr_pct': None, 'atr_trail_pct': None, 'bracket_src': 'ADOPT',
+                    'rr_gross': None, 'rr_net': None, 'be_wr': None, 'vpin': None, 'ofi': None, 'kelly_f': None,
+                    'quote_px': entry, 'size_mult': 1.0, 'px_vel_15s': None, 'macro': self.macro.get('name'),
+                    'tag': 'ADOPTED', 'path': 'ADOPT', 'score': 0.0, 'reason': 'external position re-adopted',
+                    'hold_s': self.p.max_hold_s, 'latency_ms': 0.0, 'tp_pct': None, 'sl_pct': abs(sl / entry - 1) * 100,
+                    'entry_type': 'ADOPT', 'entry_fee_bps': self.p.maker_bps}
+        self.phase = 'POSITION'
+        self.event(f'MARIN ADOPT {"LONG" if d > 0 else "SHORT"} {fmt(qty, step)} {sym} @ {entry:g} · stop {sl:g}'
+                   f'{" (sàn, giữ nguyên)" if stop else " (đặt mới)"} · MFE {self.pos["mfe_pct"]:+.3f}% -> MARIN quản lý lại')
+
     async def sync(self, force_settle: bool = False) -> None:
         sym = self.p.symbol
         self.view = await self.venue.position_view(sym)
@@ -1423,6 +1577,10 @@ class Engine:
         except Exception:
             pass
         self.orders = await self.venue.orders_view(sym)
+        if (not self.pos and self.view.get('amt') and self.p.adopt_external and self.started and not self.busy
+                and self.spec):
+            await self.adopt()
+            return
         p = self.pos
         if p and not self.view['amt']:
             await self._settle(p)
@@ -1481,7 +1639,7 @@ class Engine:
                'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
                'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
-               'kelly_f': p.get('kelly_f'),
+               'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
                'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
                'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],
@@ -1590,6 +1748,8 @@ class Engine:
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
                 'gross_pct': p.get('gross_pct'), 'hurdle': p.get('hurdle'), 'hurdle_pct': self.p.hurdle_pct,
+                'ratchet': bool(p.get('ratchet')), 'size_mult': p.get('size_mult'),
+                'risk_at_stop': self.risk_at_stop(),
                 'bracket_src': p.get('bracket_src'), 'rr_gross': p.get('rr_gross'), 'rr_net': p.get('rr_net'),
                 'be_wr': p.get('be_wr'), 'atr_pct': p.get('atr_pct'), 'trail_gap': p.get('trail_gap'),
                 'hurdle_blocks': p.get('hurdle_blocks', 0), 'fee_hurdle': self.p.fee_hurdle,
@@ -1666,6 +1826,7 @@ class Engine:
             'profile': asdict(self.p), 'live_allowed': self.allow_live, 'symbols': list(SYMBOLS),
             'fee_model': self.fee_model(),
             'quant': self.quant_view(),
+            'portfolio': self.portfolio_view(),
             'flow': {**self.flow, 'gate': self.p.concordance_gate, 'drift_lock': self.p.drift_lock,
                      'drift': (self.reg or {}).get('name') == 'DRIFT'},
             'governor': {'min_score': self.p.min_score, 'min_edge_bps': self.p.min_edge_bps,

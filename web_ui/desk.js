@@ -180,8 +180,15 @@
       : `${fx((d.score || 0) * 100, 1)}% · JEV ${fx(d.jev, 1)} · hội tụ ${(d.confluence || {}).count ?? 0}/3 · ${d.reason || '—'}`;
 
     /* position */
-    txt('pos-count', pos ? '1' : '0');
-    rows('pos-rows', pos ? [{ cells: [
+    const pf = s.portfolio || {};
+    const plist = pf.rows && pf.rows.length ? pf.rows : (pos ? [pos] : []);
+    txt('pos-count', String(plist.length));
+    const pfn = $('portfolio-chip');
+    if (pfn) {
+      pfn.textContent = `PORTFOLIO ${pf.count || 0}/${pf.max || 1} · uPnL ${sg(pf.upnl || 0, 4)} U · rủi ro SL ${fx(pf.risk || 0, 2)}/${fx(pf.risk_cap || 0, 2)} U`;
+      pfn.className = 'chip ' + ((pf.upnl || 0) > 0 ? 'green' : (pf.upnl || 0) < 0 ? 'red' : '');
+    }
+    rows('pos-rows', plist.map(pos => ({ cells: [
       [`${pos.symbol} ${pos.margin_type} ${pos.leverage}x`, pos.side === 'LONG' ? 'buy' : 'sell'],
       [`${pos.side === 'LONG' ? '' : '-'}${pos.size}`, pos.side === 'LONG' ? 'buy' : 'sell'],
       [fx(pos.entry, pdp(pos.entry))], [fx(pos.mark, pdp(pos.mark))], [fin(pos.liq) && pos.liq > 0 ? fx(pos.liq, pdp(pos.liq)) : '—', 'warn'],
@@ -192,8 +199,9 @@
         : pos.trail_on ? `TRAILING (soft ${fx(pos.soft_stop, pdp(pos.soft_stop))}) · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.be_locked ? `BE ${pos.soft_exits ? 'soft ' + fx(pos.soft_stop, pdp(pos.soft_stop)) : 'LOCKED'} · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.mbe_locked ? `MICRO-BE · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k`
-        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,
-        pos.trail_on ? 'buy glow' : pos.be_locked ? 'buy' : 'warn']] }] : [], 9, 'Không có vị thế');
+        : pos.ratchet ? `RATCHET · SL sàn ${fx(pos.sl, pdp(pos.sl))} · MFE ${sg(pos.mfe_pct, 2)}%`
+        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `${pos.tag === 'ADOPTED' ? 'ADOPTED · ' : ''}${pos.size_mult > 1 ? `x${pos.size_mult} · ` : ''}micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,
+        pos.trail_on ? 'buy glow' : pos.be_locked ? 'buy' : 'warn']] })), 9, 'Không có vị thế');
     const st = s.stats || {};
     const wr = $('winrate');
     wr.textContent = st.n ? `WIN RATE ${fx(st.win_rate * 100, 1)}% · ${st.wins}W / ${st.losses}L · Avg Win ${sg(st.avg_win, 3)}U · Avg Loss ${sg(st.avg_loss, 3)}U · PF ${st.profit_factor == null ? (st.no_losses ? '∞' : '—') : fx(st.profit_factor, 2)} · E ${sg(st.expectancy, 4)}U/lệnh` : 'WIN RATE — (chưa có lệnh)';

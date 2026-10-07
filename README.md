@@ -146,6 +146,13 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Tuỳ chọn (tắt mặc định): `hurdle_concordance_override` cho REGIME/FLOW exit vượt rào cản phí khi cả 3 dòng tiền ngược vị thế.
 - UI: chip `FLOW: CONCORDANT BUY/SELL`, `FLOW: CONFLICT (LOCKED)`, `FLOW: DRIFT LOCK`; radar ghi `DRIFT LOCK`.
 
+### 8.13 Cập nhật 07/10/2026 (m) — Nhiều vị thế song song, size lồi, ratchet SL sàn, nhận lại vị thế mồ côi
+- DEMO: mỗi cặp 1 vị thế riêng, tối đa 3 cùng lúc; tổng tiền mất nếu mọi SL khớp (gồm phí, kể cả lệnh đang chờ khớp) ≤ 1.0 U; ký quỹ dùng ≤ 20 % ví. Bộ giới hạn 8 lệnh/giờ, nghỉ 30 s, cắt lỗ ngày vẫn tính chung. `multi_slot=False` = chế độ 1 slot cũ.
+- Size lồi: phiếu swarm (không tính JEV) ≥ 90 % + OFI ≥ 0.65 + CVD 60 s ≥ $1M (× hệ số) cùng chiều → 1.5x; ≥ 98 % → 2.0x. LIVE không dùng.
+- Ratchet: MFE ≥ +0.15 % → dời SL trên sàn về entry ± 0.08 % một lần (giữ được cả khi engine tắt). SL sàn là taker: 0.08 % ≈ đúng bằng phí, tức hoà, không phải +0.04 % ròng.
+- Khởi động lại khi còn vị thế: DEMO nhận lại (ADOPTED) cùng SL đang có trên sàn (hoặc đặt SL mới), MARIN quản lý tiếp. LIVE vẫn chặn vị thế ngoài.
+- UI: bảng vị thế nhiều dòng, chip `PORTFOLIO n/3 · uPnL · rủi ro SL x/1.00 U`. Nút ĐÓNG VỊ THẾ đóng cặp đang xem.
+
 ### 8.13 Phiên bản v2.3.1 (07/10/2026) — 🏆 Bản Ổn Định Sinh Lời Chậm (Stable Slow-Profit Alpha Engine)
 - **Đặc điểm thực tế**: Đã kiểm chứng sinh lời ổn định thực tế (Số dư tài khoản tăng từ 4,922.00 U lên 4,923.45 U, PnL vị thế xanh đậm +0.1781 U / +1.06% ROE).
 - **Cơ chế**: Sửa triệt để lỗi Binance code -4067 (đồng bộ khởi động êm ái khi còn vị thế/lệnh chờ).

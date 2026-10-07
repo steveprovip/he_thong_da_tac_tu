@@ -131,7 +131,7 @@ async def test_btc_drift_sol_clean_trend_sol_gets_the_slot(tmp_path):
 
 
 async def test_better_candidate_takes_the_slot_first(tmp_path):
-    es, _, _ = await scanner(tmp_path)
+    es, _, _ = await scanner(tmp_path, multi_slot=False)            # single-slot mode (multi-slot never yields)
     btc, sol, doge = es['BTCUSDT'], es[SOL], es['DOGEUSDT']
     now = btc.clock()
     sol.candidate = (now, 0.95)
@@ -152,7 +152,8 @@ async def test_better_candidate_takes_the_slot_first(tmp_path):
 async def test_tick_yields_to_a_better_peer(tmp_path):
     from tests.test_two_mode_engine import bullish_feed
     feeds = {'BTCUSDT': bullish_feed(), SOL: sol_feed()}
-    es, venue, _ = await scanner(tmp_path, feeds, ker_gate=False, min_edge_bps=0.0, concordance_gate=False)
+    es, venue, _ = await scanner(tmp_path, feeds, ker_gate=False, min_edge_bps=0.0, concordance_gate=False,
+                                 multi_slot=False)
     btc, sol = es['BTCUSDT'], es[SOL]
     sol.candidate = (sol.clock(), 1.5)
     d = await btc.tick()
