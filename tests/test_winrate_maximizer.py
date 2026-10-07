@@ -139,7 +139,7 @@ async def test_profit_lock_hard_mode_moves_the_exchange_stop(tmp_path):
 
 # ============================================================================= 3. strict maker routing
 def test_ioc_needs_cvd10_ker_and_conviction_together(tmp_path):
-    e, _, _ = mock_engine(tmp_path)
+    e, _, _ = mock_engine(tmp_path, super_edge=True)
     dec = ms.evaluate(sig(FLOW=('BUY', 1.0, 3), TREND=('BUY', 1.0, 3)), ms.Gates())[0]
     e.diag = {'consensus': 0.80, 'jev': 9.3}
     hot = {'cvd_10s': 3_000_000.0, 'ker': 0.60}
@@ -149,7 +149,7 @@ def test_ioc_needs_cvd10_ker_and_conviction_together(tmp_path):
     e.diag = {'consensus': 0.84, 'jev': 9.19}
     assert e.route(dec, hot) == 'gtx'
     p = eng.PROFILES['demo']
-    assert p.gtx_ttl_s == 5.0 and p.entry == 'gtx'
+    assert p.gtx_ttl_s == 3.0 and p.entry == 'gtx' and not p.super_edge   # tau <= 3 s, pure maker (10-07p)
 
 
 async def test_super_momentum_without_straight_tape_rests_as_maker(tmp_path):

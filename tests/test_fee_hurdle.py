@@ -131,7 +131,7 @@ async def test_regime_flip_exit_is_held_inside_the_band(tmp_path):
 
 async def test_marin_tiers_are_not_gated(tmp_path):
     """The hurdle only holds FLOW / REGIME. The +0.08 % micro-lock still exits on a pullback."""
-    e, venue, feed = await btc_long_at(tmp_path, ENTRY, **HURDLE)
+    e, venue, feed = await btc_long_at(tmp_path, ENTRY, microbe_trigger_pct=0.08, microbe_lock_pct=0.03, **HURDLE)
     book_at(feed, at(0.09))
     await e.tick()
     assert e.pos['soft_kind'] == 'LOCK'

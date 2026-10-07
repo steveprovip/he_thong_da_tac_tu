@@ -160,6 +160,23 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Sửa lỗi: Binance chỉ cho 1 lệnh STOP closePosition mỗi chiều (-4130) → ratchet trước đây thất bại liên tục; nay huỷ SL cũ rồi đặt SL mới, lỗi thì khôi phục SL cũ, chờ 5 s mới thử lại. Lúc vào lệnh gặp -4130 (SL cũ còn sót) → dọn SL cũ rồi đặt lại thay vì đóng NO_STOP. Kiểm tra "SL đã bị vượt" dùng giá sổ lệnh hiện tại thay vì giá REST cũ.
 - UI: chip RR ghi tên coin; radar hiện SL/TP từng coin khi rê chuột.
 
+### 8.15 Cập nhật 07/10/2026 (o) — Ưu tiên SOL/DOGE, cô lập BTC đi ngang, thoát lệnh "chết" sau 180 s
+- KER theo coin: BTC phải có KER >= 0.55 mới vào lệnh TREND (không còn vùng đệm), lane MR của BTC tắt; SOL/DOGE giữ khoá 0.38 / mở 0.42 và lane MR dưới 0.38. Radar BTC hiện CHOP thay vì MR SCAN.
+- Thoát theo thời gian: lệnh mở >= 180 s mà MFE chưa từng đạt +0.08 % → đặt lệnh maker giảm vị thế ở mức hoà vốn sau phí (entry ± 4 bps), không đuổi giá xuống dưới mức đó. Đến 420 s vẫn chưa khớp → chuyển sang maker ở giá tốt nhất hiện tại (chấp nhận lỗ nhỏ). SL cứng trên sàn luôn giữ nguyên.
+- Ưu tiên SOL/DOGE: phiếu swarm thô >= 90 % (thực tế = 100 % vì phiếu chỉ có 60/80/100 %) → size SOL tăng lên mức trần = min(0.70 SOL, $90 notional); mọi đường tính size SOL/DOGE (cân rủi ro, Kelly, size lồi) đều bị kẹp ở trần này (lệnh #34 MR 0.81 SOL sẽ bị kẹp). BTC chỉ được dùng 0.65 U trong ngân sách rủi ro 1.0 U, 0.35 U dành cho SOL/DOGE.
+- UI: dải PnL theo coin trên radar (`BTC: -1.45 U | SOL: +0.23 U (PROFIT MAKER) | DOGE: 0.00 U`), trạng thái EJECT đếm ngược, PRIORITY, sàn BE khi đang thoát.
+- Live: tắt eject / alt_boost / reserve (giữ trần 3.85 U, lỗ tối đa 0.05 U/lệnh).
+- Số test: 1007 passed (tests/test_sol_priority_chop_ejection.py: 20).
+
+### 8.16 Cập nhật 07/10/2026 (p) — Maker thuần, VFR đóng băng BTC, 85 % rủi ro cho SOL/DOGE, Kelly cuộn
+- Vào lệnh tự động 100 % Post-Only GTX (phí 2 bps): IOC super-edge tắt mặc định (demo + live), cửa sổ chờ τ = 3 s rồi huỷ và tính lại. Bị sàn từ chối post-only (-5022) → lùi 1 tick khỏi giá tốt nhất, tối đa 2 lần, không bao giờ chuyển sang MARKET.
+- VFR = ATR 15 m (bps) / (phí maker 2 chiều 4 bps + spread). VFR < 3 → coin bị FROZEN (BTC thêm điều kiện ATR 15 m >= 0.10 %). ATR 15 m tính từ nến 1 m gộp (seed 240 nến 1 m khi khởi động); thiếu dữ liệu thì ước lượng √15 × ATR 1 m (nhãn EST).
+- Ngân sách rủi ro: SOL/DOGE dùng tới 1.0 U, BTC chỉ 15 % (0.15 U). BTC khi VFR < 5 hoặc size thường vượt 0.15 U → micro-probe 0.0001 BTC; nếu sàn không cho đặt 0.0001 (min 0.001 BTC / $100 trên mainnet) thì bỏ lệnh và nghỉ 30 s.
+- Phí: TP1 gộp >= 3 × phí 2 chiều (>= 0.12 % với maker). MARIN T1: MFE +0.10 % → dời stop lên entry +0.04 % (= hoà vốn sau phí maker). Eject 180 s khi MFE < 0.06 %, lên giá tốt nhất sau 360 s.
+- Size SOL khi phiếu swarm >= 90 %: 0.70 → 1.20 SOL theo Kelly ¼ cuộn 15 lệnh của chính coin đó (cần >= 5 lệnh), trần $140; DOGE 300 → 500. Không boost: trần 0.70 SOL / 300 DOGE.
+- UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
+- Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
+
 ### 8.13 Phiên bản v2.3.1 (07/10/2026) — 🏆 Bản Ổn Định Sinh Lời Chậm (Stable Slow-Profit Alpha Engine)
 - **Đặc điểm thực tế**: Đã kiểm chứng sinh lời ổn định thực tế (Số dư tài khoản tăng từ 4,922.00 U lên 4,923.45 U, PnL vị thế xanh đậm +0.1781 U / +1.06% ROE).
 - **Cơ chế**: Sửa triệt để lỗi Binance code -4067 (đồng bộ khởi động êm ái khi còn vị thế/lệnh chờ).

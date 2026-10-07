@@ -52,6 +52,9 @@ async def scanner(tmp_path, feeds=None, **prof):
     feeds = feeds or {'BTCUSDT': chop_feed(), SOL: sol_feed(), 'DOGEUSDT': msig.MicroFeed('DOGEUSDT',
                                                                                            msig.config_for('DOGEUSDT'))}
     prof.setdefault('gtx_ttl_s', 0.6)
+    prof.setdefault('alt_boost', False)           # SOL/DOGE priority size: test_sol_priority_chop_ejection.py
+    prof.setdefault('eject', False)               # 180 s time-decay ejection: test_sol_priority_chop_ejection.py
+    prof.setdefault('vfr_gate', False)            # VFR (ATR 15 m / fees) freeze: test_world_quant_economic_engine.py
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))

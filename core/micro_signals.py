@@ -101,6 +101,9 @@ class SignalConfig:
     bar_s: float = 60.0                 # 1 m OHLC bars for ATR / Yang-Zhang (seeded from REST 1 m klines)
     atr_n: int = 14
     atr_min_bars: int = 5               # fewer closed bars -> ATR unknown -> static brackets
+    bars_keep: int = 240                # 4 h of closed 1 m bars: ATR / YZ use the last 120, ATR 15 m all of them
+    atr15_s: float = 900.0              # 15 m bars aggregated from the 1 m bars (VFR volatility horizon)
+    atr15_min_bars: int = 5             # fewer complete 15 m bars -> estimate sqrt(15) x ATR 1 m (src EST)
     sigma_window_s: float = 60.0        # rolling 1 m realised sigma (bps / sqrt(s)) for Avellaneda-Stoikov
 
 
@@ -217,6 +220,27 @@ def atr(bars, n: int = 14) -> Optional[float]:
     return a
 
 
+def bars_15m(bars, span: float = 900.0, min_fill: int = 12) -> list:
+    """Aggregate closed 1 m bars (start, o, h, l, c) into complete span-second bars aligned on the clock.
+    A bucket counts only with >= min_fill of its 15 one-minute bars (gaps, and the bucket still forming, drop)."""
+    out = {}
+    for b in sorted(bars):
+        k = math.floor(b[0] / span) * span
+        if k not in out:
+            out[k] = [k, b[1], b[2], b[3], b[4], 1]
+        else:
+            x = out[k]
+            x[2], x[3], x[4], x[5] = max(x[2], b[2]), min(x[3], b[3]), b[4], x[5] + 1
+    return [tuple(x[:5]) for k, x in sorted(out.items()) if x[5] >= min_fill]
+
+
+def vfr(atr_pct: Optional[float], fee_bps: float, spread_bps: float = 0.0) -> Optional[float]:
+    """Volatility-to-Fee Ratio: ATR (bps) / (round-trip fee + spread, bps). < 3 -> the move cannot pay the toll."""
+    if atr_pct is None or fee_bps + spread_bps <= 0:
+        return None
+    return atr_pct * 100.0 / (fee_bps + max(0.0, spread_bps))
+
+
 def yang_zhang(bars) -> Optional[float]:
     """Yang-Zhang (2000) per-bar volatility (fraction): s2 = s2_open + k s2_close + (1-k) s2_RS,
     k = 0.34 / (1.34 + (n+1)/(n-1)); open jump = ln(O_i / C_i-1)."""
@@ -283,10 +307,19 @@ def toxicity(f: dict, cfg: 'SignalConfig' = None) -> dict:
 VPIN_BUCKET_USD = {'BTCUSDT': 2_500_000.0, 'SOLUSDT': 250_000.0, 'DOGEUSDT': 200_000.0}   # per-symbol bucket size
 
 
+# Asset-specific KER gates (2026-10-07o, ledger 34 trades: BTC 27 lệnh net -1.45 U, SOL 7 lệnh net +0.23 U).
+# BTC needs a cleaner tape (KER >= 0.55) before the TREND lane opens; its MR lane is off (mr_ker_max 0).
+# SOL/DOGE keep the 0.38 lock / 0.42 unlock band and the MR lane below 0.38.
+KER_GATES = {'BTCUSDT': {'ker_lock': 0.55, 'ker_unlock': 0.55, 'mr_ker_max': 0.0},
+             'SOLUSDT': {'ker_lock': 0.38, 'ker_unlock': 0.42, 'mr_ker_max': 0.38},
+             'DOGEUSDT': {'ker_lock': 0.38, 'ker_unlock': 0.42, 'mr_ker_max': 0.38}}
+
+
 def config_for(symbol: str) -> SignalConfig:
     sym, scale = symbol.upper(), USD_SCALE.get(symbol.upper(), 0.1)
     vb = VPIN_BUCKET_USD.get(sym)
-    return SignalConfig(usd_scale=scale, **({'vpin_bucket_usd': vb / scale} if vb else {}))
+    return SignalConfig(usd_scale=scale, **({'vpin_bucket_usd': vb / scale} if vb else {}),
+                        **KER_GATES.get(sym, {}))
 
 
 def streams_multi(symbols) -> dict:
@@ -333,7 +366,7 @@ class MicroFeed:
         self.vb_buy = self.vb_sell = 0.0                        # VPIN: open volume bucket (USD)
         self.vb_closed: Deque[float] = deque(maxlen=max(cfg.vpin_buckets * 3, 30))   # (buy - sell) / V per bucket
         self.bar: Optional[list] = None                         # open 1 m bar [start, o, h, l, c]
-        self.bars: Deque[tuple] = deque(maxlen=120)             # closed 1 m bars
+        self.bars: Deque[tuple] = deque(maxlen=cfg.bars_keep)   # closed 1 m bars (4 h: ATR 15 m)
 
     # ------------------------------------------------------------------ ingest
     def on_message(self, msg: dict, now: Optional[float] = None) -> None:
@@ -471,7 +504,8 @@ class MicroFeed:
         have = {b[0] for b in self.bars}
         new = [tuple(map(float, r)) for r in rows if r[0] + self.cfg.bar_s <= now and r[0] not in have
                and (self.bar is None or r[0] < self.bar[0])]
-        self.bars = deque(sorted(list(self.bars) + new)[-120:], maxlen=120)
+        k = self.cfg.bars_keep
+        self.bars = deque(sorted(list(self.bars) + new)[-k:], maxlen=k)
         return len(new)
 
     def _expire(self, now: float) -> None:
@@ -496,15 +530,23 @@ class MicroFeed:
         """OFI 10 s, VPIN, ATR / Yang-Zhang on closed 1 m bars, rolling 1 m sigma."""
         ev = [e for t, e in self.ofi if now - t <= self.cfg.ofi_window_s]
         tot = sum(abs(e) for e in ev)
-        bars = list(self.bars)
+        allb = list(self.bars)
+        bars = allb[-120:]                                     # ATR / YZ window unchanged (2 h of 1 m bars)
         a = atr(bars, self.cfg.atr_n) if len(bars) >= self.cfg.atr_min_bars else None
         yz = yang_zhang(bars) if len(bars) >= self.cfg.atr_min_bars else None
         px = self.last or self.price()
+        b15 = bars_15m(allb, self.cfg.atr15_s)
+        a15, src15 = None, None
+        if len(b15) >= self.cfg.atr15_min_bars and px:
+            a15, src15 = atr(b15, self.cfg.atr_n) / px * 100, '15m'
+        elif a and px:
+            a15, src15 = a / px * 100 * math.sqrt(self.cfg.atr15_s / self.cfg.bar_s), 'EST'   # random-walk scaling
         ok = tot > 0 and len(ev) >= self.cfg.ofi_min_events
         return {'ofi_10s': sum(ev) / tot if ok else None, 'ofi_qty_10s': sum(ev), 'ofi_n': len(ev),
                 'vpin': self.vpin_now(), 'vpin_n': len(self.vb_closed), 'vpin_side': self.vpin_side(),
                 'atr_1m': a, 'atr_pct': a / px * 100 if (a and px) else None,
                 'yz_pct': yz * 100 if yz is not None else None, 'bars_n': len(bars),
+                'atr15_pct': a15, 'atr15_src': src15, 'bars15_n': len(b15),
                 'sigma_bps': realized_sigma_bps(((t, x) for t, _, x in self.cvd_long), now, self.cfg.sigma_window_s)}
 
     def _concordance(self, now: float) -> dict:

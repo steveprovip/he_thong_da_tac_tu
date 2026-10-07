@@ -221,6 +221,9 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('fee_hurdle', False)          # exit fee hurdle has its own tests (test_fee_hurdle.py)
     prof.setdefault('min_velocity_pct', 0.0)      # entry velocity gate: test_fee_hurdle.py
     prof.setdefault('concordance_gate', False)    # triple flow concordance: test_concordance_guard.py
+    prof.setdefault('eject', False)               # 180 s time-decay ejection: test_sol_priority_chop_ejection.py
+    prof.setdefault('alt_boost', False)           # SOL/DOGE priority size: test_sol_priority_chop_ejection.py
+    prof.setdefault('vfr_gate', False)            # VFR (ATR 15 m / fees) freeze: test_world_quant_economic_engine.py
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')
@@ -246,6 +249,12 @@ async def fill_through(e, feed, coro):
 def book_at(feed, px):
     for _ in range(3):
         feed.on_message(depth(px, round(px + 0.1, 1)))
+
+
+# MARIN T1 before 2026-10-07p (+0.08 % -> entry +0.03 %); the new +0.10 % -> +0.04 % tier is tested in
+# tests/test_world_quant_economic_engine.py. IOC tests opt in to super_edge (off by default: pure maker).
+OLD_TIERS = {'microbe_trigger_pct': 0.08, 'microbe_lock_pct': 0.03}
+IOC_ON = {'super_edge': True}
 
 
 async def opened(tmp_path, **prof):
@@ -285,7 +294,7 @@ def test_gtx_price_joins_touch_or_improves_one_tick(tmp_path):
 
 
 async def test_micro_be_at_008_then_true_breakeven_at_012_never_turns_into_a_loss(tmp_path):
-    e, venue, feed = await opened(tmp_path, soft_exits=False)
+    e, venue, feed = await opened(tmp_path, soft_exits=False, **OLD_TIERS)
     entry = e.pos['entry']
     book_at(feed, round(entry * 1.0007, 1))                       # +0.07 %: nothing yet
     await e.tick()
@@ -458,7 +467,7 @@ async def test_downtrend_opens_short_at_best_ask_with_mirrored_brackets(tmp_path
 
 
 async def test_short_micro_be_be_and_tp1_trail_mirror(tmp_path):        # hard (exchange-stop) mode
-    e, venue, feed = await opened_short(tmp_path, soft_exits=False)
+    e, venue, feed = await opened_short(tmp_path, soft_exits=False, **OLD_TIERS)
     entry = e.pos['entry']
     book_at(feed, round(entry * 0.9991 - 0.1, 1))                  # -0.09 %: short is +0.09 %
     await e.tick()
@@ -575,7 +584,7 @@ async def test_flow_exit_is_a_maker_queue_and_beats_trade3_by_the_taker_gap(tmp_
 
 
 async def test_soft_breakeven_exit_is_maker_and_net_positive(tmp_path):
-    e, venue, feed = await opened(tmp_path)
+    e, venue, feed = await opened(tmp_path, **OLD_TIERS)
     entry, sl0 = e.pos['entry'], e.pos['sl0']
     book_at(feed, round(entry * 1.0009, 1))                          # +0.09 %: T1 micro-lock
     await e.tick()
@@ -685,7 +694,7 @@ def super_feed(usd=7_490_000.0, px=99_800.0):
 
 async def test_super_momentum_cvd_749m_jev_96_routes_ioc_and_fills_under_100ms(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0)     # KER gate of IOC: test_winrate_maximizer
+    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0, **IOC_ON)     # KER gate of IOC: test_winrate_maximizer
     await e.sync()
     t0 = time.perf_counter()
     d = await e.tick()
@@ -702,7 +711,7 @@ async def test_super_momentum_cvd_749m_jev_96_routes_ioc_and_fills_under_100ms(t
 
 
 def test_router_thresholds(tmp_path):
-    e, _, feed = mock_engine(tmp_path)
+    e, _, feed = mock_engine(tmp_path, **IOC_ON)
     dec = ms.evaluate(sig(FLOW=('BUY', 1.0, 3), TREND=('BUY', 1.0, 3)), ms.Gates())[0]
     e.diag = {'consensus': 0.80, 'jev': 9.6}
     hot = {'cvd_10s': 3_100_000.0, 'ker': 0.65}
@@ -722,7 +731,7 @@ def test_router_thresholds(tmp_path):
 
 async def test_ioc_without_liquidity_inside_slip_expires_and_rescans_in_1s(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed, ioc_max_slip_pct=0.0, super_ker=0.0)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, ioc_max_slip_pct=0.0, super_ker=0.0, **IOC_ON)
     await e.sync()
     orig = venue.quote
     venue.quote = lambda s: (orig(s)[0], orig(s)[1] + 50)              # the ask gapped away before our IOC
@@ -741,7 +750,7 @@ async def test_unfilled_gtx_resets_to_scanning_with_1s_cooldown(tmp_path):
 
 async def test_ioc_entry_uses_taker_aware_breakeven(tmp_path):
     feed = super_feed()
-    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0)     # KER gate of IOC: test_winrate_maximizer
+    e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0, **IOC_ON)     # KER gate of IOC: test_winrate_maximizer
     await e.sync()
     await e.tick()
     await e.sync()
@@ -756,7 +765,8 @@ async def test_ioc_entry_uses_taker_aware_breakeven(tmp_path):
 
 def test_default_execution_profile_values():
     p = eng.PROFILES['demo']
-    assert (p.gtx_ttl_s, p.peg_max_drift_pct, p.peg_min_score, p.unfilled_cooldown_s) == (5.0, 0.15, 0.768, 1.0)
+    assert (p.gtx_ttl_s, p.peg_max_drift_pct, p.peg_min_score, p.unfilled_cooldown_s) == (3.0, 0.15, 0.768, 1.0)
+    assert not p.super_edge                                               # 2026-10-07p: pure maker entries
     assert (p.super_consensus, p.super_jev, p.super_cvd_usd, p.ioc_max_slip_pct) == (0.85, 9.2, 3_000_000.0, 0.03)
     assert p.super_ker == 0.60
 
@@ -812,7 +822,7 @@ async def test_squeeze_breakout_lifts_consensus_to_super_edge(tmp_path):
 
 
 async def test_four_tier_profit_ladder_and_tight_trail(tmp_path):
-    e, venue, feed = await opened(tmp_path)
+    e, venue, feed = await opened(tmp_path, **OLD_TIERS)
     entry = e.pos['entry']
     steps = [(1.0009, 'LOCK', 1.0003), (1.0013, 'BE', 1.0006)]
     for k, kind, lvl in steps:

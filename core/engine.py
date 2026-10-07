@@ -60,13 +60,13 @@ class Profile:
     leverage: int = 5
     margin_type: str = 'CROSSED'
     entry: str = 'gtx'                  # Post-Only GTX only; MARKET is kept for emergency reduce-only exits
-    gtx_ttl_s: float = 5.0              # pegged maker window; unfilled -> cancel, cooldown 1 s, never chase taker
+    gtx_ttl_s: float = 3.0              # pegged maker window tau <= 3 s; unfilled -> cancel, recompute, never taker
     qty: float = 0.0                    # 0 -> smallest tradable size (min_qty / min_notional x 1.02)
     tp_pct: float = 0.50                # static TP1 (ATR unknown): 2.5 x SL 0.20 -> RR 2.5 (was 0.45)
     tp1_frac: float = 0.5
     sl_pct: float = 0.20
-    microbe_trigger_pct: float = 0.08   # MARIN phase 0: +0.08 % -> stop to entry +0.03 % gross (loss <= fees)
-    microbe_lock_pct: float = 0.03
+    microbe_trigger_pct: float = 0.10   # MARIN phase 0: MFE +0.10 % -> stop to entry +0.04 % (= maker round trip)
+    microbe_lock_pct: float = 0.04
     be_trigger_pct: float = 0.12        # MARIN phase 1: +0.12 % in favour -> stop to fee-true breakeven
     flow_exit: bool = True              # adverse CVD >= $2M (x symbol scale) in 15 s since entry -> exit
     flow_breath_s: float = 30.0         # no adverse-flow exit in the first 30 s (exchange hard SL still live)
@@ -86,7 +86,7 @@ class Profile:
     peg_max_drift_pct: float = 0.15     # never chase further than 0.15 % from the first quote
     aggressive_quote: bool = True       # wide spread: BUY at ask - 1 tick / SELL at bid + 1 tick (still post-only)
     unfilled_cooldown_s: float = 1.0
-    super_edge: bool = True             # IOC taker entry on super-momentum
+    super_edge: bool = False            # IOC taker entry on super-momentum (OFF since 2026-10-07p: pure maker)
     super_consensus: float = 0.85       # raw swarm consensus (not the JEV-lifted score)
     super_jev: float = 9.2
     super_cvd_usd: float = 3_000_000.0  # CVD 10 s IN the trade direction, x symbol usd_scale
@@ -121,6 +121,23 @@ class Profile:
     risk_parity: bool = True            # coins without a fixed size: qty = risk_target / (price x (SL + fees))
     risk_target_usdt: float = 0.15      # -> ~0.30 SOL at SL 0.35 % (BTC keeps its exchange minimum 0.002)
     ratchet_retry_s: float = 5.0        # a failed exchange-stop move is retried after 5 s, not every tick
+    eject: bool = True                  # time-decay: open >= eject_s with MFE < eject_mfe_pct -> soft exit at BE
+    eject_s: float = 180.0
+    eject_mfe_pct: float = 0.06
+    eject_hard_s: float = 360.0         # BE order still unfilled at 360 s -> re-peg at the touch (thesis is dead)
+    alt_boost: bool = True              # SOL/DOGE at swarm vote >= 0.90 -> size base..max of ALT_SIZE (Kelly-scaled)
+    alt_boost_score: float = 0.90
+    alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
+    alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
+    alt_kelly_min_n: int = 5            # ... needs >= 5 of them, else the boost stays at the base size
+    alt_kelly_full: float = 0.10        # quarter-Kelly f >= 0.10 -> the boost reaches ALT_SIZE max
+    btc_probe_qty: float = 0.0001       # BTC outside a clean high-VFR tape, or over its 15 % budget: probe size only
+    probe_refuse_cooldown_s: float = 30.0   # probe below the venue minimum -> BTC rests 30 s before re-asking
+    vfr_gate: bool = True               # VFR = ATR 15 m (bps) / (maker round trip + spread) < vfr_min -> FROZEN
+    vfr_min: float = 3.0
+    vfr_full: float = 5.0               # BTC below VFR 5: micro-probe size only
+    tp_fee_mult: float = 3.0            # gross TP1 >= 3 x round-trip fee (maker 2 + 2 bps -> >= 0.12 %)
+    gtx_backoff_ticks: int = 2          # post-only reject (-5022): re-quote 1 tick further from the touch, <= 2 times
     fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
@@ -177,6 +194,16 @@ class Profile:
     test_hold_s: Optional[float] = None
 
 
+# SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
+# notional cap ($90) is smaller; every SOL/DOGE size (parity, Kelly, convex, boost) is clipped to it.
+# 2026-10-07p: (base qty, max qty, max notional USD). Normal SOL/DOGE sizes stop at base; a swarm vote >= 90 %
+# lifts the size from base toward max by the coin's rolling quarter-Kelly; the notional cap binds first if smaller.
+ALT_SIZE = {'SOLUSDT': (0.70, 1.20, 140.0), 'DOGEUSDT': (300.0, 500.0, 140.0)}
+ALT_SIZE_CAP = ALT_SIZE                 # name kept for 2026-10-07o callers
+# VFR horizon floor: BTC also needs ATR 15 m >= 0.10 % (VFR >= 3 already implies ~0.12 % at 4 bps of fees).
+ATR15_FLOOR = {'BTCUSDT': 0.10}
+
+
 PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
@@ -184,7 +211,8 @@ PROFILES = {
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
-                    asset_brackets=False),  # live: max loss 0.05 U, minimum size
+                    asset_brackets=False, eject=False, alt_boost=False,
+                    alt_risk_share=0.0),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -608,19 +636,85 @@ class Engine:
         peers = self.open_peers()
         if len(peers) + 1 > self.p.max_positions:
             return f'PORTFOLIO FULL {len(peers)}/{self.p.max_positions}'
-        risk = sum(o.risk_at_stop() for o in peers)
-        if risk >= self.p.portfolio_risk_usdt:
-            return f'PORTFOLIO RISK {risk:.2f} >= {self.p.portfolio_risk_usdt:g} U'
+        risk, cap = sum(o.risk_at_stop() for o in peers), self.risk_cap()
+        if risk >= cap:
+            return f'PORTFOLIO RISK {risk:.2f} >= {cap:g} U' + (' (BTC: phần dành SOL/DOGE)' if cap <
+                                                                 self.p.portfolio_risk_usdt else '')
         return None
+
+    def is_alt(self) -> bool:
+        return self.p.symbol in ALT_SIZE
+
+    def risk_cap(self) -> float:
+        """Money-at-stop budget for a new trade on this coin: BTC gets (1 - alt_risk_share) of the pool."""
+        if self.is_alt() or not self.p.alt_boost:
+            return self.p.portfolio_risk_usdt
+        return max(0.0, self.p.portfolio_risk_usdt * (1.0 - self.p.alt_risk_share))
+
+    def alt_kelly(self) -> dict:
+        """Rolling Kelly (Thorp) on this coin's last alt_kelly_window settled trades:
+        f* = max(0, (p (b + 1) - 1) / b), f = lambda f* (quarter), scale = min(1, f / alt_kelly_full)."""
+        rows = [float(r['pnl']) for r in self.all_rows
+                if r.get('symbol', self.p.symbol) == self.p.symbol and r.get('pnl') is not None]
+        rows = rows[-self.p.alt_kelly_window:]
+        n, wins, losses = len(rows), [x for x in rows if x > 0], [-x for x in rows if x <= 0]
+        out = {'n': n, 'p': None, 'b': None, 'f_star': None, 'f': None, 'scale': 0.0}
+        if n < self.p.alt_kelly_min_n or not wins:
+            return out
+        p = len(wins) / n
+        b = (sum(wins) / len(wins)) / (sum(losses) / len(losses)) if losses and sum(losses) > 0 else None
+        f_star = 1.0 if b is None else max(0.0, (p * (b + 1) - 1) / b)
+        f = f_star * self.p.kelly_lambda
+        out.update(p=p, b=b, f_star=f_star, f=f, scale=min(1.0, f / self.p.alt_kelly_full) if self.p.alt_kelly_full
+                   else 1.0)
+        return out
+
+    def alt_cap(self, price: float, boosted: bool = False) -> Optional[float]:
+        """SOL/DOGE size ceiling (qty): base normally; boosted -> base + (max - base) x Kelly scale;
+        never above max notional / price; on the step grid."""
+        if not self.is_alt() or not price or not self.spec:
+            return None
+        base, top, usd = ALT_SIZE[self.p.symbol]
+        q = base + (top - base) * self.alt_kelly()['scale'] if boosted else base
+        return floor_step(min(q, usd / price), self.spec['step'])
+
+    def vfr_view(self, f: Optional[dict] = None) -> dict:
+        """Volatility-to-Fee Ratio on ATR 15 m: frozen below vfr_min (and BTC below ATR 15 m 0.10 %)."""
+        f = self.features if f is None else f
+        f = f or {}
+        b = self.book() if self.feed is not None else {}
+        bid, ask = b.get('bid') or f.get('bid'), b.get('ask') or f.get('ask')
+        spread = (ask - bid) / ((ask + bid) / 2) * 1e4 if bid and ask and ask > bid else 0.0
+        fee = 2 * self.p.maker_bps
+        a15, src = f.get('atr15_pct'), f.get('atr15_src')
+        v = msig.vfr(a15, fee, spread)
+        floor = ATR15_FLOOR.get(self.p.symbol)
+        sym = self.p.symbol.replace('USDT', '')
+        out = {'vfr': v, 'atr15_pct': a15, 'src': src, 'fee_bps': fee, 'spread_bps': spread, 'min': self.p.vfr_min,
+               'full': self.p.vfr_full, 'gate': self.p.vfr_gate, 'frozen': False, 'why': ''}
+        if v is None:
+            out.update(frozen=True, why=f'VFR {sym} warming (no ATR 15 m yet)')
+        elif v < self.p.vfr_min:
+            out.update(frozen=True, why=f'VFR FROZEN {sym} {v:.2f} < {self.p.vfr_min:g} · ATR15m {a15:.3f}% vs '
+                                        f'phí {fee:g} + spread {spread:.1f} bps')
+        elif floor is not None and a15 < floor:
+            out.update(frozen=True, why=f'VFR FROZEN {sym} ATR15m {a15:.3f}% < {floor}%')
+        return out
+
+    def alt_boosted(self, d: Decision, diag: dict) -> bool:
+        """SOL/DOGE priority: raw swarm vote (not the JEV lift) >= 0.90."""
+        if not self.p.alt_boost or not self.is_alt() or d is None or not d.side:
+            return False
+        return max(d.score, (diag or {}).get('consensus') or 0.0) >= self.p.alt_boost_score - 1e-9
 
     def portfolio_check(self, pl: dict) -> Optional[str]:
         """The new trade must fit: risk at all stops <= cap, margin <= frac x wallet."""
         if not self.p.multi_slot:
             return None
         peers = self.open_peers()
-        risk = sum(o.risk_at_stop() for o in peers) + pl['loss_at_sl']
-        if risk > self.p.portfolio_risk_usdt + 1e-9:
-            return f'PORTFOLIO RISK {risk:.3f} U > {self.p.portfolio_risk_usdt:g} U (gồm lệnh mới {pl["loss_at_sl"]:.3f})'
+        risk, cap = sum(o.risk_at_stop() for o in peers) + pl['loss_at_sl'], self.risk_cap()
+        if risk > cap + 1e-9:
+            return f'PORTFOLIO RISK {risk:.3f} U > {cap:g} U (gồm lệnh mới {pl["loss_at_sl"]:.3f})'
         wallet = self.account.get('wallet') or self.account.get('available')
         margin = sum(o.margin_used() for o in peers) + pl['margin']
         if wallet and margin > self.p.portfolio_margin_frac * wallet + 1e-9:
@@ -880,6 +974,10 @@ class Engine:
         else:
             tp, sl, src, prof = p.tp_pct, p.sl_pct, 'STATIC', p
         e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
+        tp_floor = p.tp_fee_mult * (e_in + p.maker_bps) / 100.0       # gross TP1 >= 3 x round-trip fee
+        if tp < tp_floor - 1e-12:
+            tp = tp_floor
+            prof = replace(prof, tp_pct=tp)
         win, loss = tp - (e_in + p.maker_bps) / 100.0, sl + (e_in + p.taker_bps + p.slip_bps) / 100.0
         ok = sl > 0 and loss > 0
         return {'profile': prof, 'src': src, 'atr_pct': atr_pct, 'sl_pct': sl, 'tp_pct': tp, 'trail_pct': trail,
@@ -977,10 +1075,13 @@ class Engine:
         d, f, c = self.decision, self.features or {}, self.sig_cfg
         k, mr = f.get('ker'), (self.sig or {}).get('MR')
         score = self.conviction(d, self.diag or {}) if d else 0.0
+        vv = self.vfr_view(f)
         if self.pos:
             label = f'{"LONG" if self.pos["side"] == "BUY" else "SHORT"} OPEN'
         elif self.busy:
             label = 'ORDER'
+        elif self.p.vfr_gate and vv['frozen'] and vv['vfr'] is not None:
+            label = f'FROZEN VFR {vv["vfr"]:.1f}'
         elif self.p.drift_lock and (self.reg or {}).get('name') == 'DRIFT':
             label = 'DRIFT LOCK'
         elif mr:
@@ -988,7 +1089,7 @@ class Engine:
         elif k is None:
             label = 'WARMUP'
         elif self.chop_locked:
-            label = 'MR SCAN' if k < c.ker_lock else 'CHOP'
+            label = 'MR SCAN' if k < min(c.ker_lock, c.mr_ker_max) else 'CHOP'   # BTC: MR off -> CHOP
         elif d is not None and d.side:
             label = f'TREND {d.side} ({score * 100:.0f}%)'
         else:
@@ -997,7 +1098,18 @@ class Engine:
                 'flow': self.flow.get('state'),
                 **{k: self.bracket_plan('SWARM', f).get(k) for k in ('sl_pct', 'tp_pct', 'src')},
                 'score': score, 'allowed': bool(d and d.allowed), 'reason': (d.reason if d else '')[:140],
-                'pos': bool(self.pos), 'price': f.get('price')}
+                'pos': bool(self.pos), 'price': f.get('price'), **self.coin_pnl(),
+                'vfr': vv['vfr'], 'atr15_pct': vv['atr15_pct'], 'frozen': bool(self.p.vfr_gate and vv['frozen'])}
+
+    def coin_pnl(self) -> dict:
+        """Realised net PnL of this coin over the whole ledger (radar: BTC -0.79 U | SOL +0.33 U ...)."""
+        rows = [float(r['pnl']) for r in self.all_rows
+                if r.get('symbol', self.p.symbol) == self.p.symbol and r.get('pnl') is not None]
+        pnl = sum(rows)
+        return {'pnl': round(pnl, 4), 'n': len(rows), 'wins': sum(1 for x in rows if x > 0),
+                'gross_win': round(sum(x for x in rows if x > 0), 4),
+                'tag': 'PROFIT MAKER' if pnl > 0 else ('BLEEDER' if pnl < 0 else ''),
+                'alt': self.is_alt(), 'risk_cap': self.risk_cap()}
 
     def conviction(self, d: Decision, diag: dict) -> float:
         """Swarm score the governor reads: raw vote (60/80/100 % steps with 3 alpha agents) or the JEV lift."""
@@ -1021,6 +1133,10 @@ class Engine:
         if self.toxic_blocks(d.side):
             return False, (f'VPIN TOXIC {(self.toxic_vpin or 0):.2f} {self.toxic_side} flow · cấm {d.side} '
                            f'{self.toxic_until - self.clock():.0f}s')
+        if self.p.vfr_gate:
+            vv = self.vfr_view()
+            if vv['frozen']:
+                return False, vv['why']
         if self.p.drift_lock and reg.get('name') == 'DRIFT':
             return False, f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'
         if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
@@ -1103,15 +1219,45 @@ class Engine:
             if pq and (kq is None or pq > kq):
                 kq = pq
             mult = self.size_mult(decision, self.diag, f) if tag == 'AUTO' else 1.0
+            ref = px if route == 'gtx' else touch
             if mult > 1.0:
-                ref = px if route == 'gtx' else touch
                 kq = ceil_step(max(kq or base.qty or 0.0, self.min_qty(ref)) * mult, step)
-            pl = plan(side, px if route == 'gtx' else touch, self.spec,
-                      replace(base, entry='gtx' if route == 'gtx' else 'market'), self.account.get('available'),
-                      qty=kq)
+            boosted = tag == 'AUTO' and path != 'MR' and self.alt_boosted(decision, self.diag)
+            cap = self.alt_cap(ref, boosted)
+            if boosted and cap and cap > (kq or 0.0):
+                kk = self.alt_kelly()
+                self.event(f'ALPHA PRIORITY {sym.replace("USDT", "")} vote '
+                           f'{max(decision.score, (self.diag or {}).get("consensus") or 0.0) * 100:.0f}% >= '
+                           f'{self.p.alt_boost_score * 100:.0f}% -> size {fmt(kq or 0.0, step)} -> {fmt(cap, step)}'
+                           f' (Kelly {kk["n"]} lệnh, f {0 if kk["f"] is None else kk["f"]:.3f}, '
+                           f'scale {kk["scale"]:.2f})')
+                kq = cap
+            if cap and kq and kq > cap:
+                kq = cap                                    # every SOL/DOGE size path stops at the coin cap
+            mkpl = lambda q: plan(side, px if route == 'gtx' else touch, self.spec,
+                                  replace(base, entry='gtx' if route == 'gtx' else 'market'),
+                                  self.account.get('available'), qty=q)
+            pl = mkpl(kq)
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
+            probe = None
+            if tag == 'AUTO' and self.p.alt_boost and not self.is_alt() and self.p.btc_probe_qty:
+                vv = self.vfr_view(f)
+                why_probe = ('VFR ' + ('—' if vv['vfr'] is None else f'{vv["vfr"]:.2f}') + f' < {self.p.vfr_full:g}'
+                             if vv['vfr'] is None or vv['vfr'] < self.p.vfr_full else
+                             f'risk {pl["loss_at_sl"]:.3f} U > {self.risk_cap():g} U' if pl['loss_at_sl'] >
+                             self.risk_cap() + 1e-9 else None)
+                if why_probe:
+                    pl2 = mkpl(self.p.btc_probe_qty)
+                    if not pl2['ok'] or pl2['qty'] > self.p.btc_probe_qty + 1e-12:
+                        msg = (f'BTC MICRO-PROBE {self.p.btc_probe_qty:g} ({why_probe}) dưới sàn sàn giao dịch '
+                               f'(min qty {self.spec["min_qty"]:g} / ${self.spec["min_notional"]:g}) -> bỏ lệnh')
+                        self.event(f'OKAPI refused {side}: {msg}')
+                        self.cooldown_until = self.clock() + self.p.probe_refuse_cooldown_s   # no event spam
+                        return {'ok': False, 'error': msg}
+                    pl, probe = pl2, why_probe
+                    self.event(f'BTC MICRO-PROBE {pl["qty_str"]} ({why_probe}) · rủi ro {pl["loss_at_sl"]:.4f} U')
             why = self.portfolio_check(pl)
             if why:
                 self.event(f'RUNE portfolio refused {side} {pl["qty_str"]}: {why}')
@@ -1131,12 +1277,24 @@ class Engine:
                 fill, filled = await self.venue.ioc(sym, side, pl['qty_str'], fmt(lim, tick), cid)
                 px = lim
             else:
-                try:
-                    await self.venue.limit_gtx(sym, side, pl['qty_str'], fmt(px, tick), cid)
-                except PostOnlyReject:
-                    self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
-                    self.event(f'GTX {side} @ {fmt(px, tick)} rejected post-only (book moved) - retry after cooldown')
-                    return {'ok': False, 'error': 'post-only rejected (would take liquidity)'}
+                backoff = 0
+                while True:
+                    try:
+                        await self.venue.limit_gtx(sym, side, pl['qty_str'], fmt(px, tick), cid)
+                        break
+                    except PostOnlyReject:
+                        if backoff >= self.p.gtx_backoff_ticks:
+                            self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
+                            self.event(f'GTX {side} @ {fmt(px, tick)} rejected post-only x{backoff + 1} (book moved)'
+                                       f' - no taker fallback, retry after cooldown')
+                            return {'ok': False, 'error': 'post-only rejected (would take liquidity)'}
+                        backoff += 1          # anti-taker guard: step 1 tick AWAY from the touch, never MARKET
+                        px = round_tick(px - (tick if side == 'BUY' else -tick), tick,
+                                        'down' if side == 'BUY' else 'up')
+                        px0 = px
+                        cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
+                        self.event(f'GTX {side} post-only reject -> back off 1 tick to {fmt(px, tick)} '
+                                   f'({backoff}/{self.p.gtx_backoff_ticks})')
                 st, deadline = {}, time.monotonic() + self.p.gtx_ttl_s
                 peg = self.p.peg and decision.score >= self.p.peg_min_score and path != 'MR'
                 last_post = time.monotonic()
@@ -1216,7 +1374,7 @@ class Engine:
                         'atr_pct': bp['atr_pct'], 'atr_trail_pct': bp['trail_pct'], 'bracket_src': bp['src'],
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
-                        'quote_px': px, 'size_mult': mult,
+                        'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe,
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
@@ -1357,12 +1515,13 @@ class Engine:
         """Post-only reduce price: SELL at the best ask (BUY at the best bid); 1 tick inside if spread >= 2 ticks."""
         return self.gtx_price(side_out, f)
 
-    async def start_soft_exit(self, reason: str) -> None:
+    async def start_soft_exit(self, reason: str, floor: Optional[float] = None) -> None:
+        """floor (time-decay ejection): the reduce order never rests at a worse price than this level."""
         p = self.pos
         if p.get('exiting'):
             return
         p['exiting'] = {'reason': reason, 'cid': None, 'px': None, 'posted': 0.0, 'started': self.clock(),
-                        'reprices': 0}
+                        'reprices': 0, 'floor': floor, 'floor0': floor}
         try:
             await self.venue.cancel(self.p.symbol, p['tp_cid'])     # the exit order owns the whole size now
         except Exception:
@@ -1380,6 +1539,8 @@ class Engine:
         want = self.exit_price(opp, self.book())
         if want is None:
             return
+        if x.get('floor'):                     # EJECT-BE: SELL never below the scratch level, BUY never above
+            want = max(want, x['floor']) if opp == 'SELL' else min(want, x['floor'])
         now = time.monotonic()
         if x['cid']:
             st = await self.venue.order(sym, x['cid'])
@@ -1432,9 +1593,21 @@ class Engine:
         peak_fav = d * (p['peak'] / p['entry'] - 1) * 100
         p['mfe_pct'] = max(p['mfe_pct'], peak_fav)
         if p.get('exiting'):
+            x = p['exiting']
+            if x.get('floor') and self.clock() - p['opened'] >= self.p.eject_hard_s:
+                x.update(floor=None, reason='EJECT')
+                self.event(f'MARIN EJECT escalate: BE order unfilled after {self.p.eject_hard_s:.0f}s -> '
+                           f'maker at the touch ({fav:+.3f}%, hard SL {p["sl"]:g} stays)')
             await self.work_soft_exit()
             return
         now = self.clock()
+        if self.eject_due(p, now):
+            px = self.eject_floor(p)
+            self.event(f'MARIN TIME-DECAY EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_s:.0f}s, MFE '
+                       f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_mfe_pct}% -> post-only reduce at BE {px:g} '
+                       f'(entry {"+" if d > 0 else "-"}fees), at the touch after {self.p.eject_hard_s:.0f}s')
+            await self.start_soft_exit('EJECT-BE', floor=px)
+            return
         flip = self.regime_flipped(p, f)
         p['flip_since'] = (p.get('flip_since') or now) if flip else None
         p['gross_pct'] = fav
@@ -1484,6 +1657,17 @@ class Engine:
             await self._manage_soft(p, d, mark, fav)
         else:
             await self._manage_hard(p, d, mark, fav)
+
+    def eject_due(self, p: dict, now: float) -> bool:
+        """Time decay: a soft-exit position open >= eject_s whose best excursion never reached +eject_mfe_pct."""
+        return (self.p.eject and self.p.soft_exits and not p.get('tp1_filled')
+                and now - p['opened'] >= self.p.eject_s and p['mfe_pct'] < self.p.eject_mfe_pct)
+
+    def eject_floor(self, p: dict) -> float:
+        """Fee-true scratch: entry +/- (entry fee + maker exit fee) -> net PnL ~ 0 when the reduce order fills."""
+        d = 1 if p['side'] == 'BUY' else -1
+        off = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 1e4
+        return round_tick(p['entry'] * (1 + d * off), self.spec['tick'], 'up' if d > 0 else 'down')
 
     def hurdle_gate(self, p: dict, fav: float, now: float) -> Optional[str]:
         """Fee hurdle: why a FLOW / REGIME exit must wait (None = exits allowed). Hard SL and MARIN tiers ignore it."""
@@ -1731,6 +1915,8 @@ class Engine:
                'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
+               'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
+               'probe': p.get('probe'),
                'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
                'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
                'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],
@@ -1833,13 +2019,16 @@ class Engine:
                 'mbe_locked': p.get('mbe_locked'), 'adverse_usd': p.get('adverse_usd'),
                 'soft_stop': p.get('soft_stop'), 'soft_exits': self.p.soft_exits,
                 'exiting': None if not p.get('exiting') else {k: p['exiting'][k] for k in
-                                                               ('reason', 'px', 'reprices', 'started')},
+                                                               ('reason', 'px', 'reprices', 'started', 'floor')},
                 'flow_exit_usd': p.get('flow_limit') or self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
                 'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - p['opened'])) if p else None,
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
                 'gross_pct': p.get('gross_pct'), 'hurdle': p.get('hurdle'), 'hurdle_pct': self.p.hurdle_pct,
                 'ratchet': bool(p.get('ratchet')), 'size_mult': p.get('size_mult'),
+                'alt_boost': bool(p.get('alt_boost')),
+                'eject_in_s': (max(0.0, self.p.eject_s - (self.clock() - p['opened']))
+                               if p and self.p.eject and p['mfe_pct'] < self.p.eject_mfe_pct else None),
                 'risk_at_stop': self.risk_at_stop(),
                 'bracket_src': p.get('bracket_src'), 'rr_gross': p.get('rr_gross'), 'rr_net': p.get('rr_net'),
                 'be_wr': p.get('be_wr'), 'atr_pct': p.get('atr_pct'), 'trail_gap': p.get('trail_gap'),
@@ -1903,6 +2092,7 @@ class Engine:
                                                'ker', 'ker_span_s', 'cvd_15s', 'px_vel_15s', 'vwap_5m',
                                                'vwap_5m_span', 'ema5_20', 'ema5_slope', 'ema5_n')},
             'absorption': self.absorb, 'macro': {k: v for k, v in self.macro.items() if k != 'allow'},
+            'vfr': self.vfr_view(),
             'chop': {'ker': f.get('ker'), 'locked': self.chop_locked, 'gate': self.p.ker_gate,
                      'lock': self.sig_cfg.ker_lock, 'unlock': self.sig_cfg.ker_unlock,
                      'reason': self.chop_reason() if self.chop_locked else None},
@@ -2170,9 +2360,9 @@ class Runner:
         return e
 
     async def seed_bars(self, e: Engine) -> None:
-        """ATR(14) / Yang-Zhang need closed 1 m bars: seed 30 from mainnet public klines (no key)."""
+        """ATR(14) / Yang-Zhang / ATR 15 m need closed 1 m bars: seed 240 (4 h) from public klines."""
         try:
-            rows = await asyncio.to_thread(fetch_klines, e.feed.symbol, '1m', 30)
+            rows = await asyncio.to_thread(fetch_klines, e.feed.symbol, '1m', 240)
             n = e.feed.seed_bars([r[:5] for r in rows])
             e.event(f'ATR 1m: seeded {n} closed 1 m bars -> ATR brackets live at once')
         except Exception as exc:

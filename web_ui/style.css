@@ -562,4 +562,6 @@ body[data-regime="up"] header{box-shadow:inset 0 -2px 0 var(--emerald)}
 .radar-chip.chop{color:var(--gold);border-color:rgba(255,183,3,.4)}
 .radar-chip.open{color:#061016;background:var(--emerald);border-color:var(--emerald);box-shadow:0 0 12px rgba(0,255,163,.35)}
 .radar-chip.focus{outline:1px solid var(--cyan);outline-offset:1px}
+.pnl-strip{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid rgba(255,255,255,.12)}
+.coin-pnl{font:700 10px var(--mono);color:var(--muted)}.coin-pnl.win{color:var(--emerald);text-shadow:0 0 8px rgba(0,255,163,.35)}.coin-pnl.loss{color:var(--red)}
 

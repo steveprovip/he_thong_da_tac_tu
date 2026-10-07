@@ -195,12 +195,12 @@
       [fx(pos.margin, 2) + ' U'], [`${sg(pos.upnl, 4)} (${sg(pos.roe_pct, 2)}%)`, pos.upnl >= 0 ? 'buy glow' : 'sell glow'],
       [`${fin(pos.tp) ? fx(pos.tp, pdp(pos.tp)) : '—'}${pos.tp1_filled ? ' ✓' : ''} / SL sàn ${fin(pos.sl) ? fx(pos.sl, pdp(pos.sl)) : '—'}`,
         pos.be_locked ? 'buy' : ''],
-      [pos.exiting ? `MAKER EXIT ${pos.exiting.reason} @ ${fx(pos.exiting.px, pdp(pos.exiting.px))} · re-peg x${pos.exiting.reprices}`
+      [pos.exiting ? `MAKER EXIT ${pos.exiting.reason} @ ${fx(pos.exiting.px, pdp(pos.exiting.px))}${fin(pos.exiting.floor) ? ` (sàn BE ${fx(pos.exiting.floor, pdp(pos.exiting.floor))})` : ''} · re-peg x${pos.exiting.reprices}`
         : pos.trail_on ? `TRAILING (soft ${fx(pos.soft_stop, pdp(pos.soft_stop))}) · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.be_locked ? `BE ${pos.soft_exits ? 'soft ' + fx(pos.soft_stop, pdp(pos.soft_stop)) : 'LOCKED'} · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.mbe_locked ? `MICRO-BE · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k`
         : pos.ratchet ? `RATCHET · SL sàn ${fx(pos.sl, pdp(pos.sl))} · MFE ${sg(pos.mfe_pct, 2)}%`
-        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `${pos.tag === 'ADOPTED' ? 'ADOPTED · ' : ''}${pos.size_mult > 1 ? `x${pos.size_mult} · ` : ''}micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,
+        : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `${pos.tag === 'ADOPTED' ? 'ADOPTED · ' : ''}${pos.alt_boost ? 'PRIORITY · ' : ''}${pos.size_mult > 1 ? `x${pos.size_mult} · ` : ''}${fin(pos.eject_in_s) ? `EJECT ${fx(pos.eject_in_s, 0)}s · ` : ''}micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,
         pos.trail_on ? 'buy glow' : pos.be_locked ? 'buy' : 'warn']] })), 9, 'Không có vị thế');
     const st = s.stats || {};
     const wr = $('winrate');
@@ -239,12 +239,17 @@
     if (rad) {
       const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       const cls = l => /OPEN|ORDER/.test(l) ? 'open' : /^TREND (BUY|SELL)/.test(l) ? 'trend' : /^MR (BUY|SELL)/.test(l) ? 'mr'
-        : /CHOP/.test(l) ? 'chop' : 'idle';
+        : /CHOP|FROZEN/.test(l) ? 'chop' : 'idle';   // /FROZEN/.test(l): VFR < 3 (ATR 15 m cannot pay the fees)
       const html = (sc.rows || []).map(r => `<button type="button" class="radar-chip ${cls(r.label)}${r.symbol === sc.focus ? ' focus' : ''}"`
-        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · SL ${fin(r.sl_pct) ? fx(r.sl_pct, 2) : '—'}% · TP1 ${fin(r.tp_pct) ? fx(r.tp_pct, 2) : '—'}% · ${r.reason || ''}`)}">`
+        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · VFR ${fin(r.vfr) ? fx(r.vfr, 2) : '—'} (ATR15m ${fin(r.atr15_pct) ? fx(r.atr15_pct, 3) : '—'}%) · SL ${fin(r.sl_pct) ? fx(r.sl_pct, 2) : '—'}% · TP1 ${fin(r.tp_pct) ? fx(r.tp_pct, 2) : '—'}% · ${r.reason || ''}`)}">`
         + `${esc(r.symbol.replace('USDT', ''))}: ${esc(r.label)}</button>`).join('<i>|</i>');
+      // per-coin realised PnL (ledger): BTC: -0.79 U | SOL: +0.33 U (PROFIT MAKER) | DOGE: 0.00 U
+      const pnl = (sc.rows || []).filter(r => fin(r.pnl)).map(r => `<span class="coin-pnl ${r.pnl > 0 ? 'win' : r.pnl < 0 ? 'loss' : ''}"`
+        + ` title="${esc(`${r.n || 0} lệnh · ${r.wins || 0} thắng · lãi gộp lệnh thắng ${sg(r.gross_win || 0, 4)} U`)}">`
+        + `${esc(r.symbol.replace('USDT', ''))}: ${sg(r.pnl, 2)} U${r.pnl > 0 ? ' (PROFIT MAKER)' : ''}</span>`).join('<i>|</i>');
+      const full = html + (pnl ? `<span class="pnl-strip">PnL ${pnl}</span>` : '');
       const lead = sc.on ? '<b>SCANNER</b>' : '<b>1 CẶP</b>';
-      if (rad.dataset.html !== html) { rad.innerHTML = lead + (html || ' —'); rad.dataset.html = html; }
+      if (rad.dataset.html !== full) { rad.innerHTML = lead + (full || ' —'); rad.dataset.html = full; }
     }
     const fl = s.flow || {};
     const fln = $('flow-chip');
