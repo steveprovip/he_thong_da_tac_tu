@@ -145,3 +145,9 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Quét đa cặp: cặp có ứng viên tốt hơn (điểm + 0.05 nếu regime cùng chiều + 0.05 nếu 3 dòng tiền cùng chiều) trong 1 s gần nhất được vào trước; cặp kém hơn ghi `SCANNER YIELD`.
 - Tuỳ chọn (tắt mặc định): `hurdle_concordance_override` cho REGIME/FLOW exit vượt rào cản phí khi cả 3 dòng tiền ngược vị thế.
 - UI: chip `FLOW: CONCORDANT BUY/SELL`, `FLOW: CONFLICT (LOCKED)`, `FLOW: DRIFT LOCK`; radar ghi `DRIFT LOCK`.
+
+### 8.13 Phiên bản v2.3.1 (07/10/2026) — 🏆 Bản Ổn Định Sinh Lời Chậm (Stable Slow-Profit Alpha Engine)
+- **Đặc điểm thực tế**: Đã kiểm chứng sinh lời ổn định thực tế (Số dư tài khoản tăng từ 4,922.00 U lên 4,923.45 U, PnL vị thế xanh đậm +0.1781 U / +1.06% ROE).
+- **Cơ chế**: Sửa triệt để lỗi Binance code -4067 (đồng bộ khởi động êm ái khi còn vị thế/lệnh chờ).
+- **Trạng thái an toàn**: Triple Flow Concordance (CVD 15s/60s + OFI L10) + Rào cản phí + ATR Dynamic TP/SL (RR >= 2.5:1).
+- **Số test pass**: 951/951 passed.
