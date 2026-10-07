@@ -22,7 +22,11 @@
 - **Trading, Alpha & Microstructure**: `groktopus-swarm-consensus`, `quant-hft-microstructure`, `binance-futures-algo-guard`, `polymarket-binance-micro-arb`, `realtime-trading-telemetry`.
 - **Auditing & Safety**: `review-bugbot`, `review-security`, `anti-slop`, `split-to-prs`, `permissioned-github`.
 
-## 4. Architectural Invariants
+## 4. Architectural Invariants & Milestones (v2.1.0)
 - **Swarm**: 8 specialized agents (`VESKA`, `NORO`, `LUMEN`, `TIDAL`, `ZEPHR`, `RUNE`, `OKAPI`, `MARIN`).
 - **Consensus Thresholds**: Supermajority Execution `>= 76.8%`, Supreme Risk Veto `< 70.0%`. Single-use HMAC AuthTokens for `VESKA`.
-- **Telemetry & UI**: Atomic state sync via `data/telemetry_state.json`; low-latency WebSocket/polling stream to Web UI (`http://127.0.0.1:8765`).
+- **Execution Protocol**: 100% Post-Only GTX Maker default, Smart IOC for God-Candle momentum, on-exchange TP/SL bracket orders.
+- **Micro-Risk Guards**: Kaufman Efficiency Ratio (KER < 0.38 CHOP LOCK), Absorption Trap Guard, Fee-Hurdle Exit Gating (+-0.08%), 90s Min Holding Discipline.
+- **Multi-Asset Engine**: Live WebSocket multiplexing across `BTCUSDT`, `SOLUSDT`, `DOGEUSDT` in DEMO; Dual-Mode (Trend + Mean Reversion).
+- **Telemetry & UI**: Atomic SSE stream `/api/stream` at `http://127.0.0.1:8765`, Multi-Asset Radar Bar, Realtime Position Card.
+- **Release Tags**: Semantic version tags maintained on GitHub (`v1.0.0` through `v2.1.0`).
