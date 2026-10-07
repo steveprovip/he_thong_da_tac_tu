@@ -1,11 +1,98 @@
 <!doctype html>
 <html lang="vi">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GROKTOPUS · Swarm Observatory</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GROKTOPUS · Pro Terminal</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&amp;family=Outfit:wght@300;500;700;800&amp;display=swap"><link rel="stylesheet" href="/style.css"><script src="/terminal.js" defer></script><script src="/desk.js" defer></script><script src="/app.js" defer></script></head>
 <body>
-<header><a class="wordmark" href="/">GROK<span>TOPUS</span><small>QUANTITATIVE SWARM / 01</small></a><div class="connection"><i id="lamp"></i><span id="connection">CONNECTING</span><span id="mode" class="hero-mode">OFFLINE</span><span id="armed" class="hero-armed">LOCKED</span><span id="clock">—</span></div></header>
+<header><a class="wordmark" href="/">GROK<span>TOPUS</span><small>QUANT SWARM · PRO TERMINAL</small></a><div class="connection"><i id="lamp"></i><span id="connection">CONNECTING</span><span id="mode" class="hero-mode">OFFLINE</span><span id="hdr-regime" class="hero-regime">REGIME —</span><span id="armed" class="hero-armed">LOCKED</span><span id="clock">—</span></div></header>
 <main>
-<div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag tick" id="tick-tag" title="Nhấp nháy mỗi khi có tick giá mới từ Binance REST"><i id="tick-dot"></i><b id="tick-price">—</b></span><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
+<div class="status"><span class="label">SYSTEM STATE</span><strong id="status" role="status">Waiting for engine</strong><span class="tag tick" id="tick-tag" title="Nhấp nháy mỗi tick giá mới (Binance WebSocket; REST khi mất socket) · OBI L5 · CVD 60s"><i id="tick-dot"></i><b id="tick-price">—</b></span><span class="tag" id="data-source">FEED —</span><span class="tag">GTX ENTRY</span><span class="tag">HMAC / 5 SEC</span><span class="tag" id="auth-tag">AUTHTOKEN ×0</span><span class="tag" id="lab-tag" title="Counterfactual probes: every signal, gated or not">LAB IDLE</span><button id="kill" class="kill" type="button" hidden>◼ EMERGENCY STOP</button></div>
 
+<section class="control-bar glass" aria-label="Chế độ và điều khiển khớp lệnh">
+  <div class="mode-switch" role="group" aria-label="Chế độ giao dịch">
+    <button id="btn-demo" class="mode-btn demo" type="button" aria-pressed="false"><i></i><span>CHẾ ĐỘ DEMO BINANCE</span><small id="demo-sub">demo-fapi · BTCUSDT</small></button>
+    <span class="mode-arrow" aria-hidden="true">⟷</span>
+    <button id="btn-live" class="mode-btn live" type="button" aria-pressed="false"><i></i><span>CHẾ ĐỘ THỰC TẾ LIVE</span><small id="live-sub">fapi · tiền thật</small></button>
+  </div>
+  <form id="live-form" class="live-form" hidden><label for="live-confirm">Gõ <b>LIVE</b> để chuyển sang tiền thật</label><input id="live-confirm" autocomplete="off" spellcheck="false" maxlength="8"><button type="submit" class="act danger">XÁC NHẬN</button><button type="button" id="live-cancel" class="act">HUỶ</button></form>
+  <div class="sym-switch" role="group" aria-label="Chọn coin"><button type="button" class="sym" data-symbol="BTCUSDT">BTC</button><button type="button" class="sym" data-symbol="DOGEUSDT">DOGE</button><button type="button" class="sym" data-symbol="SOLUSDT">SOL</button><small id="fee-note">phí —</small></div>
+  <div class="ctl-actions">
+    <button id="btn-force" class="act force long" type="button" data-side="BUY">⚡ BẮN LONG TEST</button><button id="btn-force-short" class="act force short" type="button" data-side="SELL">⚡ BẮN SHORT TEST</button>
+    <button id="btn-close" class="act close" type="button">✕ ĐÓNG VỊ THẾ</button>
+    <button id="btn-sound" class="act sound" type="button" aria-pressed="false">♪ ÂM THANH: TẮT</button>
+  </div>
+  <div id="ctl-regime" class="regime-badge neutral" role="status" aria-live="polite"><i></i><b>REGIME —</b><small>CVD 60s —</small></div>
+  <div class="ctl-status"><span id="ctl-venue" class="chip">ENGINE CHƯA CHẠY · run.bat demo</span><span id="ctl-phase" class="chip">—</span><span id="ctl-lat" class="chip">LATENCY —</span><span id="ctl-msg" class="ctl-msg" role="status" aria-live="polite"></span></div>
+</section>
+<section class="glass trade-desk" aria-label="Vị thế và lệnh">
+  <div class="trigger-strip" id="triggers" aria-label="Tín hiệu kích hoạt">
+    <div class="trig" id="trig-FLOW"><b>S1 · OBI+CVD</b><span>—</span><small>|OBI| ≥ 0.20 &amp; CVD 60s ≥ 0.20 + CVD 10s cùng chiều</small></div>
+    <div class="trig" id="trig-VWAP"><b>S2 · VWAP / TREND</b><span>—</span><small>TREND: CVD ≥ $300k + OBI ≥ 0.15 + giá xuyên VWAP · MR chỉ khi NEUTRAL</small></div>
+    <div class="trig" id="trig-LIQ"><b>S3 · LIQ IMPULSE</b><span>—</span><small>≥ $10k thanh lý / 3 s → bắt râu</small></div>
+    <div class="trig decision" id="trig-DEC"><b>QUYẾT ĐỊNH</b><span>—</span><small>(Swarm ≥ 76.8 % | JEV ≥ 8.0) + hội tụ ≥ 2/3 (C3 edge/cost ≥ 2.5x)</small></div>
+  </div>
+  <header class="card-h"><h3>VỊ THẾ ĐANG MỞ</h3><span class="pnl-split" id="pnl-split" aria-label="Lãi lỗ hôm nay">GROSS — · PHÍ — · NET —</span><span class="chip" id="pos-count">0</span></header>
+  <div class="table-scroll"><table class="bn-table"><thead><tr><th>Symbol</th><th>Size</th><th>Giá vào</th><th>Mark</th><th>Giá thanh lý</th><th>Margin</th><th>PNL (ROE %)</th><th>TP1 / Stop</th><th>MARIN</th></tr></thead><tbody id="pos-rows"><tr><td colspan="9" class="empty">Không có vị thế</td></tr></tbody></table></div>
+  <div class="desk-tabs" role="tablist"><button type="button" role="tab" data-tab="orders" class="tab on" aria-selected="true">Lệnh chờ (<span id="ord-count">0</span>)</button><button type="button" role="tab" data-tab="history" class="tab" aria-selected="false">Lịch sử khớp lệnh (<span id="hist-count">0</span>)</button></div>
+  <div id="tab-orders" class="table-scroll" role="tabpanel"><table class="bn-table"><thead><tr><th>Loại</th><th>Side</th><th>Giá / Trigger</th><th>Số lượng</th><th>Reduce-only</th><th>ID</th></tr></thead><tbody id="ord-rows"><tr><td colspan="6" class="empty">Không có lệnh chờ</td></tr></tbody></table></div>
+  <div id="tab-history" class="table-scroll" role="tabpanel" hidden><table class="bn-table"><thead><tr><th>Thời gian</th><th>Symbol</th><th>Side</th><th>Size</th><th>Giá vào</th><th>Giá ra ≈</th><th>Gross</th><th>Phí</th><th>Net (U)</th><th>ROE</th><th>Lý do</th><th>Maker/Taker</th><th>Nguồn</th></tr></thead><tbody id="hist-rows"><tr><td colspan="13" class="empty">Chưa có lệnh khớp</td></tr></tbody></table></div>
+</section>
+<section class="deck" aria-label="Real-time terminal deck">
+  <article class="glass card pnl-card" id="pnl-card">
+    <header class="card-h"><h3>T1 · MICRO P&amp;L</h3><span class="chip" id="pnl-mode">SHADOW · 0 ORDERS</span></header>
+    <div class="pnl-hero"><small>BALANCE USDT</small><strong id="pnl-balance" class="num">3.8500</strong><em id="pnl-delta" class="num">+0.0000</em></div>
+    <canvas id="cv-pnl" class="spark" height="56" aria-label="Shadow equity curve"></canvas>
+    <dl class="kv"><div><dt>REALIZED</dt><dd id="pnl-real" class="num">—</dd></div><div><dt>UNREALIZED</dt><dd id="pnl-unreal" class="num">—</dd></div><div><dt>WIN / N</dt><dd id="pnl-wins" class="num">—</dd></div><div><dt>MAX LOSS/LỆNH</dt><dd id="pnl-cap" class="num">0.05</dd></div></dl>
+    <p class="last" id="pnl-last">Chưa có lệnh đóng</p>
+  </article>
+  <article class="glass card flow-card">
+    <header class="card-h"><h3>T2 · OBI &amp; CVD PRESSURE</h3><span class="chip" id="flow-sym">—</span></header>
+    <canvas id="cv-gauge" class="gauge" height="150" aria-label="Order book imbalance and CVD pressure gauge"></canvas>
+    <dl class="kv"><div><dt>OBI L5 (EMA)</dt><dd id="flow-obi" class="num">—</dd></div><div><dt>CVD 60s</dt><dd id="flow-cvd" class="num">—</dd></div><div><dt>BUY / SELL 60s</dt><dd id="flow-bs" class="num">—</dd></div><div><dt>CVD SESSION</dt><dd id="flow-cvds" class="num">—</dd></div></dl>
+    <canvas id="cv-cvd" class="spark" height="46" aria-label="CVD 60s trace"></canvas>
+  </article>
+  <article class="glass card swarm-card">
+    <header class="card-h"><h3>T3 · 8-AGENT CONSENSUS MATRIX</h3><span class="chip" id="swarm-quorum">QUORUM —</span></header>
+    <div class="swarm-head"><div><small>CONSENSUS</small><strong id="swarm-score" class="num">0.0%</strong></div><div class="gates"><span class="g-exec">EXEC ≥ 76.8%</span><span class="g-veto">VETO &lt; 70.0%</span></div></div>
+    <div class="swarm-bar"><b id="swarm-fill"></b><i class="mk exec"></i><i class="mk veto"></i></div>
+    <div id="swarm-matrix" class="matrix" role="table" aria-label="Agent votes"></div>
+    <div class="swarm-foot"><span id="veska-token" class="chip">VESKA · TOKEN —</span><span id="rune-veto" class="chip">RUNE · —</span></div>
+  </article>
+  <article class="glass card liq-card dormant">
+    <header class="card-h"><h3>T4 · LIQUIDATION CASCADE STREAM · !forceOrder@arr</h3><span class="chip" id="liq-ws">WS —</span></header>
+    <canvas id="cv-liq" class="bars" height="96" aria-label="Liquidated USD per second, longs vs shorts, 120 s"></canvas>
+    <div class="liq-legend"><span class="long">■ LONG cháy (giá bị đạp xuống)</span><span class="short">■ SHORT cháy (giá bị kéo lên)</span><span id="liq-total">—</span></div>
+    <ol id="liq-stream" class="stream" aria-live="polite"></ol>
+    <p class="last" id="liq-cascade">Chưa có cascade</p>
+  </article>
+  <article class="glass card pm-card dormant">
+    <header class="card-h"><h3>T5 · POLYMARKET 15M FAST-ARB RADAR</h3><span class="chip" id="pm-score">—</span></header>
+    <div class="table-scroll"><table class="pm-table"><thead><tr><th>MKT</th><th>CÒN</th><th>MOVE</th><th>IMPULSE 8s</th><th>P(UP)</th><th>UP</th><th>DOWN</th><th>EDGE</th><th>TRIGGER</th></tr></thead><tbody id="pm-radar"><tr><td colspan="9">Chạy run.bat → [5] để bật radar</td></tr></tbody></table></div>
+    <p class="last" id="pm-note">YES = Up share · edge sau phí taker 0.07·p·(1−p) · settle Chainlink TWAP 60s</p>
+  </article>
+</section>
+<details class="legacy-wrap"><summary>PANEL NGHIÊN CỨU CŨ (fast lane · radar · microstructure · organism) — bấm để mở</summary><section class="panel radar-panel fast-panel" aria-label="Fast lane">
+  <div class="panel-title"><h3>F1 / LIQUIDATION FEED · BINANCE !forceOrder (SHADOW SNIPER)</h3><span id="fast-meta">CHƯA CHẠY · run.bat → [4]/[6]</span></div>
+  <div class="event-grid">
+    <div><h4>THANH LÝ LỚN (≥ $10k, TỐI ĐA 1 LỆNH/COIN/GIÂY)</h4><div id="fast-feed" class="positions">—</div></div>
+    <div><h4>CASCADE (1 PHÍA ≥ NGƯỠNG / 5s) → HÀNH ĐỘNG</h4><div id="fast-cascades" class="positions">—</div></div>
+    <div><h4>VỊ THẾ SHADOW · LỆNH ĐÓNG</h4><div id="fast-trades" class="positions">—</div></div>
+  </div>
+  <div class="panel-title"><h3>F2 / POLYMARKET 15M · FAIR VALUE TỪ BINANCE vs SỔ LỆNH (SAU PHÍ TAKER)</h3><span id="pm15-meta">—</span></div>
+  <div class="table-scroll"><table><thead><tr><th>MARKET</th><th>CÒN</th><th>MOVE</th><th>P(UP) MODEL</th><th>UP ASK</th><th>DOWN ASK</th><th>SIDE</th><th>EDGE</th><th>TRẠNG THÁI</th></tr></thead><tbody id="pm15-rows"><tr><td colspan="9">—</td></tr></tbody></table></div>
+</section>
+<section class="panel radar-panel" aria-label="Alpha radar">
+  <div class="panel-title"><h3>R1 / ALPHA RADAR · VOLUME SURGE BREAKOUT (BINANCE 5m)</h3><span id="radar-meta">CHƯA QUÉT · scripts\CHAY_ALPHA_RADAR.bat</span></div>
+  <div class="table-scroll"><table><thead><tr><th>MARKET</th><th>SIDE</th><th title="volume cửa sổ / trung vị 20h">VOL SURGE</th><th>MOVE</th><th>RSI</th><th title="taker buy share">TAKER</th><th>OBI20</th><th>ENTRY · SL</th><th>TP +2% / +5% (USDT · VND)</th><th>CẢNH BÁO</th></tr></thead><tbody id="radar-picks"><tr><td colspan="10">Chưa có dữ liệu radar</td></tr></tbody></table></div>
+  <div class="radar-foot"><span id="radar-base">BASE RATE LỊCH SỬ —</span><span id="radar-watch">WATCH —</span></div>
+</section>
+<section class="panel radar-panel" aria-label="Event radar">
+  <div class="panel-title"><h3>R2 / EVENT RADAR · POLYMARKET</h3><span id="event-meta">ARB KHOÁ LỜI · MODEL EDGE (CHƯA HIỆU CHUẨN) · MACRO ODDS</span></div>
+  <div class="alert-board"><h4>ALERT BOARD · ARB NEGRISK (TỔNG YES &lt; $1) · MODEL EDGE ≥ 15pp</h4><div id="event-alerts" class="positions">—</div></div>
+  <div class="event-grid">
+    <div><h4>ARBITRAGE (negRisk)</h4><div id="event-arbs" class="positions">—</div></div>
+    <div><h4>MODEL EDGE · CRYPTO THRESHOLD</h4><div id="event-edges" class="positions">—</div></div>
+    <div><h4>MACRO WATCH</h4><div id="event-macro" class="positions">—</div></div>
+  </div>
+</section>
 <section class="metrics" aria-label="Account metrics">
 <article><p>ACCOUNT EQUITY <small>USDT</small></p><h2 id="equity">—</h2><span>W <b id="wallet">—</b></span></article>
 <article><p>SESSION EQUITY CHANGE</p><h2 id="pnl">—</h2><span>unrealized incl.</span></article>
@@ -36,7 +123,8 @@
 <div class="consensus"><div><p>HIGHEST MARKET CONSENSUS</p><strong id="score">0.0<span>%</span></strong></div><div class="gate-note">EXECUTE ≥ 76.8%<br>RUNE VETO &lt; 70.0%</div></div><div class="track"><div id="scorebar"></div><i class="threshold"></i><i class="threshold veto-line"></i></div>
 <p class="footnote">Agent views show the first selected market. Confidence is a policy score, not a probability of profit.</p>
 </section>
-<details class="agent-details"><summary>06-07 / COUNCIL REGISTER · EQUITY TRACE (nhan de mo rong)</summary><div class="workbench">
+<section class="panel trades-panel"><div class="panel-title"><h3>08 / CLOSED TRADES · 3 NHÁNH</h3><span>NET = SAU PHÍ MAKER/TAKER + TRƯỢT GIÁ</span></div><div id="trades" class="positions">Chưa có lệnh đóng</div></section>
+<details class="agent-details" open><summary>06-07 / COUNCIL REGISTER · EQUITY TRACE (nhan de mo rong)</summary><div class="workbench">
 <section class="agents panel"><div class="panel-title"><h3>06 / COUNCIL REGISTER</h3><span>WEIGHTED QUORUM</span></div><div id="agent-list"></div></section>
 <section class="equity-panel panel"><div class="panel-title"><h3>07 / EQUITY TRACE</h3><span id="equity-range">AWAITING ACCOUNT DATA</span></div>
 <div class="chart-wrap"><svg id="equity-chart" viewBox="0 0 900 140" preserveAspectRatio="none" role="img" aria-label="Equity history, rolling 600 observations">
@@ -45,6 +133,7 @@
 <div id="equity-tip" class="chart-tip" hidden></div></div>
 <div class="chart-bottom"><span><i class="key start"></i>VÀO 3.85 U <i class="key kill"></i>DỪNG 3.80 U · ROLLING 600</span><span>ACTUAL SNAPSHOTS / NO INTERPOLATED RETURNS</span></div></section>
 </div>
+</details>
 </details>
 <footer><span>LOCAL OBSERVABILITY · 127.0.0.1 · KILL SWITCH ENABLED</span><span>Heuristic research system. Results require independent validation.</span></footer>
 

@@ -90,7 +90,7 @@ def start():
     print('=' * 70)
     print(f'  [THANH CONG] GIAO DIEN REAL-TIME DANG CHAY!')
     print(f'  Dia chi truy cap: {URL}')
-    print(f'  De tat giao dien, chay file: TAT_GIAO_DIEN.bat')
+    print(f'  De tat giao dien, chay file: scripts\\TAT_GIAO_DIEN.bat')
     print('=' * 70)
     return 0
 

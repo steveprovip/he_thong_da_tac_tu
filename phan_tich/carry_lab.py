@@ -190,10 +190,16 @@ def pair_cashflow(pair_id, spot_trades, futures_trades, incomes, *, base_asset,
     spot_value = spot_qty * dec(spot_bid)
     unrealized_future = entry_value - short_qty * dec(perp_ask)
     liquidation_cost = max(dec(0), short_qty) * dec(perp_ask) * dec(exit_fee_bps) / 10000
-    basis_pnl = spot_cash + spot_value + future_realized + unrealized_future
+    # R4 needs the two legs apart, not just their sum: a brief that reports only
+    # basis_pnl cannot tell a spot markup from a perp drawdown, which is the one
+    # distinction that says whether the hedge is doing its job.
+    spot_pnl = spot_cash + spot_value
+    perp_pnl = future_realized + unrealized_future
+    basis_pnl = spot_pnl + perp_pnl
     net = funding + basis_pnl - fees - liquidation_cost
     return {'pair_id': pair_id, 'status': 'INCOMPLETE' if issues else 'RECONCILED',
             'issues': sorted(set(issues)), 'funding_usdt': str(funding), 'basis_pnl_usdt': str(basis_pnl),
+            'spot_pnl_usdt': str(spot_pnl), 'perp_pnl_usdt': str(perp_pnl),
             'fee_usdt': str(fees), 'exit_cost_reserve_usdt': str(liquidation_cost), 'net_usdt': str(net),
             'spot_qty': str(spot_qty), 'short_qty': str(short_qty),
             'closed': spot_qty == 0 and short_qty == 0, 'trade_count': len(seen)}

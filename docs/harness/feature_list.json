@@ -1,0 +1,12 @@
+{
+  "features": [
+    {
+      "id": "local-ai-toolkit-20261004",
+      "name": "Local toolkit and MCP installation",
+      "description": "Install three MCP servers, local docs and optional isolated tools without changing application runtime",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "3 MCP handshake passes; local search and DBX read call passed; 12 adapter tests passed, 1 skipped; separate live account/API prerequisites documented in docs/AI_TOOLKIT.md."
+    }
+  ]
+}

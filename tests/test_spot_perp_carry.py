@@ -538,7 +538,7 @@ async def test_spot_mutations_blocked_unarmed():
 def test_bat_resolves_workspace_and_launcher():
     from pathlib import Path
     text = (Path(__file__).parents[1] / 'run.bat').read_text()
-    assert 'cd /d "%~dp0"' in text and '"%PY%" run_launcher.py' in text
+    assert 'cd /d "%~dp0"' in text and '"%PY%" -m core.engine --mode demo' in text
     assert '--arm' not in text
 
 

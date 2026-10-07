@@ -12,16 +12,20 @@ import time
 from collections import Counter
 
 from config.settings import ROOT, Settings
-from core.barrier_planner import BarrierPlanner, Barriers, maker_quote
+from core.barrier_planner import BarrierPlanner, Barriers, maker_quote, microstructure_quote
 from core.consensus_engine import TokenAuthority, WEIGHTS
 from core.funding_carry import CarryConfig, FundingCarry
 from core.groktopus_swarm import GroktopusSwarm, adverse_selection
+from core.watchdog import SnapshotWatchdog
+from core.capital_gate import capital_verdict, B_HARD_USDT, POSITION_FRACTION
 from core.models import Book, Filters, Intent, dec, quantize
 from core.position_sizer import PositionSizer, DrawdownBrake
 from core.outcome_ledger import OutcomeLedger
 from core.real_alpha_engine import (AlphaEngine, calibrate_bucket_volume,
                                     cross_sectional_momentum, lead_lag_signal)
 from core.signal_lab import SignalLab
+from core.early_stop import COST_ALL_IN_BPS, DataBudget, EarlyStopGate
+from core.regime_permit import fast_hands_permit
 from core.web_ui_server import Telemetry, start_server
 from live.binance_futures_client import BinanceFuturesClient, BinanceError
 from live.execution_gateway import ExecutionGateway, Journal
@@ -184,6 +188,12 @@ class Runtime:
         self.authority = TokenAuthority(threshold=self.threshold, policy=self.swarm.consensus)
         self.sizer = PositionSizer()
         self.brake = DrawdownBrake()
+        # Circuit breaker: a feed that heartbeats without changing content still
+        # looks fresh, so freshness alone never catches it. Park after N identical
+        # market snapshots; any real change wakes it.
+        self.watchdog = SnapshotWatchdog(limit=int(getattr(args, 'watchdog_limit', 3) or 3))
+        self.b_hard = float(getattr(args, 'b_hard', None) or B_HARD_USDT)
+        self.position_fraction = float(getattr(args, 'position_fraction', None) or POSITION_FRACTION)
         self.planner = BarrierPlanner(horizon=args.horizon)
         self.paper = PaperEngine(args.equity) if settings.mode == 'paper' else None
         self.gateway = self.client = None
@@ -220,8 +230,14 @@ class Runtime:
         if (ROOT/'data'/f'{settings.mode}-outcomes.json').exists():
             self.telemetry.event('Legacy Kelly floats excluded: units unverified; use audited settled-v2 ledger')
         # Pure observer: records what the gates refused so the gates can be calibrated.
+        # Early-exit discipline (core/early_stop.py): after 200 probes the lab
+        # stops the session once net-of-8.5-bps EV is <= 0 at 95%, and it can
+        # never exceed --lab-budget probes. That ends the collect-forever loop.
+        self.early_stop = None if getattr(args, 'no_early_stop', False) else EarlyStopGate(
+            budget=DataBudget(max_samples=int(getattr(args, 'lab_budget', 2000) or 0)))
         self.lab = None if args.no_lab else SignalLab(
-            ROOT/'data'/f'{source}-signal-lab-v2.jsonl', horizon=args.horizon, source=source)
+            ROOT/'data'/f'{source}-signal-lab-v2.jsonl', horizon=args.horizon, source=source,
+            gate=self.early_stop)
         # Counterfactual assumed-fill probes are descriptive evidence only.
         self.lab_warmup = None
         # Retain funding observations without manufacturing a consensus decision.
@@ -518,6 +534,17 @@ class Runtime:
         self.carry_scan_at = now + self.carry.config.scan_interval
         self.carry.update(await self.client.premium_index(), now)
 
+    def permit_for(self, features, book):
+        """Slow-brain permit from forward lab evidence; it can only block."""
+        gate = self.early_stop
+        verdict = gate.verdict if gate is not None else None
+        ready = verdict is not None and gate.n >= gate.min_samples
+        return fast_hands_permit(
+            float(book.spread_bps), atr_bps_value(features.atr, book.mid) or 0.0,
+            oos_gross_bps=gate.mean + COST_ALL_IN_BPS if ready else None,
+            oos_gross_lcb_bps=verdict.lcb_bps + COST_ALL_IN_BPS if ready else None,
+            lab_status=verdict.status if verdict is not None else None)
+
     def observe_signal(self, symbol, features, book, decision, votes, conviction, now):
         """Hand the lab the plan the runtime would have made, gated or not."""
         filters = self.filters.get(symbol)
@@ -548,6 +575,25 @@ class Runtime:
         features = {s: a.features() for s, a in self.alpha.items()}
         cross = cross_sectional_momentum({s: f.momentum for s, f in features.items() if f.ready})
         lead_lag = {s: lead_lag_signal(s, features, now) for s in self.symbols}
+        # Watchdog reads market CONTENT, never timestamps: a stuck upstream that
+        # keeps republishing the same book with fresh timestamps passes every
+        # freshness check, and that is precisely the stall this must catch.
+        self.watchdog.observe({s: (round(float(b.mid), 10), round(float(b.spread_bps), 6),
+                                   round(float(features[s].obi), 6),
+                                   round(float(features[s].momentum), 6),
+                                   None if features[s].vpin is None else round(float(features[s].vpin), 6))
+                               for s in self.symbols
+                               for b in (self.books.get(s),) if b is not None and s in features})
+        # EV calibration sample: settled returns, converted to bps of notional.
+        # Fewer than the head's minimum leaves it UNCALIBRATED and non-gating.
+        _outcomes = list(self.sizer.outcomes)
+        ev_samples = len(_outcomes) or None
+        ev_sigma_bps = None
+        if len(_outcomes) >= 2:
+            _mean = sum(_outcomes)/len(_outcomes)
+            _var = sum((x-_mean)**2 for x in _outcomes)/(len(_outcomes)-1)
+            _sigma = math.sqrt(max(_var, 0.0))*10000.0
+            ev_sigma_bps = _sigma if math.isfinite(_sigma) else None
         await self.manage_positions(now, features)
         rows = []
         for symbol in self.symbols:
@@ -577,9 +623,12 @@ class Runtime:
             regime = ('TOXIC' if (f.vpin is not None and f.vpin > gate) or toxic_sweep else
                       'TREND' if max(abs(f.momentum), abs(cross_signal)) > 1.2 or abs(symbol_lead_lag) > 0 else
                        'CHOP')
+            permit = None if getattr(self.args, 'no_permit', True) else self.permit_for(f, book)
             decision, votes = self.swarm.evaluate(f, book.mid, capacity, risk_ok, ready, True, cross_signal,
                                                   toxic_vpin=gate, edge_multiple=self.edge_multiple,
-                                                  lead_lag=symbol_lead_lag, regime=regime)
+                                                  lead_lag=symbol_lead_lag, regime=regime,
+                                                  ev_samples=ev_samples, ev_gross_sigma_bps=ev_sigma_bps,
+                                                  permit=permit)
             self.last_decision[symbol] = decision
             if symbol == self.symbols[0]:
                 self.last_votes = votes
@@ -625,13 +674,25 @@ class Runtime:
                 reasons.append('CAPITAL_LIMIT')
             if not risk_ok:
                 reasons.append('RISK_OR_FEED_GATE')
+            if self.watchdog.parked:
+                reasons.append('WATCHDOG_PARKED')
             rows[-1]['reasons'] = reasons
             rows[-1]['vpin_buckets'] = len(self.alpha[symbol].buckets.imbalances)
             self.block_counts.update(reasons)
             if self.lab:
                 self.lab.resolve(symbol, book, now)
-                self.observe_signal(symbol, f, book, decision, votes, rows[-1]['directional'], now)
+                # A probe opened on a stale book is garbage evidence: its entry
+                # price is not a price anyone could have traded, and its RUNE
+                # veto is a feed outage, not a risk opinion.
+                if fresh:
+                    self.observe_signal(symbol, f, book, decision, votes, rows[-1]['directional'], now)
             if not decision.allowed or symbol in self.active() or now < self.cooldowns.get(symbol, 0):
+                continue
+            # Parked on a frozen snapshot: suppress new authorization only. Open
+            # inventory keeps its exchange-side stop, because flattening on a data
+            # stall would convert an outage into a market order.
+            if self.watchdog.parked:
+                rows[-1]['status'] = 'WATCHDOG_PARKED'
                 continue
             # Volatility band is an ENTRY gate only; the lab already recorded the
             # signal above, so excluding a band costs no evidence.
@@ -656,10 +717,33 @@ class Runtime:
                 rows[-1]['status'] = 'LOW_CONVICTION'
                 continue
             filters = self.filters[symbol]
+            # Hard ceiling: N_cap is UNLEVERED notional, so raising leverage to fit a
+            # venue minimum under the cap is not a way through. When the smallest legal
+            # order exceeds N_cap there is no compliant live order, and the symbol is
+            # paper-only rather than quietly sized up.
+            ceiling = capital_verdict(float(filters.min_notional)*1.10,
+                                      spend=float(self.paper.fees if self.paper else self.session_fees),
+                                      reserved=float(self.used_margin),
+                                      b_hard=self.b_hard, fraction=self.position_fraction)
+            rows[-1]['capital_mode'] = ceiling.mode
+            rows[-1]['n_cap'] = ceiling.n_cap
+            if not self.paper and not ceiling.live_allowed:
+                rows[-1]['status'] = ceiling.mode
+                rows[-1]['capital_reason'] = ceiling.reason
+                continue
             try:
-                price = maker_quote(book, decision.side, float(filters.tick), inventory=0.0,
-                                    risk_aversion=.1, variance_per_second=max(0., f.variance_per_second),
-                                    remaining_seconds=self.args.horizon)
+                if getattr(self.args, 'quote_model', 'touch') == 'micro':
+                    price = microstructure_quote(book, decision.side, float(filters.tick), inventory=0.0,
+                                                 risk_aversion=.1, variance_per_second=max(0., f.variance_per_second),
+                                                 remaining_seconds=self.args.horizon,
+                                                 toxicity=getattr(self.args, 'quote_toxicity', .7))
+                    if price is None:
+                        rows[-1]['status'] = 'QUEUE_TOXIC_STAND_ASIDE'
+                        continue
+                else:
+                    price = maker_quote(book, decision.side, float(filters.tick), inventory=0.0,
+                                        risk_aversion=.1, variance_per_second=max(0., f.variance_per_second),
+                                        remaining_seconds=self.args.horizon)
             except ValueError:
                 rows[-1]['status'] = 'INVALID_MAKER_QUOTE'
                 continue
@@ -728,7 +812,8 @@ class Runtime:
             market_data=getattr(self.args, 'market_data', self.settings.mode),
             edge_multiple=self.edge_multiple,
             policy='SIMULATED' if self.simulated else 'STRICT', outcome_samples=len(self.sizer.outcomes),
-            diagnostics={'cycles': self.cycles, 'blocked': dict(self.block_counts)},
+            diagnostics={'cycles': self.cycles, 'blocked': dict(self.block_counts),
+                         'watchdog': self.watchdog.snapshot()},
             funding=self.carry.snapshot(),
             drawdown=1-self.equity/self.brake.peak if self.brake.peak else 0, updated_at=time.time())
 
@@ -795,6 +880,11 @@ class Runtime:
                             self.gateway.alert = str(error)
                         self.telemetry.event(str(error))
                         self.telemetry.update(status='HALTED · '+str(error))
+                    if self.lab is not None and self.lab.stopped:
+                        v = self.early_stop.verdict
+                        self.telemetry.event(f'EARLY STOP {v.status}: {v.reason} after {v.n} probes '
+                                             f'(mean net {v.mean_bps:+.2f} bps @ {COST_ALL_IN_BPS} cost); data loop closed')
+                        break
                     if mission_target and len(self.ledger.records) - mission_start >= mission_target:
                         self.telemetry.event(f'MISSION TARGET reached: +{mission_target} settled outcomes this session; ending early')
                         break
@@ -861,6 +951,16 @@ def arguments(mode, argv=None):
                         help='Consensus veto threshold; default .70 (single strict tier)')
     parser.add_argument('--offline', action='store_true', help='Paper only: deterministic synthetic feed for diagnostics')
     parser.add_argument('--no-lab', action='store_true', help='Disable the counterfactual signal recorder')
+    parser.add_argument('--lab-budget', type=int, default=2000,
+                        help='Hard cap on lab probes per session (data budget); 0 disables the cap')
+    parser.add_argument('--no-early-stop', action='store_true',
+                        help='Disable SPRT/Wilson early stop (legacy collect-until-Ctrl+C behaviour)')
+    parser.add_argument('--no-permit', action='store_true',
+                        help='Disable the slow-brain permit (RUNE blocks scalps without >=9 bps OOS gross)')
+    parser.add_argument('--quote-model', choices=('touch', 'micro'), default='touch',
+                        help='touch = best bid/ask (A-S at q=0); micro = microprice A-S with queue-toxicity stand-aside')
+    parser.add_argument('--quote-toxicity', type=float, default=.7,
+                        help='micro only: stand aside when queue imbalance leans against the quote by more than this')
     parser.add_argument('--seed-lab', dest='seed_lab', action='store_true', default=None,
                         help='Deprecated: assumed fills cannot seed execution sizing')
     parser.add_argument('--no-seed-lab', dest='seed_lab', action='store_false')
@@ -935,6 +1035,10 @@ def arguments(mode, argv=None):
         parser.error('--maker-exit-grace must be a non-negative number')
     if not math.isfinite(args.min_atr_bps) or args.min_atr_bps < 0:
         parser.error('--min-atr-bps must be a non-negative number')
+    if args.lab_budget < 0:
+        parser.error('--lab-budget must be non-negative')
+    if not math.isfinite(args.quote_toxicity) or not 0 <= args.quote_toxicity <= 1:
+        parser.error('--quote-toxicity must be within [0, 1]')
     return args
 
 

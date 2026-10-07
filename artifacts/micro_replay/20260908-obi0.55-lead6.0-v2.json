@@ -1,0 +1,101 @@
+{
+ "files": [
+  "data/l2/BTCUSDT/20260908.jsonl",
+  "data/l2/SOLUSDT/20260908.jsonl",
+  "data/l2/BNBUSDT/20260908.jsonl"
+ ],
+ "symbols": [
+  "BTCUSDT",
+  "SOLUSDT",
+  "BNBUSDT"
+ ],
+ "frames": 7879325,
+ "hours": 3.944166666666667,
+ "config": {
+  "obi": 0.55,
+  "lead_bps": 6.0,
+  "min_votes": 2
+ },
+ "limits": "OBI=L1 bookTicker imbalance; no aggTrade -> no CVD vote, book-through fills only",
+ "intents": 6,
+ "fills": 4,
+ "cancels": 2,
+ "intents_per_hour": 1.5212338897105429,
+ "fills_per_hour": 1.0141559264736952,
+ "branches": {
+  "baseline": {
+   "name": "baseline",
+   "total_trades": 4,
+   "tp_count": 0,
+   "protect_count": 0,
+   "sl_count": 2,
+   "time_count": 2,
+   "p_tp": 0.0,
+   "p_protect": 0.0,
+   "p_sl": 0.5,
+   "analytical_ev_bps": -22.358595121459373,
+   "empirical_ev_bps": -22.358595121459373,
+   "lower95_ev_bps": -32.55201122367203,
+   "premature_count": 0,
+   "premature_rate": 0.0,
+   "cum_pnl_usdt": -0.06742053999999885,
+   "posterior_ev_bps": null,
+   "p_ev_positive": null,
+   "fees_usdt": 0.02112054
+  },
+  "be_15_10": {
+   "name": "be_15_10",
+   "total_trades": 4,
+   "tp_count": 0,
+   "protect_count": 0,
+   "sl_count": 2,
+   "time_count": 2,
+   "p_tp": 0.0,
+   "p_protect": 0.0,
+   "p_sl": 0.5,
+   "analytical_ev_bps": -22.358595121459373,
+   "empirical_ev_bps": -22.358595121459373,
+   "lower95_ev_bps": -32.55201122367203,
+   "premature_count": 0,
+   "premature_rate": 0.0,
+   "cum_pnl_usdt": -0.06742053999999885,
+   "posterior_ev_bps": null,
+   "p_ev_positive": null,
+   "fees_usdt": 0.02112054
+  },
+  "be_20_10": {
+   "name": "be_20_10",
+   "total_trades": 4,
+   "tp_count": 0,
+   "protect_count": 0,
+   "sl_count": 2,
+   "time_count": 2,
+   "p_tp": 0.0,
+   "p_protect": 0.0,
+   "p_sl": 0.5,
+   "analytical_ev_bps": -22.358595121459373,
+   "empirical_ev_bps": -22.358595121459373,
+   "lower95_ev_bps": -32.55201122367203,
+   "premature_count": 0,
+   "premature_rate": 0.0,
+   "cum_pnl_usdt": -0.06742053999999885,
+   "posterior_ev_bps": null,
+   "p_ev_positive": null,
+   "fees_usdt": 0.02112054
+  }
+ },
+ "by_symbol": {
+  "BNBUSDT": {
+   "n": 4,
+   "mean_net_bps": -22.358595121459373,
+   "reasons": {
+    "TP": 0,
+    "PROTECT": 0,
+    "SL": 2,
+    "TIME": 2,
+    "KILL": 0
+   }
+  }
+ },
+ "elapsed_s": 45.6702880859375
+}

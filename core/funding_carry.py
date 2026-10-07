@@ -12,6 +12,75 @@ from core.consensus_engine import ConsensusEngine, Vote
 
 INTERVALS_PER_YEAR = 3 * 365  # funding prints every 8 hours
 
+# ------------------------------------------------- HARD CAPITAL GATE (two legs)
+# A spot/perp carry is TWO orders on TWO venues. Both have to clear their own
+# minimum notional, both pay their own fee, and the hedge only protects you if
+# both legs actually exist. On Binance that floor is 5 USDT per leg, so the
+# smallest honest two-leg position is 10.0 USDT of notional.
+#
+# The book this system runs is E = 3.85 USDT. 3.85 < 10.0, and no amount of
+# leverage changes that: leverage moves the MARGIN you post, not the notional
+# the venue matches, and a levered leg is a larger loss per adverse tick, not a
+# smaller one. So this book is structurally research-only on carry, exactly as
+# core/capital_gate.py concludes for the single-leg case. This gate is the
+# reason the runtime cannot be talked into a live pair; do not remove it.
+BOOK_EQUITY_USDT = 3.85
+TWO_LEG_MIN_NOTIONAL_USDT = 10.0
+
+SHADOW = 'SHADOW'
+RESEARCH_ONLY = 'RESEARCH_ONLY'
+LIVE = 'LIVE'
+
+
+@dataclass(frozen=True)
+class CapitalGate:
+    mode: str
+    allowed: bool
+    equity_usdt: float
+    notional_usdt: float
+    minimum_usdt: float
+    reason: str
+
+    @property
+    def research(self):
+        return self.mode in (SHADOW, RESEARCH_ONLY)
+
+
+def two_leg_capital_gate(equity_usdt, notional_usdt=None, requested_mode='shadow',
+                         minimum=TWO_LEG_MIN_NOTIONAL_USDT):
+    """Decide SHADOW / RESEARCH_ONLY / LIVE for the next two-leg carry.
+
+    `equity_usdt` is the whole book measured across BOTH venues (spot free cash
+    plus futures wallet), never one side of it. `notional_usdt` is the size the
+    runtime intends to put on per pair; passing None asks only whether the book
+    could fund any compliant pair at all.
+    """
+    requested = str(requested_mode).lower()
+    checked = [equity_usdt, minimum] + ([] if notional_usdt is None else [notional_usdt])
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in checked):
+        return CapitalGate(RESEARCH_ONLY, False, float('nan'),
+                           float('nan'), minimum, 'NON_FINITE_CAPITAL')
+    equity = float(equity_usdt)
+    notional = float('nan') if notional_usdt is None else float(notional_usdt)
+    if minimum <= 0:
+        raise ValueError('two-leg minimum must be positive')
+    if equity < 0 or (notional_usdt is not None and notional <= 0):
+        return CapitalGate(RESEARCH_ONLY, False, equity, notional, minimum, 'INVALID_CAPITAL')
+    if equity < minimum:
+        return CapitalGate(RESEARCH_ONLY, False, equity, notional, minimum,
+                           f'EQUITY {equity:.4f} < TWO_LEG_MIN {minimum:.2f} USDT')
+    if notional_usdt is not None and notional < minimum:
+        return CapitalGate(RESEARCH_ONLY, False, equity, notional, minimum,
+                           f'NOTIONAL {notional:.4f} < TWO_LEG_MIN {minimum:.2f} USDT')
+    if notional_usdt is not None and notional > equity:
+        return CapitalGate(RESEARCH_ONLY, False, equity, notional, minimum,
+                           f'NOTIONAL {notional:.4f} > EQUITY {equity:.4f}')
+    if requested == 'shadow':
+        return CapitalGate(SHADOW, False, equity, notional, minimum, 'SHADOW_MODE')
+    return CapitalGate(LIVE, True, equity, notional, minimum, 'TWO_LEG_FUNDED')
+
+
 
 @dataclass(frozen=True)
 class CarryConfig:

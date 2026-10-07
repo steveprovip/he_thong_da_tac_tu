@@ -20,7 +20,9 @@ Micro-Capital Paradigm:
 """
 import argparse
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import os
+import random
 from collections import deque
 from dataclasses import dataclass, field
 import json
@@ -32,6 +34,7 @@ import urllib.request
 from typing import Dict, List, Optional, Tuple
 
 from research import flush_regime as regime_mod
+from core.early_stop import DataBudget, EarlyStopGate
 from research import flush_risk as risk_mod
 
 
@@ -52,6 +55,20 @@ S_MAX_BPS = risk_mod.S_MAX_BPS   # 20.82: widest stop the 0.015 USDT budget carr
 
 ROOT = Path(__file__).resolve().parents[1]
 TELEMETRY_STATE_FILE = ROOT / 'data' / 'telemetry_state.json'
+COHORT_LOG_FILE = ROOT / 'data' / 'flush_cohorts.jsonl'   # entry OBI/CVD vs outcome, for calibration
+
+# Real-time feed. One combined stream carries everything the engine reads:
+# top of book (fills/stops), L5 depth (OBI), aggressor flow (CVD), 1m bars.
+_SYM = SYMBOL.lower()
+WS_URL = (f'wss://fstream.binance.com/stream?streams={_SYM}@bookTicker/'
+          f'{_SYM}@depth5@100ms/{_SYM}@aggTrade/{_SYM}@kline_1m')
+TICK_SECONDS = 0.5              # engine cadence on the WebSocket feed
+REST_POLL_SECONDS = 2.0         # cadence when the socket is down (REST fallback)
+TELEMETRY_SECONDS = 1.0         # dashboard publish cadence (immediately on a status change)
+BARS15_REFRESH_SECONDS = 60.0
+CVD_WINDOW_SECONDS = 60.0
+FEED_STALE_SECONDS = 3.0
+EV_TP_NET, EV_PROTECT_NET, EV_SL_NET = 35.67, 1.0, -29.44   # 3-outcome net bps
 
 
 @dataclass
@@ -120,6 +137,32 @@ class PrematureWatcher:
     side: str = 'BUY'
     resolved: bool = False
     result: Optional[str] = None  # 'PREMATURE_STOPOUT', 'GOOD_PROTECTION', 'TIMEOUT'
+
+
+_POSTERIOR_CACHE: Dict[Tuple[int, int, int], Tuple[float, float]] = {}
+
+
+def posterior_ev(tp: int, protect: int, sl: int, draws: int = 4000) -> Tuple[float, float]:
+    """Dirichlet(1,1,1) posterior over (p_TP, p_protect, p_SL) -> (mean EV bps, P(EV > 0)).
+
+    The point estimate reads +35.67 bps after one lucky TP; the posterior says how
+    much of that is sample size. Seeded by the counts and cached, so a 0.5 s tick
+    only pays the Monte Carlo when a trade actually closes.
+    """
+    key = (int(tp), int(protect), int(sl))
+    hit = _POSTERIOR_CACHE.get(key)
+    if hit is not None:
+        return hit
+    a, b, c = key[0] + 1, key[1] + 1, key[2] + 1
+    mean = (EV_TP_NET * a + EV_PROTECT_NET * b + EV_SL_NET * c) / (a + b + c)
+    rng = random.Random(key[0] * 1_000_003 + key[1] * 1_009 + key[2])
+    gv = rng.gammavariate
+    pos = sum(1 for _ in range(draws)
+              if EV_TP_NET * gv(a, 1.0) + EV_PROTECT_NET * gv(b, 1.0) + EV_SL_NET * gv(c, 1.0) > 0)
+    if len(_POSTERIOR_CACHE) > 4096:
+        _POSTERIOR_CACHE.clear()
+    _POSTERIOR_CACHE[key] = (mean, pos / draws)
+    return _POSTERIOR_CACHE[key]
 
 
 def calculate_lot_size(price: float, min_notional: float = MIN_NOTIONAL) -> float:
@@ -396,6 +439,9 @@ class ShadowBranch:
                 'premature_count': 0,
                 'premature_rate': 0.0,
                 'cum_pnl_usdt': 0.0,
+                'posterior_ev_bps': None,
+                'p_ev_positive': None,
+                'fees_usdt': 0.0,
             }
 
         p_tp = self.tp_count / n
@@ -416,6 +462,7 @@ class ShadowBranch:
             lower95 = -999.0
 
         premature_rate = (self.premature_count / self.protect_count) if self.protect_count > 0 else 0.0
+        post_mean, p_pos = posterior_ev(self.tp_count, self.protect_count, self.sl_count)
 
         return {
             'name': self.name,
@@ -432,6 +479,9 @@ class ShadowBranch:
             'premature_count': self.premature_count,
             'premature_rate': premature_rate,
             'cum_pnl_usdt': cum_pnl,
+            'posterior_ev_bps': post_mean,
+            'p_ev_positive': p_pos,
+            'fees_usdt': sum(t.fee_bps / 1e4 * t.entry_price * t.qty for t in self.trades),
         }
 
 
@@ -449,35 +499,173 @@ def fetch_rest_market_data() -> Tuple[Optional[dict], Optional[List[dict]],
     returns TRANSITION and the gate has no input -- which blocks nothing and
     permits nothing, so the filter silently does not exist. Fetching it is what
     makes the gate bite in a live session.
+
+    Four independent GETs, issued in parallel: warm start costs one round trip,
+    not four. 1m limit is 30 because detect_short_setup needs >= 24 bars; with
+    20 the short path could never fire.
     """
-    headers = {'User-Agent': 'FlushShadow/1.0'}
-    ticker, klines, oi, bars15 = None, None, None, None
+    base = 'https://fapi.binance.com/fapi/v1'
+    urls = {
+        'ticker': f'{base}/ticker/bookTicker?symbol={SYMBOL}',
+        'k1': f'{base}/klines?symbol={SYMBOL}&interval=1m&limit=30',
+        'oi': f'{base}/openInterest?symbol={SYMBOL}',
+        'k15': f'{base}/klines?symbol={SYMBOL}&interval=15m&limit=60',
+    }
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {k: pool.submit(_get_json, u) for k, u in urls.items()}
+    out = {}
+    for k, fut in futures.items():
+        try:
+            out[k] = fut.result()
+        except Exception:
+            out[k] = None
+    ticker = out['ticker'] if isinstance(out['ticker'], dict) else None
     try:
-        url_t = f'https://fapi.binance.com/fapi/v1/ticker/bookTicker?symbol={SYMBOL}'
-        req = urllib.request.Request(url_t, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as r:
-            ticker = json.loads(r.read().decode('utf-8'))
-
-        url_k = f'https://fapi.binance.com/fapi/v1/klines?symbol={SYMBOL}&interval=1m&limit=20'
-        req = urllib.request.Request(url_k, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as r:
-            raw_k = json.loads(r.read().decode('utf-8'))
-            klines = _parse_klines(raw_k)
-
-        url_oi = f'https://fapi.binance.com/fapi/v1/openInterest?symbol={SYMBOL}'
-        req = urllib.request.Request(url_oi, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as r:
-            raw_oi = json.loads(r.read().decode('utf-8'))
-            oi = float(raw_oi.get('openInterest', 0.0))
-
-        url_15 = f'https://fapi.binance.com/fapi/v1/klines?symbol={SYMBOL}&interval=15m&limit=60'
-        req = urllib.request.Request(url_15, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as r:
-            bars15 = _parse_klines(json.loads(r.read().decode('utf-8')))
-
-    except Exception:
-        pass
+        klines = _parse_klines(out['k1']) if out['k1'] else None
+    except (TypeError, ValueError, IndexError):
+        klines = None
+    try:
+        oi = float(out['oi'].get('openInterest', 0.0)) if out['oi'] else None
+    except (AttributeError, TypeError, ValueError):
+        oi = None
+    try:
+        bars15 = _parse_klines(out['k15']) if out['k15'] else None
+    except (TypeError, ValueError, IndexError):
+        bars15 = None
     return ticker, klines, oi, bars15
+
+
+def _get_json(url: str, timeout: float = 4.0):
+    req = urllib.request.Request(url, headers={'User-Agent': 'FlushShadow/1.0'})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode('utf-8'))
+
+
+def fetch_bars15(limit: int = 60) -> Optional[List[dict]]:
+    """15m bars only (regime refresh / warm-start priming). None on any failure."""
+    try:
+        return _parse_klines(_get_json(
+            f'https://fapi.binance.com/fapi/v1/klines?symbol={SYMBOL}&interval=15m&limit={int(limit)}'))
+    except Exception:
+        return None
+
+
+class MicroFeed:
+    """Binance USD-M combined stream -> top of book, L5 OBI, rolling CVD, live 1m bars.
+
+    `on_message` is synchronous and I/O-free (tests drive it with recorded
+    frames); `run` only pumps frames off the socket and reconnects with backoff.
+    """
+
+    def __init__(self, url: str = WS_URL, cvd_window: float = CVD_WINDOW_SECONDS):
+        self.url = url
+        self.cvd_window = cvd_window
+        self.bid = self.ask = 0.0
+        self.bid_qty = self.ask_qty = 0.0
+        self.obi: Optional[float] = None
+        self.cvd_session = 0.0
+        self._flow: deque = deque()
+        self._flow_sum = 0.0
+        self.klines: List[dict] = []
+        self.last_msg = 0.0
+        self.frames = 0
+        self.connected = False
+        self.reconnects = 0
+
+    def seed_klines(self, klines: Optional[List[dict]]) -> None:
+        if klines and len(klines) > len(self.klines):
+            self.klines = [dict(k) for k in klines[-60:]]
+
+    def on_message(self, msg: dict, now: Optional[float] = None) -> bool:
+        now = time.time() if now is None else now
+        data = msg.get('data', msg) if isinstance(msg, dict) else {}
+        stream = msg.get('stream', '') if isinstance(msg, dict) else ''
+        ev = data.get('e', '')
+        try:
+            if ev == 'bookTicker' or stream.endswith('@bookTicker'):
+                bid, ask = float(data['b']), float(data['a'])
+                if bid <= 0 or ask <= 0:
+                    return False
+                self.bid, self.ask = bid, ask
+                self.bid_qty, self.ask_qty = float(data['B']), float(data['A'])
+            elif ev == 'depthUpdate' or '@depth' in stream:
+                bids, asks = data.get('b') or [], data.get('a') or []
+                bq = sum(float(q) for _, q in bids[:5])
+                aq = sum(float(q) for _, q in asks[:5])
+                if bq + aq <= 0:
+                    return False
+                self.obi = (bq - aq) / (bq + aq)
+            elif ev == 'aggTrade':
+                quote = float(data['p']) * float(data['q'])
+                signed = -quote if data.get('m') else quote   # m: buyer is maker -> seller aggressed
+                self.cvd_session += signed
+                self._flow.append((now, signed))
+                self._flow_sum += signed
+            elif ev == 'kline':
+                k = data['k']
+                bar = {'time': k['t'], 'open': float(k['o']), 'high': float(k['h']),
+                       'low': float(k['l']), 'close': float(k['c']), 'volume': float(k['v']),
+                       'close_time': k['T']}
+                if self.klines and self.klines[-1]['time'] == bar['time']:
+                    self.klines[-1] = bar
+                elif not self.klines or bar['time'] > self.klines[-1]['time']:
+                    self.klines.append(bar)
+                    del self.klines[:-60]
+            else:
+                return False
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return False
+        cutoff = now - self.cvd_window
+        while self._flow and self._flow[0][0] < cutoff:
+            self._flow_sum -= self._flow.popleft()[1]
+        self.last_msg = now
+        self.frames += 1
+        return True
+
+    def ready(self, now: Optional[float] = None) -> bool:
+        now = time.time() if now is None else now
+        return (self.bid > 0 and self.ask > 0 and len(self.klines) >= 15
+                and (now - self.last_msg) < FEED_STALE_SECONDS)
+
+    def ticker(self) -> dict:
+        return {'bidPrice': repr(self.bid), 'askPrice': repr(self.ask)}
+
+    def snapshot(self, now: Optional[float] = None) -> dict:
+        now = time.time() if now is None else now
+        cutoff = now - self.cvd_window
+        while self._flow and self._flow[0][0] < cutoff:
+            self._flow_sum -= self._flow.popleft()[1]
+        qsum = self.bid_qty + self.ask_qty
+        micro = ((self.bid * self.ask_qty + self.ask * self.bid_qty) / qsum) if qsum > 0 else None
+        return {'obi': self.obi, 'cvd_60s': self._flow_sum, 'cvd_session': self.cvd_session,
+                'microprice': micro, 'frames': self.frames,
+                'age_s': (now - self.last_msg) if self.last_msg else None}
+
+    async def run(self) -> None:
+        try:
+            import websockets
+        except ImportError:
+            return                      # engine stays on the REST fallback
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(self.url, ping_interval=20, ping_timeout=20,
+                                              open_timeout=5, max_queue=4096) as ws:
+                    self.connected, backoff = True, 1.0
+                    async for raw in ws:
+                        try:
+                            self.on_message(json.loads(raw))
+                        except ValueError:
+                            continue
+            except asyncio.CancelledError:
+                self.connected = False
+                raise
+            except Exception:
+                pass
+            self.connected = False
+            self.reconnects += 1
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2.0, 15.0)
 
 
 class FlushShadowEngine:
@@ -507,6 +695,49 @@ class FlushShadowEngine:
         self.bars15: List[dict] = []
         self._short_break: Optional[dict] = None
         self.last_block_reason = ''
+        # Microstructure read from MicroFeed each tick (OBI L5, CVD 60s, microprice).
+        self.micro: Dict = {}
+        self.micro_confirm = False          # opt-in: OBI and CVD must agree with the side
+        self.cohort_log: Optional[Path] = None
+        self._cohort_micro: Dict = {}
+        self.feed_label = 'binance-rest'
+
+    def prime_regime(self, bars15_long: Optional[List[dict]]) -> str:
+        """Warm start: read the last TWO 15m windows from history at once.
+
+        long_permitted wants two consecutive RANGE reads. Counting them live costs
+        up to 30 minutes after boot; the same two reads already exist in a 61+ bar
+        history, so the hysteresis is satisfied (or not) at t=0 without being weakened.
+        """
+        if not bars15_long or len(bars15_long) < 61:
+            return self.regime
+        prev, _ = regime_mod.classify_regime(bars15_long[-61:-1])
+        cur, diag = regime_mod.classify_regime(bars15_long[-60:])
+        self.bars15 = bars15_long[-60:]
+        self.regime, self.regime_diag = cur, diag
+        self.range_streak = (2 if prev == regime_mod.RANGE else 1) if cur == regime_mod.RANGE else 0
+        return self.regime
+
+    def micro_confirms(self, side: str) -> bool:
+        """Book and tape lean the same way as the trade. Missing data fails closed."""
+        obi, cvd = self.micro.get('obi'), self.micro.get('cvd_60s')
+        if obi is None or cvd is None:
+            return False
+        return (obi >= 0 and cvd >= 0) if side == 'BUY' else (obi <= 0 and cvd <= 0)
+
+    def _log_cohort(self, trade: 'TradeRecord') -> None:
+        if self.cohort_log is None:
+            return
+        row = {'t': round(trade.exit_time, 3), 'side': (self.active_position or {}).get('side', 'BUY'),
+               'entry': trade.entry_price, 'exit': trade.exit_price,
+               'hold_s': round(trade.exit_time - trade.entry_time, 1),
+               'net_bps': round(trade.net_bps, 3), 'reason': trade.reason, **self._cohort_micro}
+        try:
+            self.cohort_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.cohort_log, 'a', encoding='utf-8') as fh:
+                fh.write(json.dumps(row, allow_nan=False, default=str) + '\n')
+        except (OSError, ValueError):
+            pass
 
     def cohort_open(self) -> bool:
         """True while ANY branch still holds the cohort's position.
@@ -599,7 +830,13 @@ class FlushShadowEngine:
         if bars15:
             self.bars15 = bars15
         self.regime, self.regime_diag = regime_mod.classify_regime(self.bars15)
-        self.range_streak = self.range_streak + 1 if self.regime == regime_mod.RANGE else 0
+        # The streak counts 15m READS, so only a cycle that carries 15m bars may
+        # advance it. Counting every 1m cycle met the two-close hysteresis in two
+        # polls (4 s at REST cadence, 1 s on the socket) -- i.e. never enforced it.
+        if self.regime != regime_mod.RANGE:
+            self.range_streak = 0
+        elif bars15:
+            self.range_streak += 1
         atr_prev = regime_mod.wilder_atr(bars1[:-1]) if len(bars1) > 15 else 0.0
         self.fast_down = regime_mod.is_fast_down(bars1, atr_prev)
         return self.regime
@@ -756,6 +993,7 @@ class FlushShadowEngine:
             else:
                 self.metrics.losses += 1
 
+            self._log_cohort(trade)
             self.active_position = None
             self._recalculate_metrics()
             self.check_kill_switch(cur_bid, cur_ask)
@@ -819,6 +1057,9 @@ class FlushShadowEngine:
                     'atr_14_bps': atr_bps,
                     'atr_14_raw': atr_raw,
                 }
+                self._cohort_micro = {'entry_obi': self.micro.get('obi'),
+                                      'entry_cvd_60s': self.micro.get('cvd_60s'),
+                                      'atr_bps': round(atr_bps, 2), 'regime': self.regime}
                 self.metrics.total_fills += 1
                 self.active_order = None
                 self._recalculate_metrics()
@@ -844,6 +1085,9 @@ class FlushShadowEngine:
         if self.bars15 and self.short_allowed():
             ok, short_entry, short_reason = self.detect_short_setup(klines, cur_ask)
             if ok:
+                if self.micro_confirm and not self.micro_confirms('SELL'):
+                    self.last_block_reason = 'MICRO_UNCONFIRMED'
+                    return {'status': 'BLOCKED', 'reason': 'MICRO_UNCONFIRMED', 'regime': self.regime}
                 return self._place_entry('SELL', short_entry, short_reason, klines, cur_bid, cur_ask, now)
             return {'status': 'NO_SIGNAL', 'reason': short_reason, 'regime': self.regime}
 
@@ -856,6 +1100,9 @@ class FlushShadowEngine:
                 block = 'FAST_DOWN' if self.fast_down else f'LONG_LOCKED_IN_{self.regime}'
                 self.last_block_reason = block
                 return {'status': 'BLOCKED', 'reason': block, 'regime': self.regime}
+            if self.micro_confirm and not self.micro_confirms('BUY'):
+                self.last_block_reason = 'MICRO_UNCONFIRMED'
+                return {'status': 'BLOCKED', 'reason': 'MICRO_UNCONFIRMED', 'regime': self.regime}
             return self._place_entry('BUY', entry_price, reason, klines, cur_bid, cur_ask, now)
 
         return {'status': 'WAITING_SIGNAL', 'reason': reason}
@@ -877,64 +1124,99 @@ class FlushShadowEngine:
 
         spread_bps = ((cur_ask / cur_bid) - 1.0) * 1e4 if cur_bid > 0 else 1.0
         m = self.metrics
-
-        agents = [
-            {'name': 'NORO', 'side': 'BUY', 'confidence': 0.82, 'veto': False},
-            {'name': 'LUMEN', 'side': 'BUY', 'confidence': 0.79, 'veto': False},
-            {'name': 'TIDAL', 'side': 'BUY', 'confidence': 0.85, 'veto': False},
-            {'name': 'ZEPHR', 'side': 'BUY', 'confidence': 0.90, 'veto': False},
-            {'name': 'RUNE', 'side': 'HOLD', 'confidence': 0.95, 'veto': False},
-            {'name': 'OKAPI', 'side': 'BUY', 'confidence': 0.80, 'veto': False},
-            {'name': 'MARIN', 'side': 'BUY', 'confidence': 0.88, 'veto': False},
-            {'name': 'VESKA', 'side': 'BUY', 'confidence': 0.84, 'veto': False},
-        ]
+        now = time.time()
 
         if not hasattr(self, 'history_buffer'):
-            # Bounded deques: list.pop(0) is O(n) and ran on every 2s tick.
+            # Bounded deques: list.pop(0) is O(n) and ran on every tick.
             self.history_buffer = deque(maxlen=600)
             self.event_buffer = deque(maxlen=20)
 
-        self.history_buffer.append({'t': time.time(), 'value': self.equity})
+        # Mark-to-market equity (cash + floating - exit cost): the trace moves
+        # with every tick while a position is open, not only when one closes.
+        liq = self.get_liquidation_equity(cur_bid, cur_ask) if cur_bid > 0 else self.equity
+        self.history_buffer.append({'t': now, 'value': round(liq, 6)})
 
-        # Comparative branch report for telemetry
         branch_stats = {name: b.get_stats() for name, b in self.shadow_branches.items()}
+        primary = branch_stats['be_15_10']
+        micro = self.micro or {}
+        obi, cvd = micro.get('obi'), micro.get('cvd_60s')
 
-        self.event_buffer.appendleft({'t': time.time(), 'message': f'DOGE {cur_bid:.5f} | {status} | Trades: {m.total_trades}'})
+        self.event_buffer.appendleft({'t': now, 'message': (
+            f'DOGE {cur_bid:.5f} | {status} | Trades: {m.total_trades}'
+            + (f' | OBI {obi:+.2f}' if obi is not None else '')
+            + (f' | CVD60 {cvd:+.0f}U' if cvd is not None else ''))})
 
+        # Realized edge vs cost of the primary branch: NET EDGE on the board is
+        # what closed trades actually earned, not a constant.
+        n_primary = len(self.trades)
+        edge_bps = cost_bps = None
+        if n_primary:
+            edge_bps = sum(t.gross_bps for t in self.trades) / n_primary
+            cost_bps = sum(t.fee_bps for t in self.trades) / n_primary
+        fees = sum(t.fee_bps / 1e4 * t.entry_price * t.qty for t in self.trades)
+        volume = sum(2.0 * t.entry_price * t.qty for t in self.trades)
+        peak = max(m.peak_equity_usdt, liq)
+        p_pos = primary.get('p_ev_positive')
+
+        positions = []
+        if self.active_position and cur_bid > 0:
+            ap = self.active_position
+            d = -1 if ap.get('side') == 'SELL' else 1
+            quote = cur_ask if d < 0 else cur_bid
+            positions.append({'symbol': SYMBOL, 'side': ap.get('side', 'BUY'), 'size': ap['qty'],
+                              'entry': ap['entry_price'], 'tp': ap.get('tp_price'), 'sl': ap.get('sl_price'),
+                              'pnl_bps': d * ((quote / ap['entry_price']) - 1.0) * 1e4,
+                              'mfe_bps': ap.get('max_mfe_bps', 0.0),
+                              'protected': ap.get('is_protected', False)})
+
+        blocked = status == 'BLOCKED' and self.last_block_reason
         state = {
-            'mode': 'SHADOW · DOGE 1m (BE+15/10)',
+            'mode': f'SHADOW · {SYMBOL} 1m FLUSH · {self.feed_label.upper()}',
             'status': f'DOGE 1m: {status}',
-            'equity': round(self.equity, 4),
+            'equity': round(liq, 4),
             'wallet': round(self.equity, 4),
-            'pnl': round(m.cum_pnl_usdt, 4),
-            'volume': round(m.total_trades * 5.07, 2),
-            'fees': round(m.total_trades * 0.0035, 4),
-            'score': round(m.win_rate or 0.84, 2),
+            'pnl': round(liq - STARTING_EQUITY, 4),
+            'volume': round(volume, 2),
+            'fees': round(fees, 4),
+            'score': round(p_pos, 4) if p_pos is not None else 0.0,
+            'drawdown': round(max(0.0, (peak - liq) / peak), 6) if peak > 0 else None,
+            'kill_distance_usdt': round(liq - (STARTING_EQUITY - KILL_LOSS_USDT), 4),
+            'outcome_samples': n_primary,
             'armed': False,
             'shutdown': False,
             'shutdown_reason': '',
             'authorized': m.total_fills,
             'execute_gate': 0.768,
             'veto_gate': 0.70,
-            'agents': agents,
+            'agents': [],                    # no swarm runs in this engine: show none rather than invent votes
+            'market_data': self.feed_label,
+            'policy': 'FLUSH_1M' + ('+MICRO' if self.micro_confirm else ''),
             'branches': branch_stats,
+            'micro': micro,
             'markets': [{
-                'symbol': 'DOGEUSDT',
+                'symbol': SYMBOL,
                 'mid': (cur_bid + cur_ask) / 2.0,
                 'spread': spread_bps,
-                'obi': 0.18,
-                'vpin': 0.25,
-                'score': 0.84,
-                'directional': 'BUY',
-                'net_edge': 35.67,
-                'blocked_by': '',
+                'obi': obi,
+                'vpin': None,
+                'cvd_60s': cvd,
+                'microprice': micro.get('microprice'),
+                'score': p_pos if p_pos is not None else 0.0,
+                'directional': (obi + 1.0) / 2.0 if obi is not None else 0.5,
+                'edge_bps': edge_bps,
+                'cost_bps': cost_bps,
+                'reasons': [self.last_block_reason] if blocked else [],
+                'regime': self.regime,
                 'status': status,
-                'why': '1m Flush Absorption (Trailing BE+15/10)'
+                'why': (f'1m flush · regime {self.regime}'
+                        + (' · FAST_DOWN' if self.fast_down else '')
+                        + (f' · CVD60 {cvd:+.0f} USDT' if cvd is not None else '')
+                        + ' · score = P(EV>0) of BE_15_10 posterior'),
             }],
-            'positions': [{'symbol': 'DOGEUSDT', 'size': 61, 'entry': self.active_position['entry_price'], 'pnl_bps': ((cur_bid/self.active_position['entry_price'])-1)*1e4, 'protected': self.active_position.get('is_protected', False)}] if self.active_position else [],
+            'positions': positions,
             'events': list(self.event_buffer),
-            'timestamp': time.time(),
-            'updated_at': time.time(),
+            'timestamp': now,
+            'updated_at': now,
             'history': list(self.history_buffer),
         }
         # Atomic publish: the dashboard polls this file ~1x/s while the engine
@@ -953,72 +1235,171 @@ class FlushShadowEngine:
                 pass
 
 
-async def run_shadow_loop(seconds: Optional[int] = None):
-    """Asynchronous shadow loop polling every 2 seconds."""
+SHADOW_BUDGET_SECONDS = 12 * 3600   # data budget when --seconds is not given
+
+
+async def run_shadow_loop(seconds: Optional[int] = None, gate: Optional[EarlyStopGate] = None,
+                          use_ws: bool = True, micro_confirm: bool = False):
+    """Real-time shadow loop: WebSocket ticks every 0.5 s, REST fallback every 2 s.
+
+    Boot is one parallel REST round trip (1m/15m bars, book, OI) plus the socket
+    handshake, so the first engine tick lands in ~1-2 s. Never open-ended: an
+    EarlyStopGate over closed-trade net bps ends the run on REGIME_UNPROFITABLE /
+    EDGE_CONFIRMED (>= 200 trades, 95%), and its DataBudget ends it after
+    `seconds` or SHADOW_BUDGET_SECONDS, whichever applies. Returns the engine.
+    """
+    t_boot = time.monotonic()
     engine = FlushShadowEngine()
+    engine.micro_confirm = micro_confirm
+    gate = gate or EarlyStopGate(budget=DataBudget(max_seconds=float(seconds or SHADOW_BUDGET_SECONDS)))
+    feed = MicroFeed() if use_ws else None
+    feed_task = None
+    bars15_task = None
+    prime_task = None
+    bars15: Optional[List[dict]] = None
+    bars15_at = 0.0
+    bars15_key = None
+    booted = False
+    seen_trades = 0
+    last_status, last_print, last_publish, last_feed = None, 0.0, 0.0, None
     print('=' * 80)
     print('  DOGEUSDT 1m VOLATILITY FLUSH SHADOW ENGINE (3-BRANCH HARVESTER)')
     print(f'  Capital: {STARTING_EQUITY} USDT (~100k VND) | Max Loss Kill: {KILL_LOSS_USDT} USDT (5 cents)')
     print(f'  Min Notional: {MIN_NOTIONAL} USDT | Leverage: {LEVERAGE}x Isolated')
     print('  Branches: [Baseline fixed -20.44] vs [BE+15->+10] vs [BE+20->+10]')
+    print(f'  Feed: {"WebSocket bookTicker+depth5+aggTrade+kline_1m" if use_ws else "REST only"}'
+          f' | Micro gate: {"ON" if micro_confirm else "OFF (recorded only)"}')
     print('  Target: Lower95(EV) > 0 before live promotion')
     print('=' * 80)
 
     start_time = time.time()
-    poll_count = 0
-
-    while True:
-        if seconds and (time.time() - start_time >= seconds):
-            print(f'\n[SHADOW] Completed {seconds}s target run duration.')
-            break
-
-        # fetch_rest_market_data is three sequential blocking urllib calls with a
-        # 4s timeout each: up to 12s frozen inside an async loop that is supposed
-        # to tick every 2s. Off-thread it, so the event loop keeps its cadence.
-        ticker, klines, oi, bars15 = await asyncio.to_thread(fetch_rest_market_data)
-        if ticker and klines:
-            poll_count += 1
-            res = engine.update_cycle(ticker, klines, oi, bars15=bars15)
-            m = engine.metrics
-            bid = ticker.get('bidPrice', 'nan')
-            ask = ticker.get('askPrice', 'nan')
-
-            b_be15 = engine.shadow_branches['be_15_10'].get_stats()
-            b_base = engine.shadow_branches['baseline'].get_stats()
-            b_be20 = engine.shadow_branches['be_20_10'].get_stats()
-
-            status_line = (
-                f'[{time.strftime("%H:%M:%S")}] '
-                f'DOGE: {bid}/{ask} | '
-                f'{res.get("status")} [{engine.regime}{"/FAST_DOWN" if engine.fast_down else ""}] | '
-                f'Trades: {m.total_trades} (W:{m.wins}/P:{m.protects}/L:{m.losses}) | '
-                f'BE15 EV: {b_be15["analytical_ev_bps"]:+.2f}bps (L95: {b_be15["lower95_ev_bps"]:+.1f}) | '
-                f'Base EV: {b_base["analytical_ev_bps"]:+.2f}bps | '
-                f'Premature: {b_be15["premature_count"]}/{b_be15["protect_count"]} ({b_be15["premature_rate"]*100:.0f}%) | '
-                f'Eq: {m.current_equity_usdt:.4f}U'
-            )
-            print(status_line)
-            try:
-                engine.write_telemetry_snapshot(float(bid), float(ask), res.get("status", "WAITING"))
-            except Exception:
-                pass
-
-            if m.is_killed:
-                print(f'\n[HALTED] {m.kill_reason}')
+    try:
+        while True:
+            if seconds and (time.time() - start_time >= seconds):
+                print(f'\n[SHADOW] Completed {seconds}s target run duration.')
                 break
-        else:
-            print(f'[{time.strftime("%H:%M:%S")}] Fetching REST market data retry...')
+            spent = gate.budget.exhausted() if gate.budget is not None else None
+            if spent:
+                print(f'\n[SHADOW] BUDGET_EXHAUSTED: {spent} after {gate.n} closed trades. Data loop closed.')
+                break
 
-        await asyncio.sleep(2.0)
+            if not booted:
+                booted = True
+                engine.cohort_log = COHORT_LOG_FILE
+                if feed is not None:
+                    feed_task = asyncio.create_task(feed.run())
+                # Priming history (99 x 15m) runs beside the warm start, not before it.
+                prime_task = asyncio.create_task(asyncio.to_thread(fetch_bars15, 99))
+            if prime_task is not None and prime_task.done():
+                primed, prime_task = prime_task.result(), None
+                if primed and len(primed) >= 61:
+                    engine.prime_regime(primed)
+                    bars15, bars15_at, bars15_key = primed[-60:], time.time(), primed[-1]['time']
+
+            now = time.time()
+            live = feed is not None and feed.ready(now)
+            if live:
+                ticker, klines, oi = feed.ticker(), list(feed.klines), None
+                if bars15_task is None and now - bars15_at >= BARS15_REFRESH_SECONDS:
+                    bars15_task = asyncio.create_task(asyncio.to_thread(fetch_bars15))
+                fresh15 = None
+                if bars15_task is not None and bars15_task.done():
+                    fresh15 = bars15_task.result()
+                    bars15_task, bars15_at = None, time.time()
+                engine.feed_label = 'binance-ws'
+            else:
+                ticker, klines, oi, fresh15 = await asyncio.to_thread(fetch_rest_market_data)
+                if feed is not None and klines:
+                    feed.seed_klines(klines)
+                engine.feed_label = 'binance-rest'
+            if fresh15:
+                bars15 = fresh15
+            # Hand the 15m series to the regime gate once per NEW 15m bar only:
+            # range_streak counts reads, and re-reading the same bar every tick
+            # would satisfy the two-close hysteresis in one second.
+            pass15 = None
+            if bars15 and bars15[-1]['time'] != bars15_key:
+                pass15, bars15_key = bars15, bars15[-1]['time']
+            if feed is not None and feed.frames:
+                engine.micro = feed.snapshot(now)
+
+            if ticker and klines:
+                res = engine.update_cycle(ticker, klines, oi, bars15=pass15)
+                m = engine.metrics
+                bid = ticker.get('bidPrice', 'nan')
+                ask = ticker.get('askPrice', 'nan')
+                status = res.get('status', 'WAITING')
+                if seen_trades == 0 and last_status is None:
+                    print(f'[BOOT] first tick {time.monotonic() - t_boot:.2f}s via {engine.feed_label}')
+
+                mono = time.monotonic()
+                if status != last_status or mono - last_print >= 5.0:
+                    b_be15 = engine.shadow_branches['be_15_10'].get_stats()
+                    b_base = engine.shadow_branches['baseline'].get_stats()
+                    mic = engine.micro or {}
+                    obi_s = f'{mic["obi"]:+.2f}' if mic.get('obi') is not None else ' n/a'
+                    cvd_s = f'{mic["cvd_60s"]:+.0f}' if mic.get('cvd_60s') is not None else 'n/a'
+                    p_pos = b_be15['p_ev_positive']
+                    print(
+                        f'[{time.strftime("%H:%M:%S")}] '
+                        f'DOGE: {float(bid):.5f}/{float(ask):.5f} | '
+                        f'{status} [{engine.regime}{"/FAST_DOWN" if engine.fast_down else ""}] | '
+                        f'OBI {obi_s} CVD60 {cvd_s}U | '
+                        f'Trades: {m.total_trades} (W:{m.wins}/P:{m.protects}/L:{m.losses}) | '
+                        f'BE15 EV: {b_be15["analytical_ev_bps"]:+.2f}bps (L95: {b_be15["lower95_ev_bps"]:+.1f}'
+                        f'{", P(EV>0) %.0f%%" % (p_pos * 100) if p_pos is not None else ""}) | '
+                        f'Base EV: {b_base["analytical_ev_bps"]:+.2f}bps | '
+                        f'Premature: {b_be15["premature_count"]}/{b_be15["protect_count"]} ({b_be15["premature_rate"]*100:.0f}%) | '
+                        f'Eq: {engine.get_liquidation_equity(float(bid), float(ask)):.4f}U'
+                    )
+                    last_print = mono
+                if (status != last_status or engine.feed_label != last_feed
+                        or mono - last_publish >= TELEMETRY_SECONDS):
+                    try:
+                        engine.write_telemetry_snapshot(float(bid), float(ask), status)
+                    except Exception:
+                        pass
+                    last_publish, last_feed = mono, engine.feed_label
+                last_status = status
+
+                for trade in engine.trades[seen_trades:]:
+                    gate.update(float(trade.net_bps))
+                seen_trades = len(engine.trades)
+                if gate.verdict is not None and gate.verdict.stop:
+                    v = gate.verdict
+                    print(f'\n[SHADOW] {v.status}: {v.reason} (n={v.n}, mean {v.mean_bps:+.2f} bps). Data loop closed.')
+                    break
+
+                if m.is_killed:
+                    print(f'\n[HALTED] {m.kill_reason}')
+                    break
+            else:
+                print(f'[{time.strftime("%H:%M:%S")}] Fetching REST market data retry...')
+
+            await asyncio.sleep(TICK_SECONDS if live else REST_POLL_SECONDS)
+    finally:
+        for task in (feed_task, bars15_task, prime_task):
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+    return engine
 
 
 def main():
     parser = argparse.ArgumentParser(description='DOGE 1m Flush Shadow Engine')
     parser.add_argument('--seconds', type=int, default=None, help='Run duration in seconds')
+    parser.add_argument('--rest-only', action='store_true', help='Skip the WebSocket feed (2 s REST polling)')
+    parser.add_argument('--micro-confirm', action='store_true',
+                        help='Entry also needs OBI(L5) and CVD(60s) on the trade side. Off by default: '
+                             'unvalidated; data/flush_cohorts.jsonl records both at every entry for calibration')
     args = parser.parse_args()
 
     try:
-        asyncio.run(run_shadow_loop(seconds=args.seconds))
+        asyncio.run(run_shadow_loop(seconds=args.seconds, use_ws=not args.rest_only,
+                                    micro_confirm=args.micro_confirm))
     except KeyboardInterrupt:
         print('\n[SHADOW] Stopped cooperatively by user (Ctrl+C). Zero orders sent to exchange.')
 

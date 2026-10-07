@@ -1,0 +1,37 @@
+{
+ "file": "LINKUSDT/20260910.jsonl",
+ "tick": 0.001,
+ "events": 72245,
+ "cost_all_in_bps": 8.5,
+ "toxicity": 0.7,
+ "touch": {
+  "quotes": 298,
+  "skipped": 0,
+  "fills": 93,
+  "fill_rate_pct": 31.21,
+  "hours": 2.2,
+  "markout_1s_bps": -0.818,
+  "markout_1s_se": 0.12,
+  "markout_5s_bps": -0.795,
+  "markout_5s_se": 0.202,
+  "markout_30s_bps": -1.031,
+  "markout_30s_se": 0.481,
+  "net_30s_after_cost_bps": -9.531,
+  "gross_ge_9bps_share_pct": 0.0
+ },
+ "guard": {
+  "quotes": 262,
+  "skipped": 36,
+  "fills": 55,
+  "fill_rate_pct": 20.99,
+  "hours": 2.2,
+  "markout_1s_bps": -0.922,
+  "markout_1s_se": 0.179,
+  "markout_5s_bps": -0.822,
+  "markout_5s_se": 0.292,
+  "markout_30s_bps": -0.576,
+  "markout_30s_se": 0.473,
+  "net_30s_after_cost_bps": -9.076,
+  "gross_ge_9bps_share_pct": 0.0
+ }
+}

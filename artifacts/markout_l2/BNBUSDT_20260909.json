@@ -1,0 +1,37 @@
+{
+ "file": "BNBUSDT/20260909.jsonl",
+ "tick": 0.01,
+ "events": 63166,
+ "cost_all_in_bps": 8.5,
+ "toxicity": 0.7,
+ "touch": {
+  "quotes": 68,
+  "skipped": 0,
+  "fills": 31,
+  "fill_rate_pct": 45.59,
+  "hours": 0.28,
+  "markout_1s_bps": -0.813,
+  "markout_1s_se": 0.149,
+  "markout_5s_bps": -0.709,
+  "markout_5s_se": 0.226,
+  "markout_30s_bps": -0.844,
+  "markout_30s_se": 0.901,
+  "net_30s_after_cost_bps": -9.344,
+  "gross_ge_9bps_share_pct": 3.23
+ },
+ "guard": {
+  "quotes": 55,
+  "skipped": 13,
+  "fills": 20,
+  "fill_rate_pct": 36.36,
+  "hours": 0.28,
+  "markout_1s_bps": -0.804,
+  "markout_1s_se": 0.171,
+  "markout_5s_bps": -0.561,
+  "markout_5s_se": 0.194,
+  "markout_30s_bps": -0.919,
+  "markout_30s_se": 1.149,
+  "net_30s_after_cost_bps": -9.419,
+  "gross_ge_9bps_share_pct": 0.0
+ }
+}

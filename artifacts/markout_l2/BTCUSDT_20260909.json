@@ -1,0 +1,37 @@
+{
+ "file": "BTCUSDT/20260909.jsonl",
+ "tick": 0.1,
+ "events": 613076,
+ "cost_all_in_bps": 8.5,
+ "toxicity": 0.7,
+ "touch": {
+  "quotes": 68,
+  "skipped": 0,
+  "fills": 28,
+  "fill_rate_pct": 41.18,
+  "hours": 0.28,
+  "markout_1s_bps": -0.938,
+  "markout_1s_se": 0.158,
+  "markout_5s_bps": -0.993,
+  "markout_5s_se": 0.321,
+  "markout_30s_bps": -1.661,
+  "markout_30s_se": 0.707,
+  "net_30s_after_cost_bps": -10.161,
+  "gross_ge_9bps_share_pct": 0.0
+ },
+ "guard": {
+  "quotes": 60,
+  "skipped": 8,
+  "fills": 23,
+  "fill_rate_pct": 38.33,
+  "hours": 0.28,
+  "markout_1s_bps": -0.936,
+  "markout_1s_se": 0.126,
+  "markout_5s_bps": -0.681,
+  "markout_5s_se": 0.207,
+  "markout_30s_bps": -1.392,
+  "markout_30s_se": 0.739,
+  "net_30s_after_cost_bps": -9.892,
+  "gross_ge_9bps_share_pct": 0.0
+ }
+}

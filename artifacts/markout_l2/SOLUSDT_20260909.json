@@ -1,0 +1,37 @@
+{
+ "file": "SOLUSDT/20260909.jsonl",
+ "tick": 0.01,
+ "events": 172158,
+ "cost_all_in_bps": 8.5,
+ "toxicity": 0.7,
+ "touch": {
+  "quotes": 98,
+  "skipped": 0,
+  "fills": 42,
+  "fill_rate_pct": 42.86,
+  "hours": 0.45,
+  "markout_1s_bps": -1.132,
+  "markout_1s_se": 0.195,
+  "markout_5s_bps": -1.271,
+  "markout_5s_se": 0.401,
+  "markout_30s_bps": -1.456,
+  "markout_30s_se": 0.981,
+  "net_30s_after_cost_bps": -9.956,
+  "gross_ge_9bps_share_pct": 2.38
+ },
+ "guard": {
+  "quotes": 82,
+  "skipped": 16,
+  "fills": 22,
+  "fill_rate_pct": 26.83,
+  "hours": 0.45,
+  "markout_1s_bps": -1.103,
+  "markout_1s_se": 0.282,
+  "markout_5s_bps": -1.015,
+  "markout_5s_se": 0.581,
+  "markout_30s_bps": -0.089,
+  "markout_30s_se": 1.235,
+  "net_30s_after_cost_bps": -8.589,
+  "gross_ge_9bps_share_pct": 4.55
+ }
+}

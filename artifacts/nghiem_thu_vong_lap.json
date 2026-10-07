@@ -1,0 +1,105 @@
+{
+ "cost_all_in_bps": 8.5,
+ "gross_hurdle_bps": 9.0,
+ "signal_lab": {
+  "probes_before": 6795,
+  "probes_after": 200,
+  "junk_reduction_pct": 97.1,
+  "collection_hours_before": 55.9,
+  "collection_hours_after": 1.81,
+  "verdict": {
+   "status": "REGIME_UNPROFITABLE",
+   "reason": "EV_UCB95 -8.12<=0 bps",
+   "n": 200,
+   "mean_bps": -9.2954,
+   "lcb_bps": -10.4658,
+   "ucb_bps": -8.125,
+   "win_rate": 0.1,
+   "win_ucb": 0.1494,
+   "breakeven": 0.579,
+   "llr": -57.7413
+  },
+  "permit": {
+   "allowed": false,
+   "mode": "STAND_ASIDE",
+   "reason": "REGIME_UNPROFITABLE (early-stop gate)"
+  },
+  "before_trade_gated_net_bps": -10.67,
+  "before_trade_gated_n": 75,
+  "before_loosened_F4_oos_net_bps": -4.11,
+  "before_loosened_F4_oos_n": 277,
+  "after_trades": 0,
+  "after_net_bps": 0.0
+ },
+ "live_testnet": {
+  "fills_before": 102,
+  "net_usdt_before": -6.7277,
+  "net_bps_before": -12.61,
+  "early_stop_min30_after_n": 30,
+  "net_usdt_if_stopped_at_n": -3.0799,
+  "loss_avoided_pct": 54.2,
+  "verdict": {
+   "status": "REGIME_UNPROFITABLE",
+   "reason": "EV_UCB95 -3.02<=0 bps",
+   "n": 30,
+   "mean_bps": -8.1908,
+   "lcb_bps": -13.3643,
+   "ucb_bps": -3.0174,
+   "win_rate": 0.3,
+   "win_ucb": 0.4788,
+   "breakeven": 0.6283,
+   "llr": -2.6383
+  },
+  "permit_after": "STAND_ASIDE (no OOS gross >= 9 bps) -> 0 fills, 0 USDT"
+ },
+ "l2_maker": {
+  "TRAIN_touch": {
+   "quotes": 4742,
+   "fills": 1905,
+   "fill_rate_pct": 40.2,
+   "markout_1s": -0.98,
+   "markout_5s": -1.12,
+   "markout_30s": -1.15,
+   "net_after_cost_bps": -9.65,
+   "passes_9bps_hurdle": false
+  },
+  "TRAIN_guard": {
+   "quotes": 4057,
+   "fills": 1294,
+   "fill_rate_pct": 31.9,
+   "markout_1s": -0.98,
+   "markout_5s": -1.16,
+   "markout_30s": -1.22,
+   "net_after_cost_bps": -9.72,
+   "passes_9bps_hurdle": false
+  },
+  "OOS_touch": {
+   "quotes": 1500,
+   "fills": 432,
+   "fill_rate_pct": 28.8,
+   "markout_1s": -0.76,
+   "markout_5s": -0.83,
+   "markout_30s": -1.12,
+   "net_after_cost_bps": -9.62,
+   "passes_9bps_hurdle": false
+  },
+  "OOS_guard": {
+   "quotes": 1296,
+   "fills": 263,
+   "fill_rate_pct": 20.3,
+   "markout_1s": -0.8,
+   "markout_5s": -0.69,
+   "markout_30s": -0.73,
+   "net_after_cost_bps": -9.23,
+   "passes_9bps_hurdle": false
+  },
+  "data": {
+   "l2_bytes_on_disk": 3043073103,
+   "l2_wall_hours": 6.59,
+   "fills_per_hour_4_symbols": 483.5,
+   "hours_to_200_fills": 0.41,
+   "bytes_needed_for_verdict_est": 191010925,
+   "junk_reduction_pct_est": 93.7
+  }
+ }
+}

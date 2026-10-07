@@ -92,7 +92,7 @@ function renderTicker(markets) {
   for (const m of markets) {
     const t = tile(m.symbol);
     const stance = m.status === 'AUTHORIZED' ? m.side : (m.score ?? 0) >= VETO_GATE ? m.side : 'HOLD';
-    t.chip.textContent = m.status === 'WAITING' || m.status === 'WARMUP' ? 'WAIT' : stance;
+    t.chip.textContent = ['WAITING', 'WARMUP', 'STALE'].includes(m.status) ? 'WAIT' : stance;
     t.chip.className = 'chip ' + stanceClass(t.chip.textContent);
     t.mid.textContent = number(m.mid, m.mid >= 100 ? 2 : 5);
     t.cells.spread.textContent = number(m.spread, 2);
@@ -115,7 +115,7 @@ function renderTicker(markets) {
     const blockers = (m.blockers ?? []).join(', ');
     t.state.textContent = blockers ? `${m.status} · ${blockers}` : (m.status ?? '—');
     t.state.title = m.why ?? '';
-    t.root.classList.toggle('authorized', m.status === 'AUTHORIZED');
+    t.root.classList.toggle('authorized', ['AUTHORIZED', 'IN_POSITION', 'ENTRY_PENDING', 'SIGNAL'].includes(m.status));
     order.push(t.root);
   }
   strip.replaceChildren(...order);
@@ -141,18 +141,22 @@ function renderEquity(history) {
   const Y = v => max === min ? 70 : 125 - (v - min) / range * 110;
   // Straight segments at 600 points read as a smooth curve and stay jank-free;
   // a spline is only worth its cost while the trace is sparse.
+  // Start / kill guides and the header label hold for EVERY path shape. They
+  // used to be set only on the straight-line branch, so between 3 and 120
+  // points the guides sat at y=0 and the label was overwritten by min—max.
+  const startLine = byId('equity-start'), killLine = byId('equity-kill');
+  if (startLine) { const y = Y(START_EQUITY).toFixed(2); startLine.setAttribute('y1', y); startLine.setAttribute('y2', y); }
+  if (killLine) { const y = Y(KILL_EQUITY).toFixed(2); killLine.setAttribute('y1', y); killLine.setAttribute('y2', y); }
+  const last = values[values.length - 3];
+  const range3 = byId('equity-range');
+  if (range3 && finite(last)) {
+    const delta = last - START_EQUITY;
+    range3.textContent = `${number(last, 4)} U (${delta >= 0 ? '+' : ''}${number(delta, 4)}) · VÀO ${START_EQUITY.toFixed(2)} · DỪNG ${KILL_EQUITY.toFixed(2)}`;
+    range3.className = last >= START_EQUITY ? 'pos' : last <= KILL_EQUITY ? 'neg' : 'zero';
+  }
   let d;
   if (points.length > 120 || points.length < 3) {
     d = points.map((p, i) => `${i ? 'L' : 'M'} ${X(i).toFixed(2)} ${Y(p.value).toFixed(2)}`).join(' ');
-    const startLine = byId('equity-start'), killLine = byId('equity-kill');
-    if (startLine) { const y = Y(START_EQUITY).toFixed(2); startLine.setAttribute('y1', y); startLine.setAttribute('y2', y); }
-    if (killLine) { const y = Y(KILL_EQUITY).toFixed(2); killLine.setAttribute('y1', y); killLine.setAttribute('y2', y); }
-    const last = values[values.length - 3];
-    const range3 = byId('equity-range');
-    if (range3 && finite(last)) {
-      range3.textContent = `${number(last, 4)} U · VÀO ${START_EQUITY.toFixed(2)} · DỪNG ${KILL_EQUITY.toFixed(2)}`;
-      range3.className = last >= START_EQUITY ? 'pos' : last <= KILL_EQUITY ? 'neg' : 'zero';
-    }
   } else {
     d = `M ${X(0).toFixed(2)} ${Y(values[0]).toFixed(2)}`;
     for (let i = 0; i < points.length - 1; i++) {
@@ -165,7 +169,6 @@ function renderEquity(history) {
   }
   line.setAttribute('d', d);
   area.setAttribute('d', d + ` L ${X(points.length - 1).toFixed(2)} 140 L 0 140 Z`);
-  set('equity-range', number(min) + ' — ' + number(max) + ' USDT');
 }
 
 const wrap = document.querySelector('.chart-wrap');
@@ -232,7 +235,13 @@ function render(s) {
 
   // The lab counts signals the gates refused, so a flat session is still measurable.
   const lab = s.lab;
-  if (!lab || !lab.probes) {
+  if (s.scanner) {
+    const sc = s.scanner;
+    set('lab-tag', `SCAN intents ${sc.intents} · GTX fills ${sc.fills}`
+      + (finite(sc.fill_rate) ? ` (${number(sc.fill_rate * 100, 0)}%)` : '')
+      + ` · cancels ${sc.cancels}` + (finite(sc.trades_per_hour) ? ` · ${number(sc.trades_per_hour, 1)} lệnh/giờ` : ''));
+    byId('lab-tag').className = 'tag' + (sc.fills ? ' buy' : '');
+  } else if (!lab || !lab.probes) {
     set('lab-tag', lab ? `LAB ${lab.open ?? 0} OPEN · 0 RESOLVED` : 'LAB OFF');
     byId('lab-tag').className = 'tag';
   } else {
@@ -284,13 +293,30 @@ function render(s) {
 
   renderEquity(s.history ?? []);
 
+  if (s.branch_labels) Object.assign(BRANCH_LABEL, s.branch_labels);
   renderBranches(s.branches);
 
   const positions = byId('positions');
   positions.replaceChildren();
   if (!(s.positions ?? []).length) positions.textContent = 'No active positions';
-  for (const p of s.positions ?? [])
-    positions.append(el('div', 'position', `${p.symbol} / ${p.side || 'BUY'} · ${number(p.filled || p.size, 0)} · entry ${number(p.entry, 5)} · pnl ${number(p.pnl_bps, 1)} bps`));
+  for (const p of s.positions ?? []) {
+    const dp = finite(p.entry) && p.entry < 1 ? 7 : 5;
+    const text = p.pending
+      ? `${p.symbol} / ${p.side} · GTX CHỜ KHỚP ${number(p.size, 2)} @ ${number(p.entry, dp)} · ${number(p.age_s, 1)}/${number(p.ttl_s, 0)}s · queue ${number(p.queue_ahead, 0)}`
+      : `${p.branch ? p.branch.toUpperCase() + ' · ' : ''}${p.symbol} / ${p.side || 'BUY'} · ${number(p.filled || p.size, 2)} · entry ${number(p.entry, dp)}`
+        + ` · pnl ${number(p.pnl_bps, 1)} bps` + (finite(p.mfe_bps) ? ` · MFE ${number(p.mfe_bps, 1)}` : '')
+        + (finite(p.tp) ? ` · TP ${number(p.tp, dp)} / SL ${number(p.sl, dp)}${p.protected ? ' (BE)' : ''}` : '')
+        + (finite(p.age_s) ? ` · ${number(p.age_s, 0)}/${number(p.max_hold_s, 0)}s` : '');
+    const row = el('div', 'position' + (p.pending ? ' pending' : Number(p.pnl_bps) >= 0 ? ' up' : ' down'), text);
+    positions.append(row);
+  }
+  for (const o of s.open_orders ?? []) {
+    const dp = finite(o.price) && o.price < 1 ? 7 : 5;
+    positions.append(el('div', 'position ' + (o.status === 'FILLED' ? 'up' : 'pending'),
+      `ORDER · ${o.symbol} · ${o.kind} @ ${number(o.price, dp)}` + (finite(o.qty) ? ` × ${number(o.qty, 2)}` : ' · closePosition')
+      + (o.status ? ` · ${o.status}` : ' · WORKING')));
+  }
+  renderTrades(s.trades);
 
   const events = byId('events');
   events.replaceChildren();
@@ -399,7 +425,8 @@ function renderBranches(branches) {
       `${ev > 0 ? '+' : ''}${number(ev, 2)} bps`,
       ev > 0 ? 'pos' : ev < 0 ? 'neg' : 'zero',
       diverging('ev', ev, EV_SCALE),
-      `L95 ${number(b.lower95_ev_bps, 1)} · n=${trades}`));
+      `L95 ${number(b.lower95_ev_bps, 1)} · n=${trades}`
+      + (finite(b.p_ev_positive) ? ` · P(EV>0) ${number(b.p_ev_positive * 100, 0)}%` : '')));
 
     dl.append(metric('PNL LŨY KẾ',
       `${pnl > 0 ? '+' : ''}${number(pnl, 4)} U`,
@@ -408,7 +435,7 @@ function renderBranches(branches) {
       `thang đo ±${PNL_SCALE.toFixed(2)} U = ngưỡng kill`));
 
     dl.append(metric('TP / PROTECT / SL',
-      `${tp} / ${pro} / ${sl}`, 'zero',
+      `${tp} / ${pro} / ${sl}` + (finite(b.time_count) ? ` / T${b.time_count}` : ''), 'zero',
       stacked(tp, pro, sl),
       trades ? `${number(tp / trades * 100, 0)}% chạm TP` : 'chưa có lệnh'));
 
@@ -447,29 +474,171 @@ function beat(markets) {
   }
   lastMid = mid;
   const px = byId('tick-price');
-  if (px) px.textContent = mid.toFixed(5);
+  if (px) {
+    const m0 = markets[0];
+    const cvd = Number(m0.cvd_60s);
+    px.textContent = mid.toFixed(5)
+      + (finite(m0.obi) ? ` · OBI ${m0.obi >= 0 ? '+' : ''}${Number(m0.obi).toFixed(2)}` : '')
+      + (finite(m0.cvd_60s) ? ` · CVD60 ${cvd >= 0 ? '+' : ''}${Math.abs(cvd) >= 1000 ? (cvd / 1000).toFixed(1) + 'k' : cvd.toFixed(0)}` : '');
+  }
 }
 
+/* ---------- 08 · closed trades (all branches, newest first) ---------- */
+function renderTrades(trades) {
+  const box = byId('trades');
+  if (!box) return;
+  box.replaceChildren();
+  if (!(trades ?? []).length) { box.textContent = 'Chưa có lệnh đóng'; return; }
+  for (const t of trades.slice(0, 30)) {
+    const dp = t.entry_price < 1 ? 7 : 4;
+    const row = el('div', 'position ' + (t.net_bps >= 0 ? 'up' : 'down'),
+      `${new Date(t.exit_time * 1000).toLocaleTimeString()} · ${String(t.branch).toUpperCase()} · ${t.symbol} ${t.side}`
+      + ` · ${number(t.entry_price, dp)} → ${number(t.exit_price, dp)} · ${t.reason}`
+      + ` · ${t.net_bps >= 0 ? '+' : ''}${number(t.net_bps, 1)} bps · ${t.pnl_usdt >= 0 ? '+' : ''}${number(t.pnl_usdt, 4)} U · ${number(t.hold_s, 0)}s`);
+    box.append(row);
+  }
+}
+
+/* ---------- R1/R2 · alpha + event radar (research.radar_runner -> /api/radar) ---------- */
+const tpLabel = tp => tp === 'ladder' ? 'LADDER TP1→BE→TP2' : `TP+${tp}%`;
+const pct = (v, d = 2) => finite(v) ? `${v >= 0 ? '+' : ''}${number(v, d)}%` : '—';
+function listInto(id, items, fmt, empty) {
+  const box = byId(id);
+  if (!box) return;
+  box.replaceChildren();
+  if (!items || !items.length) { box.textContent = empty; return; }
+  for (const it of items) { const [text, cls] = fmt(it); box.append(el('div', 'position ' + (cls || ''), text)); }
+}
+function renderRadar(o) {
+  if (!o || o.status === 'no radar yet') return;
+  const age = finite(o.updated_at) ? Math.round(Date.now() / 1000 - o.updated_at) : null;
+  const r = o.radar;
+  set('radar-meta', r ? `QUÉT ${r.scanned}/${r.universe} CẶP · ${r.fired} TÍN HIỆU · ${age ?? '—'}s TRƯỚC`
+                      : `BINANCE LỖI · ${(o.errors || []).join(' | ') || '—'}`);
+  const tbody = byId('radar-picks');
+  tbody.replaceChildren();
+  for (const p of (r && r.picks) || []) {
+    const pl = p.plan || {}, t1 = (pl.tps || [])[0] || {}, t2 = (pl.tps || [])[1] || {};
+    const warn = [...(pl.warnings || []), ...(p.chase ? ['CHASE'] : [])];
+    const cells = [p.symbol, p.side, `${number(p.surge, 1)}x / ${p.window_min}m`, pct(p.ret_pct), number(p.rsi, 0),
+      number(p.taker, 2), finite(p.obi) ? number(p.obi, 2) : '—',
+      p.retest ? `RETEST ${number(p.retest.price, 6)} (−${number(p.retest.pullback_pct, 2)}% ${p.retest.anchor}) · SL ${number((p.retest_plan || pl).sl, 6)}`
+               + (p.trend ? ` · ${Object.entries(p.trend).map(([k, v]) => k + ' ' + v).join(' ')}` : '')
+               : `${number(pl.entry, 6)} · ${number(pl.sl, 6)} (−${number(pl.sl_pct, 2)}%)`,
+      `${number(t1.pnl_usdt, 3)} / ${number(t2.pnl_usdt, 3)} U · ${number(t1.pnl_vnd, 0)} / ${number(t2.pnl_vnd, 0)} đ`,
+      warn.length ? warn.join(' · ') : '—'];
+    const tr = document.createElement('tr');
+    cells.forEach((v, i) => tr.append(el('td', i === 1 ? (p.side === 'LONG' ? 'edge pos' : 'edge neg') : null, v)));
+    tbody.append(tr);
+  }
+  if (!tbody.children.length) {
+    const tr = document.createElement('tr');
+    const td = el('td', null, r ? 'Không có cặp nào đạt surge ≥3x + breakout + RSI. Đứng ngoài cũng là một vị thế.' : 'Không lấy được dữ liệu Binance');
+    td.colSpan = 10; tr.append(td); tbody.append(tr);
+  }
+  const bt = o.backtest && o.backtest.by_tp;
+  set('radar-base', bt ? 'BASE RATE (cùng tín hiệu, vào nến sau): ' + Object.entries(bt).map(([tp, s]) => s.n
+    ? `${tpLabel(tp)} n=${s.n} chạm TP1 ${number(s.tp_rate * 100, 0)}% · SL ${number(s.sl_rate * 100, 0)}% · TB ${pct(s.mean_net_pct)}`
+      + (finite(s.lower95_pct) ? ` · L95 ${pct(s.lower95_pct)}` : '')
+      + (o.backtest.split && o.backtest.split.oos && o.backtest.split.oos.n ? ` · OOS ${pct(o.backtest.split.oos.mean_net_pct)} (n=${o.backtest.split.oos.n})` : '')
+    : `${tpLabel(tp)} chưa có mẫu`).join('  |  ')
+    + (o.backtest.by_tp_retest ? '  ‖  RETEST: ' + Object.entries(o.backtest.by_tp_retest).map(([tp, s]) => s.n
+      ? `${tpLabel(tp)} khớp ${number(s.fill_rate * 100, 0)}% n=${s.n} chạm ${number(s.tp_rate * 100, 0)}% · SL ${number(s.sl_rate * 100, 0)}% · TB ${pct(s.mean_net_pct)}`
+      : `${tpLabel(tp)} chưa khớp mẫu nào`).join('  |  ') : '') : 'BASE RATE: chưa chạy');
+  set('radar-watch', 'WATCH: ' + (((r && r.watchlist) || []).slice(0, 5).map(w => `${w.symbol} ${number(w.surge, 1)}x`).join(' · ') || '—'));
+  const e = o.events;
+  set('event-meta', e ? `${e.events} SỰ KIỆN · ${e.markets} THỊ TRƯỜNG · ARB ${e.arbs.length} · EDGE ${e.edges.length}` : 'POLYMARKET LỖI / TẮT');
+  listInto('event-alerts', e && e.alerts, a => a.kind === 'ARB'
+    ? [`🔒 ARB ${a.type} · ${a.event} · +${number(a.edge * 100, 1)}¢/bộ · cần $${number(a.min_capital, 2)}${a.fits_account ? ' · VỪA VỐN' : ' · VƯỢT VỐN'}`, a.fits_account ? 'up' : 'pending']
+    : [`⚡ EDGE ${number(a.edge * 100, 0)}pp · ${a.question} → ${a.side} @ ${number(a.price, 2)} · p_model ${number(a.p_model, 2)} · vol ${number(a.sigma * 100, 0)}% vs ngụ ý ${finite(a.implied_vol) ? number(a.implied_vol * 100, 0) + '%' : '—'} (model chưa hiệu chuẩn)`, 'pending'],
+    'Không có kèo arb hay edge ≥ 15pp lúc này');
+  listInto('event-arbs', e && e.arbs, a => [`${a.fits_account ? 'LOCK-IN' : 'VƯỢT VỐN'} · ${a.type} · ${a.event} · ${a.legs} chân · +${number(a.edge * 100, 1)}¢/bộ`
+    + (finite(a.min_capital) ? ` · cần ≥ $${number(a.min_capital, 2)} (${a.min_shares} cổ/chân)` : '')
+    + (finite(a.days_to_resolution) ? ` · khoá ${number(a.days_to_resolution, 0)} ngày` : '')
+    + (a.warnings.length ? ' · ⚠ ' + a.warnings[0] : ''), a.fits_account ? 'up' : 'pending'], 'Không có arb sau phí');
+  listInto('event-edges', e && e.edges, x => [`${x.question} → ${x.side} @ ${number(x.price, 2)} · p ${number(x.p_model, 2)} · edge ${number(x.edge * 100, 1)}pp · vol ${number(x.sigma * 100, 0)}% vs ngụ ý ${finite(x.implied_vol) ? number(x.implied_vol * 100, 0) + '%' : '—'} · ${x.shares} cổ ≈ $${number(x.stake, 2)}`, 'pending'], 'Không có kèo edge ≥ 5pp sau phí');
+  listInto('event-macro', e && e.macro, m => [`${m.question} · YES ${finite(m.yes) ? number(m.yes * 100, 0) + '%' : '—'}` + (finite(m.change_1d) ? ` (${m.change_1d >= 0 ? '+' : ''}${number(m.change_1d * 100, 1)} 24h)` : '') + ` · $${number(m.volume24h, 0)}/24h`, ''], '—');
+}
+async function pollRadar() {
+  try {
+    const res = await fetch('/api/radar', { cache: 'no-store', signal: AbortSignal.timeout(3500) });
+    if (res.ok) renderRadar(await res.json());
+  } catch { /* radar is optional; the trading board keeps working */ }
+  setTimeout(pollRadar, 10000);
+}
+pollRadar();
+
+/* ---------- F1/F2 · fast lane (research.fast_runner -> /api/fast) ---------- */
+const usd = v => finite(v) ? '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—';
+const hhmmss = t => finite(t) ? new Date(t * 1000).toLocaleTimeString() : '—';
+function renderFast(o) {
+  if (!o || o.status === 'no fast lane yet') return;
+  const sn = o.sniper || {}, st = sn.stats || {}, sm = sn.summary || {};
+  const age = finite(o.updated_at) ? Math.round(Date.now() / 1000 - o.updated_at) : null;
+  set('fast-meta', `${o.ws && o.ws.connected ? 'WS LIVE' : 'WS DOWN ' + ((o.ws && o.ws.error) || '')} · ${st.liquidations ?? 0} lệnh thanh lý (${usd(st.liq_usd)}) · ${st.cascades ?? 0} cascade · ${sm.n ?? 0} lệnh shadow · PnL ${number(sm.pnl_usdt, 4)} U · ${age ?? '—'}s trước`);
+  listInto('fast-feed', sn.feed, e => [`${hhmmss(e.recv)} · ${e.symbol} · ${e.liquidated} cháy ${usd(e.notional)} @ ${number(e.price, e.price < 1 ? 6 : 2)}`, e.liquidated === 'LONG' ? 'down' : 'up'], 'Chưa có lệnh thanh lý ≥ $10k');
+  listInto('fast-cascades', sn.cascades, c => [`${hhmmss(c.t)} · ${c.symbol} · ${c.liquidated} ${usd(c.usd_window)} ×${c.count} · wick ${finite(c.move_pct) ? number(c.move_pct, 2) + '%' : '—'} → ${c.action}`, (c.action === 'BUY' || c.action === 'SELL') ? 'up' : 'pending'], 'Chưa có cascade vượt ngưỡng');
+  const rows = [];
+  if (sn.position) { const p = sn.position; rows.push({ position: p }); }
+  for (const t of sn.trades || []) rows.push({ trade: t });
+  listInto('fast-trades', rows, r => r.position
+    ? [`ĐANG GIỮ ${r.position.symbol} ${r.position.side} @ ${number(r.position.entry, 6)} · TP ${number(r.position.tp, 6)} · SL ${number(r.position.sl, 6)} (−${number(r.position.sl_pct, 2)}%) · ${number(r.position.age_s, 0)}s · uPnL ${number(r.position.upnl, 4)} U`, 'pending']
+    : [`${hhmmss(r.trade.closed)} · ${r.trade.symbol} ${r.trade.side} ${r.trade.reason} ${pct(r.trade.net_pct)} · ${number(r.trade.pnl, 4)} U · ${number(r.trade.hold_s, 0)}s`, r.trade.pnl >= 0 ? 'up' : 'down'],
+    'Chưa có lệnh shadow');
+  const pmo = o.pm15 || {}, sc = pmo.score || {};
+  set('pm15-meta', (sc.n ? `ĐÃ CHẤM ${sc.n} kèo: trúng ${number(sc.hit_rate * 100, 0)}% · ROI TB ${pct(sc.mean_roi * 100)} · edge tự nhận TB ${number(sc.mean_edge_claimed * 100, 1)}pp` : `CHƯA CÓ KÈO ĐÃ CHỐT (${sc.open ?? 0} đang chờ)`) + ((pmo.errors || []).length ? ' · ⚠ ' + pmo.errors[0] : ''));
+  const tb = byId('pm15-rows');
+  if (tb) {
+    tb.replaceChildren();
+    for (const r of pmo.rows || []) {
+      const tr = document.createElement('tr');
+      [r.slug, `${number(r.tau_s, 0)}s`, pct(r.move_pct, 3), number(r.p_up, 3), number(r.up_ask, 2), number(r.down_ask, 2),
+        r.side || '—', finite(r.edge) ? `${r.edge >= 0 ? '+' : ''}${number(r.edge * 100, 1)}pp` : '—',
+        r.flag ? 'KÈO (sau phí)' : 'không'].forEach((v, i) => tr.append(el('td', i === 8 && r.flag ? 'edge pos' : null, v)));
+      tb.append(tr);
+    }
+    if (!tb.children.length) { const tr = document.createElement('tr'); const td = el('td', null, 'Chưa có dữ liệu Polymarket 15m'); td.colSpan = 9; tr.append(td); tb.append(tr); }
+  }
+}
+const streamFresh = () => Date.now() - (window.__grokLastAt || 0) < 3000;   // terminal.js SSE owns the feed
+document.addEventListener('grok:tick', e => {
+  const d = e.detail || {};
+  if (d.state) applyState(d.state);
+  if (d.fast) renderFast(d.fast);
+});
+async function pollFast() {
+  if (streamFresh()) { setTimeout(pollFast, 1000); return; }
+  try {
+    const res = await fetch('/api/fast', { cache: 'no-store', signal: AbortSignal.timeout(2500) });
+    if (res.ok) renderFast(await res.json());
+  } catch { /* optional lane */ }
+  setTimeout(pollFast, 1000);
+}
+pollFast();
+
+function applyState(s) {
+  render(s);
+  beat(s.markets);
+  const ts = s.timestamp || s.updated_at || 0;
+  const fresh = ts > 0 && Math.abs(Date.now() / 1000 - ts) < 8;
+  set('connection', (fresh ? 'TELEMETRY CONNECTED' : 'ENGINE IDLE / STALE') + (window.__grokVia ? ' · ' + window.__grokVia : ''));
+  byId('lamp').className = fresh ? 'online' : '';
+  set('clock', new Date().toLocaleTimeString());
+  byId('kill').hidden = false;
+}
 async function poll() {
   if (document.hidden) { setTimeout(poll, 2000); return; }
+  if (streamFresh()) { setTimeout(poll, 1000); return; }
   try {
     const response = await fetch('/api/state', { cache: 'no-store', signal: AbortSignal.timeout(3500) });
     if (!response.ok) throw new Error('HTTP');
-    const s = await response.json();
-    render(s);
-    beat(s.markets);
-    const ts = s.timestamp || s.updated_at || 0;
-    const fresh = ts > 0 && Math.abs(Date.now() / 1000 - ts) < 8;
-    set('connection', fresh ? 'TELEMETRY CONNECTED' : 'ENGINE IDLE / STALE');
-    byId('lamp').className = fresh ? 'online' : '';
-    set('clock', new Date().toLocaleTimeString());
-    byId('kill').hidden = false;
+    applyState(await response.json());
   } catch {
     set('connection', 'DISCONNECTED');
     byId('lamp').className = '';
     set('status', 'Telemetry unavailable · last values retained');
   }
-  setTimeout(poll, 1000);
+  setTimeout(poll, 500);   // engine publishes each 1 s and on every status change
 }
 poll();
 

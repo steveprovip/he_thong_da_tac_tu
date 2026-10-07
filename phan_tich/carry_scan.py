@@ -29,6 +29,20 @@ MIN_AGE_DAYS = 30.0
 FEE_BPS = 6.0
 SCAN_INTERVAL_S = 15 * 60
 SCAN_DAYS = 7
+# Futility stop: 96 empty scans = 24h with no R1 candidate. The Wilson 95%
+# upper bound on P(candidate per scan) is then < 3.9%, i.e. under one hit a
+# day -- polling every 15 minutes for 7 days cannot change that answer.
+MAX_EMPTY_SCANS = 96
+
+
+def futility_stop(empty_streak, max_empty=MAX_EMPTY_SCANS):
+    """(stop, wilson_ucb) after `empty_streak` consecutive zero-candidate scans."""
+    import sys as _sys
+    from pathlib import Path as _P
+    _sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    from core.early_stop import wilson_interval
+    ucb = wilson_interval(0, empty_streak)[1] if empty_streak else 1.0
+    return bool(max_empty) and empty_streak >= max_empty, ucb
 
 
 def get(url):
@@ -132,12 +146,21 @@ def notify_if_needed(snapshot, prev1, prev2):
     return messages
 
 
-def loop(hours=SCAN_DAYS * 24):
+def loop(hours=SCAN_DAYS * 24, max_empty=MAX_EMPTY_SCANS):
     deadline = time.time() + hours * 3600
-    print(f'Carry scan moi {SCAN_INTERVAL_S//60} phut, tong {hours}h. Ctrl+C de dung.')
+    print(f'Carry scan moi {SCAN_INTERVAL_S//60} phut, tong {hours}h, '
+          f'dung som sau {max_empty} luot rong lien tiep. Ctrl+C de dung.')
+    empty = 0
     while time.time() < deadline:
         try:
             snapshot, _ = scan_once()
+            empty = 0 if snapshot['n_candidates'] else empty + 1
+            stop, ucb = futility_stop(empty, max_empty)
+            if stop:
+                append_journal(snapshot)
+                print(f'  REGIME_UNPROFITABLE: {empty} luot rong lien tiep, Wilson UCB95 '
+                      f'P(ung vien) {ucb:.3f}. Dung scan.', flush=True)
+                return 0
             append_journal(snapshot)
             prev1, prev2 = read_prev_states()
             for msg in notify_if_needed(snapshot, prev1, prev2):
@@ -153,10 +176,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--loop', action='store_true')
     ap.add_argument('--hours', type=float, default=SCAN_DAYS * 24)
+    ap.add_argument('--max-empty-scans', type=int, default=MAX_EMPTY_SCANS)
     args = ap.parse_args()
 
     if args.loop:
-        return loop(args.hours) or 0
+        return loop(args.hours, args.max_empty_scans) or 0
 
     snapshot, cands = scan_once()
     append_journal(snapshot)

@@ -31,6 +31,10 @@ class Decision:
     reason: str
     threshold: float = .768
     regime: str = 'NORMAL'
+    # Agents whose vote carried veto=True. Attribution only: `veto` above is
+    # still the single source of truth. Without it every blocked signal reads
+    # 'RUNE VETO' and telemetry cannot tell a cost gate from a risk breach.
+    blockers: tuple = ()
 
 
 class ConsensusEngine:
@@ -92,8 +96,11 @@ class ConsensusEngine:
         hard = regime.upper() == 'TOXIC' or any(v.veto for v in votes) or any(v.agent == 'RUNE' and v.side == 'HOLD' for v in votes)
         veto = hard or score < self.veto_threshold - 1e-12
         allowed = not veto and score >= required - 1e-12
-        reason = 'AUTHORIZED' if allowed else 'RUNE VETO' if veto else f'BELOW {required*100:.1f}%'
-        return Decision(side, score, allowed, veto, reason, required, regime.upper())
+        blockers = tuple(v.agent for v in votes if v.veto)
+        reason = ('AUTHORIZED' if allowed else
+                  (f'RUNE VETO [{",".join(blockers)}]' if blockers else 'RUNE VETO') if veto else
+                  f'BELOW {required*100:.1f}%')
+        return Decision(side, score, allowed, veto, reason, required, regime.upper(), blockers)
 
 
 class TokenAuthority:

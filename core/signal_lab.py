@@ -30,6 +30,8 @@ import json
 import math
 import time
 
+from core.early_stop import COST_ALL_IN_BPS
+
 # Roundtrip commission measured on the venue: 2 bps maker entry + 4 bps taker
 # exit. Verified against /fapi/v1/userTrades on 14 audited round trips (mean
 # absolute fit error 5e-6 bps). The previous hardcoded 8.0 overstated cost by
@@ -78,7 +80,7 @@ class SignalLab:
     """Opens, tracks and closes counterfactual probes. Never touches execution."""
 
     def __init__(self, path=None, max_open=1, min_gap=20.0, horizon=300.0, source='unspecified',
-                 cost_bps=MEASURED_ROUNDTRIP_BPS):
+                 cost_bps=MEASURED_ROUNDTRIP_BPS, gate=None, gate_cost_bps=COST_ALL_IN_BPS):
         if max_open < 1 or min_gap <= 0:
             raise ValueError('Invalid lab configuration')
         if not math.isfinite(cost_bps) or cost_bps < 0:
@@ -95,11 +97,20 @@ class SignalLab:
         self.tally = {'TP': 0, 'SL': 0, 'TIMEOUT': 0}
         self.net_total = 0.0
         self.alpha_stats = {}
+        # core.early_stop.EarlyStopGate over gross - all-in cost (8.5 bps). Once it
+        # reaches a terminal verdict the lab stops opening probes: more of the
+        # same sample cannot change a 95% answer, it only burns disk and hours.
+        self.gate = gate
+        self.gate_cost_bps = float(gate_cost_bps)
+
+    @property
+    def stopped(self):
+        return self.gate is not None and self.gate.verdict is not None and self.gate.verdict.stop
 
     # ---------------------------------------------------------------- opening
     def observe(self, symbol, features, book, decision, votes, plan, now, conviction):
         """Record the plan the runtime would have made, whether or not it may act."""
-        if not features.ready or plan is None:
+        if not features.ready or plan is None or self.stopped:
             return None
         probes = self.open.setdefault(symbol, [])
         if len(probes) >= self.max_open or now - self.last_opened.get(symbol, -math.inf) < self.min_gap:
@@ -163,6 +174,8 @@ class SignalLab:
         stats['n'] += 1
         stats['net_bps'] += probe.net_bps
         stats['tp'] += 1 if probe.outcome == 'TP' else 0
+        if self.gate is not None:
+            self.gate.update(probe.gross_bps - self.gate_cost_bps)
         if not self.path:
             return
         with open(self.path, 'a', encoding='utf-8') as handle:
@@ -178,9 +191,12 @@ class SignalLab:
             if stats['n']:
                 by_alpha[key] = {'n': stats['n'], 'net_bps': stats['net_bps']/stats['n'],
                                  'tp_rate': stats['tp']/stats['n']}
+        gate = (self.gate.verdict.as_dict() if self.gate is not None and self.gate.verdict is not None
+                else None)
         if not total:
-            return {'probes': 0, 'open': sum(len(v) for v in self.open.values()), 'by_alpha': by_alpha}
-        return {'probes': total, 'open': sum(len(v) for v in self.open.values()),
+            return {'probes': 0, 'open': sum(len(v) for v in self.open.values()), 'by_alpha': by_alpha,
+                    'gate': gate}
+        return {'gate': gate, 'probes': total, 'open': sum(len(v) for v in self.open.values()),
                 'tp': self.tally['TP'] / total, 'sl': self.tally['SL'] / total,
                 'timeout': self.tally['TIMEOUT'] / total,
                 'net_bps': self.net_total / total, 'by_alpha': by_alpha}

@@ -65,3 +65,58 @@ def maker_quote(book, side, tick, inventory, risk_aversion, variance_per_second,
     if quote <= 0 or (side == 'BUY' and quote >= book.ask) or (side == 'SELL' and quote <= book.bid):
         raise ValueError('Invalid passive quote')
     return quote
+
+
+def top_of_book(book):
+    """(bid, ask, bid_qty, ask_qty) from a core.models.Book or any object exposing them."""
+    bq = getattr(book, 'bid_qty', None)
+    aq = getattr(book, 'ask_qty', None)
+    if bq is None or aq is None:
+        bq, aq = float(book.bids[0][1]), float(book.asks[0][1])
+    return float(book.bid), float(book.ask), float(bq), float(aq)
+
+
+def queue_imbalance(book):
+    """I = (Qb - Qa) / (Qb + Qa) in [-1, 1]; > 0 means resting bids dominate."""
+    _, _, bq, aq = top_of_book(book)
+    total = bq + aq
+    if not math.isfinite(total) or total <= 0:
+        raise ValueError('Invalid top-of-book quantities')
+    return (bq - aq) / total
+
+
+def microstructure_quote(book, side, tick, inventory=0.0, risk_aversion=0.0,
+                         variance_per_second=0.0, remaining_seconds=0.0, toxicity=0.30):
+    """Microprice-anchored A-S quote with an adverse-selection stand-aside.
+
+    maker_quote() anchors the reservation price on the MID, so with zero
+    inventory it collapses to "join the touch" whatever the queue says -- the
+    exact quote a one-way market runs over.  Here the reservation price is the
+    queue-weighted microprice  m = (bid*Qa + ask*Qb) / (Qb + Qa),  which already
+    leans toward the side about to break, then the A-S inventory skew is applied:
+
+        r = m - q * gamma * sigma^2 * T
+        BUY  quote = min(bid, r - s/2)      SELL quote = max(ask, r + s/2)
+
+    When the queue leans against us (signed imbalance < -toxicity) the book is
+    about to trade THROUGH our level: a fill there is adverse selection by
+    construction, so the function returns None (stand aside) instead of a price.
+    toxicity=None disables the stand-aside (skew only).
+    """
+    if side not in ('BUY', 'SELL') or not math.isfinite(tick) or tick <= 0:
+        raise ValueError('Invalid quote parameters')
+    if toxicity is not None and (not math.isfinite(toxicity) or not 0 <= toxicity <= 1):
+        raise ValueError('toxicity must lie in [0, 1]')
+    bid, ask, bq, aq = top_of_book(book)
+    imbalance = queue_imbalance(book)
+    signed = imbalance if side == 'BUY' else -imbalance
+    if toxicity is not None and signed < -toxicity:
+        return None
+    micro = (bid * aq + ask * bq) / (bq + aq)
+    reserve = reservation_price(micro, inventory, risk_aversion, variance_per_second, remaining_seconds)
+    half_spread = (ask - bid) / 2
+    price = min(bid, reserve - half_spread) if side == 'BUY' else max(ask, reserve + half_spread)
+    quote = quantize(price, tick, up=side == 'SELL')
+    if quote <= 0 or (side == 'BUY' and quote >= ask) or (side == 'SELL' and quote <= bid):
+        raise ValueError('Invalid passive quote')
+    return quote

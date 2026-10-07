@@ -1,0 +1,9 @@
+{
+ "utc": "2026-09-24T03:00:46.405402+00:00",
+ "mode": "shadow",
+ "max_minutes": 15.0,
+ "equity_usdt": 3.85,
+ "status": "NETWORK_UNAVAILABLE",
+ "error": "UnicodeEncodeError: 'ascii' codec can't encode characters in position 32-33: ordinal not in range(128)",
+ "exit_code": 4
+}

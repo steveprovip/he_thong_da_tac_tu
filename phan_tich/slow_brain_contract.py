@@ -73,3 +73,30 @@ def validate_verdict(verdict, intent_ts):
     if not 0 <= conviction <= 1:
         return False, 'BAD_CONVICTION'
     return True, 'SLOW_BRAIN_PASS'
+
+
+# TradingAgents v0.4.0 bridge. TradingAgents-main stays upstream-clean; its
+# SignalProcessor.process_signal() returns one of the 5-tier ratings or REVIEW,
+# and this maps that string onto a v2 verdict that can only BLOCK:
+#   Buy/Sell           -> TREND, conviction 1.0
+#   Overweight/Under.  -> TREND, conviction 0.6
+#   Hold               -> CHOP  (block: no directional debate outcome)
+#   REVIEW / unknown   -> veto  (block: an unparsed debate is not a neutral one)
+_RATING_MAP = {'buy': ('TREND', 1.0, 'LONG'), 'overweight': ('TREND', .6, 'LONG'),
+               'sell': ('TREND', 1.0, 'SHORT'), 'underweight': ('TREND', .6, 'SHORT'),
+               'hold': ('CHOP', 0.0, 'FLAT')}
+
+
+def verdict_from_rating(rating, symbol, as_of_ts, generated_at, ttl_s=3600.0,
+                        model_version='tradingagents-0.4.0', timeframe='1h'):
+    """Build a schema-v2 slow-brain verdict from a TradingAgents rating string."""
+    key = str(rating or '').strip().lower()
+    regime, conviction, bias = _RATING_MAP.get(key, ('TOXIC', 0.0, 'FLAT'))
+    as_of, generated, ttl = float(as_of_ts), float(generated_at), float(ttl_s)
+    return {'schema_version': 2, 'symbol': symbol, 'regime': regime,
+            'veto': key not in _RATING_MAP, 'conviction': conviction, 'bias': bias,
+            'as_of_ts': as_of, 'generated_at': generated, 'expires_at': generated + ttl,
+            'data_cutoff': as_of, 'model_version': model_version,
+            'available_at': generated, 'published_at': generated,
+            'reason': f'TradingAgents rating={rating!s}', 'timeframe': timeframe,
+            'max_source_age_s': ttl}

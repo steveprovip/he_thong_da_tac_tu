@@ -106,7 +106,11 @@ def test_mission_target_stops_early_with_progress():
 
 
 @pytest.fixture
-def dashboard():
+def dashboard(monkeypatch, tmp_path):
+    # Isolate from a live engine on this machine: its data/telemetry_state.json (or :8766) must not leak in.
+    import core.web_ui_server as ui
+    monkeypatch.setattr(ui, 'STATE_FILE', tmp_path / 'telemetry_state.json')
+    monkeypatch.setattr(ui, '_proxy_down_until', [float('inf')])
     telemetry = Telemetry()
     server = start_server(telemetry, '127.0.0.1', 0)
     port = server.server_address[1]

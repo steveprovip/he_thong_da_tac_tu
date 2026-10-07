@@ -12,8 +12,12 @@ import time
 
 from config.settings import ROOT, Settings, read_env
 from core.consensus_engine import TokenAuthority
-from core.funding_carry import CarrySnapshot, plan_spot_perp, carry_votes, isolated_margin_ratio
+from core.funding_carry import (CarrySnapshot, plan_spot_perp, carry_votes,
+                               isolated_margin_ratio, two_leg_capital_gate,
+                               TWO_LEG_MIN_NOTIONAL_USDT)
 from core.models import PairIntent, dec, quantize
+from core.outcome_ledger import daily_brief
+from core.routine_scheduler import EXECUTING, RECONCILED, RoutineScheduler
 from live.binance_futures_client import BinanceFuturesClient, BinanceError
 from live.binance_spot_client import BinanceSpotClient
 from live.execution_gateway import PairExecutionGateway, Journal
@@ -66,6 +70,12 @@ def arguments(argv=None):
     parser.add_argument('--arm', action='store_true')
     parser.add_argument('--confirm', default='')
     parser.add_argument('--journal', type=Path)
+    # Routine cadence for R1/R2/R3. R4 is a wall-clock daily brief and is not
+    # tunable here. Nothing about the 30s RUNE/MARIN watchdog reads this value:
+    # protection cadence is not a throughput knob.
+    parser.add_argument('--routine-period', type=float, default=3600.0,
+                        choices=(3600.0, 14400.0, 28800.0))
+    parser.add_argument('--routine-state', type=Path)
     args = parser.parse_args(argv)
     args.symbols = list(dict.fromkeys(s.upper() for s in args.symbols))
     if not 1 <= len(args.symbols) <= 8 or any(not s.isalnum() or not s.endswith('USDT') for s in args.symbols):
@@ -79,6 +89,7 @@ def arguments(argv=None):
     if args.mode == 'shadow' and args.arm:
         parser.error('Shadow cannot be armed')
     args.journal = args.journal or ROOT / 'data' / 'carry' / (args.mode + '.sqlite')
+    args.routine_state = args.routine_state or ROOT / 'data' / 'carry' / (args.mode + '-routines.json')
     return args
 
 
@@ -147,6 +158,16 @@ def commission_bps(row, side='buyer'):
     return max(7.5 if enabled else 10.0, float((base + extra) * 10000)), enabled
 
 
+def futures_equity(account):
+    """Futures-side book value, preferring margin balance over free cash."""
+    for key in ('totalMarginBalance', 'totalWalletBalance', 'availableBalance'):
+        try:
+            return float(dec(account[key]))
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            continue
+    return 0.0
+
+
 async def futures_account(client):
     """V3 balances omit permissions/leverage; join their documented endpoints."""
     account, config, symbols = await asyncio.gather(
@@ -179,12 +200,117 @@ class CarryRuntime:
         self.owned_spot_trades = {}
         self.wallet_before = None
         self.wallet_status = 'NOT_CHECKED'
+        # Idempotent R1-R4 coordinator. It decides whether a firing has already
+        # happened; it never decides whether a trade is safe.
+        self.scheduler = RoutineScheduler(args.routine_state, mode=args.mode)
+        self.staged_leases = {}
+        self.capital = None
+        self.research_only = False
 
     def report(self, kind, **data):
         print(json.dumps({'event': kind, 'mode': self.args.mode, **data}, ensure_ascii=False,
                          allow_nan=False), flush=True)
 
+    # --------------------------------------------------------- capital + routines
+    def execution_enabled(self):
+        """Live two-leg staging needs a non-shadow mode AND a funded book.
+
+        Both halves matter. `--mode shadow` is the operator's choice; the capital
+        gate is the book's arithmetic, and on E = 3.85 USDT it is never satisfied.
+        """
+        return self.args.mode != 'shadow' and not self.research_only
+
+    def enforce_capital_gate(self, equity_usdt, notional_usdt=None):
+        """Force RESEARCH_ONLY when the book cannot fund two compliant legs."""
+        gate = two_leg_capital_gate(equity_usdt, notional_usdt, self.args.mode)
+        was_research = self.research_only
+        self.capital = gate
+        self.research_only = not gate.allowed and self.args.mode != 'shadow'
+        if self.research_only and not was_research:
+            detail = {'mode': gate.mode, 'reason': gate.reason,
+                      'equity_usdt': gate.equity_usdt if math.isfinite(gate.equity_usdt) else None,
+                      'notional_usdt': gate.notional_usdt if math.isfinite(gate.notional_usdt) else None,
+                      'two_leg_min_usdt': TWO_LEG_MIN_NOTIONAL_USDT}
+            self.report('CAPITAL_GATE_RESEARCH_ONLY', **detail)
+            self.journal.write('CAPITAL_GATE_RESEARCH_ONLY', detail)
+        return gate
+
+    def routine_period(self, name):
+        """R1-R3 follow --routine-period; R4 keeps its own daily cadence."""
+        return None if name == 'reconcile-brief' else self.args.routine_period
+
+    def routine_slot(self, name, symbol, now):
+        """Claim one routine slot. None means already handled, or window shut."""
+        period = self.routine_period(name)
+        lease = self.scheduler.claim(name, symbol, now, period=period)
+        if lease is None:
+            self.report('ROUTINE_SKIPPED', routine=name, symbol=symbol,
+                        state=self.scheduler.state(name, symbol, now, period),
+                        window_open=self.scheduler.window_open(name, now, period))
+        return lease
+
+    def recover_routines(self):
+        """Surface slots a crash left mid-flight; they are never re-claimed."""
+        stranded = self.scheduler.recover()
+        for lease in stranded:
+            self.report('ROUTINE_RECOVERY', routine=lease.routine, symbol=lease.symbol,
+                        window=lease.window_index, state=lease.state)
+            self.journal.write('ROUTINE_RECOVERY', {'slot': lease.slot, 'key': lease.key,
+                               'routine': lease.routine, 'symbol': lease.symbol,
+                               'window_index': lease.window_index, 'state': lease.state})
+        if stranded and self.args.mode != 'shadow':
+            # A half-open pair is exactly what an EXECUTING slot means here.
+            self.gateway.halted = True
+        return stranded
+
+    def settle_routines(self):
+        """Walk staged leases to RECONCILED then DONE once their pair reconciles."""
+        for pair_id, lease in list(self.staged_leases.items()):
+            report = self.reconciled.get(pair_id)
+            if not report or report.get('status') != 'RECONCILED':
+                continue
+            now = time.time()
+            if lease.state == EXECUTING:
+                lease = self.scheduler.mark_reconciled(lease, now)
+            if lease.state == RECONCILED:
+                lease = self.scheduler.mark_done(lease, now)
+            self.staged_leases.pop(pair_id, None)
+            self.report('ROUTINE_DONE', routine=lease.routine, symbol=lease.symbol,
+                        window=lease.window_index)
+
+    def publish_daily_brief(self, now=None):
+        """R4 at 07:00 Asia/Saigon. Idempotent: at most one brief per business day."""
+        now = time.time() if now is None else now
+        lease = self.routine_slot('reconcile-brief', '*', now)
+        if lease is None:
+            return None
+        lease = self.scheduler.mark_executing(lease, now)
+        legs = []
+        for pair_id, report in self.reconciled.items():
+            pair = self.gateway.pairs.get(pair_id)
+            if report.get('status') != 'RECONCILED' or pair is None or not pair.closed_at:
+                continue
+            legs.append({'symbol': pair.intent.perp_symbol,
+                         'delta_spot_usdt': float(dec(report['spot_pnl_usdt'])),
+                         'delta_perp_usdt': float(dec(report['perp_pnl_usdt'])),
+                         'funding_usdt': float(dec(report['funding_usdt'])),
+                         'fees_usdt': float(dec(report['fee_usdt'])),
+                         'closed_at': float(pair.closed_at)})
+        brief = daily_brief(legs, now)
+        brief['wallet_status'] = self.wallet_status
+        self.journal.write('CARRY_DAILY_BRIEF', brief)
+        self.report('DAILY_BRIEF', label=brief['label'], legs=brief['legs'],
+                    net_pnl_usdt=brief['net_pnl_usdt'], funding_usdt=brief['funding_usdt'],
+                    fees_usdt=brief['fees_usdt'], status=brief['status'])
+        path = self.args.journal.with_name('%s-brief-%s.json' % (self.args.mode, brief['label']))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(brief, indent=2, allow_nan=False), encoding='utf-8')
+        lease = self.scheduler.mark_reconciled(lease, now)
+        self.scheduler.mark_done(lease, now)
+        return brief
+
     async def initialize(self):
+        self.recover_routines()
         await asyncio.gather(self.futures.sync_time(), self.spot.sync_time())
         f, s = await asyncio.gather(self.futures.exchange_info(), self.spot.exchange_info())
         self.futures_info = {r['symbol']: r for r in f['symbols']}
@@ -278,6 +404,9 @@ class CarryRuntime:
                     and int(future_account['symbol_config'].get(snapshot.symbol, {}).get('leverage', 99)) in (1, 2)
                     and all(p.get('isolated') is True and int(p.get('leverage', 99)) <= 2 for p in positions))
         self.latest_accounts = (spot_account, future_account)
+        # Whole book across BOTH venues, never one side of it.
+        self.enforce_capital_gate(float(balances.get('USDT', dec(0))) + futures_equity(future_account),
+                                  self.args.notional)
         return replace(snapshot, spot_fee_bps=max(buy_fee, sell_fee), bnb_ok=bnb_ok,
                        accounts_verified=verified, capacity_ok=capacity, margin_ratio=ratio,
                        futures_fee_bps=max(6, float(dec(future_fee['makerCommissionRate']) + dec(future_fee['takerCommissionRate'])) * 10000),
@@ -311,6 +440,10 @@ class CarryRuntime:
 
     async def scan(self):
         snapshots = await asyncio.wait_for(self.collect(), timeout=50)
+        scan_lease = self.routine_slot('funding-scan', '*',
+                                       time.time() + self.futures.offset_ms / 1000)
+        if scan_lease is not None:
+            scan_lease = self.scheduler.mark_executing(scan_lease)
         for snapshot in snapshots:
             if self.args.mode != 'shadow':
                 snapshot = await asyncio.wait_for(self.account_snapshot(snapshot), timeout=8)
@@ -336,12 +469,28 @@ class CarryRuntime:
                     await self.gateway.unwind(active.pair_id, 'HORIZON')
                 elif now - active.opened > 60 and active.entry_status not in self.gateway.TERMINAL:
                     await self.gateway.unwind(active.pair_id, 'ENTRY_TTL')
-            elif decision.allowed and self.args.mode != 'shadow':
+            elif decision.allowed and self.execution_enabled():
+                # R2 sizes the envelope, R3 stages the pair. Both are claimed
+                # before anything leaves the process, so a restart mid-submit
+                # finds the slot taken instead of sending a second entry.
+                envelope = self.routine_slot('envelope-size', snapshot.symbol, now)
+                if envelope is None:
+                    continue
+                envelope = self.scheduler.mark_executing(envelope, now)
+                stage = self.routine_slot('stage-pair', snapshot.symbol, now)
+                if stage is None:
+                    self.scheduler.mark_done(self.scheduler.mark_reconciled(envelope, now), now)
+                    continue
+                stage = self.scheduler.mark_executing(stage, now)
+                self.scheduler.mark_done(self.scheduler.mark_reconciled(envelope, now), now)
                 pair = self.make_intent(snapshot, plan)
-                self.journal.write('PAIR_VOTES', {'intent': pair.__dict__,
+                self.journal.write('PAIR_VOTES', {'intent': pair.__dict__, 'routine_slot': stage.slot,
                                    'votes': [v.__dict__ for v in votes], 'score': decision.score})
                 token = self.gateway.authority.issue_pair(pair, decision)
-                await self.gateway.submit(pair, token)
+                state = await self.gateway.submit(pair, token)
+                self.staged_leases[getattr(state, 'pair_id', pair.perp_symbol)] = stage
+        if scan_lease is not None:
+            self.scheduler.mark_done(self.scheduler.mark_reconciled(scan_lease))
         if self.args.mode != 'shadow':
             await self.reconcile_accounts()
 
@@ -383,6 +532,8 @@ class CarryRuntime:
                 notional = dec(pair.intent.quantity) * dec(pair.intent.perp_price)
                 if dec(report['net_usdt']) / notional * 10000 >= dec(self.args.profit_target_bps):
                     await self.gateway.unwind(pair_id, 'NET_PROFIT_TARGET')
+        self.settle_routines()
+        self.publish_daily_brief()
         self.write_weekly_report()
 
     def write_weekly_report(self):

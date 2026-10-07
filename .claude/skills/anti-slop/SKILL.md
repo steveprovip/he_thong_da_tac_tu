@@ -7,7 +7,17 @@ description: Eliminate AI slop, conversational boilerplate, ungrounded decorativ
 
 Reference: https://github.com/miqdadbadjuber/anti-slop
 
+## When to Apply
+Activate whenever coding, designing UI, or formulating agent responses to prevent generic, low-density AI outputs.
+
 ## Rules
-1. **Hard Gate**: Zero preambles, apologies, or filler. Zero generic AI clichés or purple-blue gradient slop.
-2. **Purpose Gate**: Every function, metric, or UI element must have an empirical or risk rationale.
-3. **Quality Locks**: 100% test passing, minimal diffs, exact exchange filters.
+1. **Hard Gate**:
+   - Zero preambles, apologies, or cheerful transitions.
+   - Zero generic AI color tropes (e.g. purple-blue gradient over dark cards without functional rationale).
+   - Zero empty buzzwords ("robust", "seamless", "cutting-edge", "game-changing").
+2. **Purpose Gate**:
+   - Every metric, UI component, and code parameter must justify its existence.
+   - If an element does not directly contribute to execution, monitoring, or statistical significance, eliminate it.
+3. **Quality Locks**:
+   - All code must be compilable, testable, and surgically integrated.
+   - Numerical claims must be backed by reproducible calculations.
