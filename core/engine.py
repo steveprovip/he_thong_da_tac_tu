@@ -2195,13 +2195,21 @@ class Engine:
         d, f = self.decision, self.features
         acc = self.account or {}
         lat = sorted(self.latency)
+        if self.pos:
+            tp_val = self.pos.get('tp')
+            sl_val = self.pos.get('sl')
+            tp_str = f"{tp_val:g}" if tp_val is not None else "—"
+            sl_str = f"{sl_val:g}" if sl_val is not None else "—"
+            qty_str = self.pos.get("qty_str", self.pos.get("qty", ""))
+            tag_str = self.pos.get("tag", "MANUAL")
+            pos_status = f'POSITION {self.pos["side"]} {qty_str} {self.p.symbol} · TP {tp_str} · SL {sl_str} · {tag_str}'
+        else:
+            pos_status = None
         return {
             'mode': f'{self.p.mode.upper()} · {self.venue.label}', 'engine_mode': self.p.mode,
             'venue': self.venue.label, 'symbol': self.p.symbol,
-            'status': self.halted or (f'POSITION {self.pos["side"]} {self.pos["qty_str"]} {self.p.symbol} · TP {self.pos["tp"]:g} '
-                                      f'· SL {self.pos["sl"]:g} · {self.pos["tag"]}' if self.pos else
-                                      'ORDER IN FLIGHT' if self.busy else (d.reason if d else
-                                      f'VENUE OFFLINE · {self.last_error}' if self.last_error else 'CONNECTING VENUE')),
+            'status': self.halted or pos_status or ('ORDER IN FLIGHT' if self.busy else (d.reason if d else
+                                       f'VENUE OFFLINE · {self.last_error}' if self.last_error else 'CONNECTING VENUE')),
             'phase': self.phase,
             'armed': self.started, 'equity': acc.get('wallet'), 'wallet': acc.get('wallet'),
             'available': acc.get('available'), 'pnl': self.day_pnl + (acc.get('upnl') or 0.0),
