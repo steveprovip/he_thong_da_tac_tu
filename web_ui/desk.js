@@ -238,6 +238,18 @@
       const lead = sc.on ? '<b>SCANNER</b>' : '<b>1 CẶP</b>';
       if (rad.dataset.html !== html) { rad.innerHTML = lead + (html || ' —'); rad.dataset.html = html; }
     }
+    const fl = s.flow || {};
+    const fln = $('flow-chip');
+    if (fln) {
+      const t = fl.drift && fl.drift_lock ? 'FLOW: DRIFT LOCK (60s/3m CONFLICT)'
+        : fl.state === 'BUY' ? 'FLOW: CONCORDANT BUY' : fl.state === 'SELL' ? 'FLOW: CONCORDANT SELL'
+        : fl.state === 'CONFLICT' ? 'FLOW: CONFLICT (LOCKED)' : 'FLOW: — (chờ OFI)';
+      if (fln.textContent !== t) fln.textContent = t;
+      const ok = (fl.state === 'BUY' || fl.state === 'SELL') && !(fl.drift && fl.drift_lock);
+      const bad = fl.state === 'CONFLICT' || (fl.drift && fl.drift_lock);
+      fln.className = 'chip' + (ok ? ' green' : bad ? ' red' : '');
+      fln.title = `${fl.why || ''} · BUY cần CVD15>0, CVD60≥+300k, OFI≥+0.35 (SELL ngược lại)`;
+    }
     const qv = s.quant || {}, br = qv.brackets || {}, kl = qv.kelly || {};
     const chip = (id, text, cls) => { const n = $(id); if (!n) return; if (n.textContent !== text) n.textContent = text; n.className = 'chip ' + (cls || ''); };
     chip('ofi-chip', fin(qv.ofi) ? `OFI L10 ${sg(qv.ofi, 2)}` : `OFI — (${qv.ofi_n || 0} ev)`,

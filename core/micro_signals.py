@@ -93,6 +93,8 @@ class SignalConfig:
     ofi_window_s: float = 10.0          # OFI_norm = sum(e_t) / sum(|e_t|) over 10 s of depth10@100ms frames
     ofi_min: float = 0.65               # TIDAL OFI vote needs |OFI_norm| >= 0.65 AND CVD 15 s >= absorb_usd same way
     ofi_min_events: int = 5             # fewer book updates in the window -> OFI undefined (one frame is noise)
+    conc_cvd60_usd: float = 300_000.0   # triple concordance: CVD 15 s, CVD 60 s >= $300k (x scale), OFI >= 0.35
+    conc_ofi: float = 0.35
     vpin_bucket_usd: float = 1_000_000.0  # VPIN volume bucket (x usd_scale), exact aggressor side from aggTrade
     vpin_buckets: int = 10
     vpin_max: float = 0.75              # VPIN > 0.75 -> toxic: cancel resting maker entries, RUNE veto 30 s
@@ -134,6 +136,20 @@ def chop_locked(k, was_locked: bool = True, cfg: 'SignalConfig' = None) -> bool:
     if k >= cfg.ker_unlock:
         return False
     return was_locked
+
+
+def concordance(f: dict, cfg: 'SignalConfig' = None) -> dict:
+    """Triple flow concordance. BUY needs CVD 15 s > 0, CVD 60 s >= +$300k (x scale) and OFI L10 10 s >= +0.35;
+    SELL the mirror. -> {'state': BUY|SELL|CONFLICT|UNKNOWN, 'buy_ok', 'sell_ok', 'why'}"""
+    cfg = cfg or SignalConfig()
+    c15, c60, ofi = f.get('cvd_15s'), f.get('cvd_60s'), f.get('ofi_10s')
+    lim = cfg.conc_cvd60_usd * cfg.usd_scale
+    buy = c15 is not None and c60 is not None and ofi is not None and c15 > 0 and c60 >= lim and ofi >= cfg.conc_ofi
+    sell = c15 is not None and c60 is not None and ofi is not None and c15 < 0 and c60 <= -lim and ofi <= -cfg.conc_ofi
+    why = (f'CVD15 {"—" if c15 is None else f"{c15 / 1e6:+.2f}M"} · CVD60 {"—" if c60 is None else f"{c60 / 1e6:+.2f}M"}'
+           f' · OFI {"—" if ofi is None else f"{ofi:+.2f}"}')
+    state = 'BUY' if buy else 'SELL' if sell else 'UNKNOWN' if None in (c15, c60, ofi) else 'CONFLICT'
+    return {'state': state, 'buy_ok': buy, 'sell_ok': sell, 'why': why}
 
 
 def absorption(f: dict, cfg: 'SignalConfig' = None) -> dict:

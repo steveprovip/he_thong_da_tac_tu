@@ -93,3 +93,8 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - engine: Profile tp_pct 0.50 (static RR 2.5), ATR scaler (SL max(0.15, ATR), TP1 max(2.5 ATR, 2.5 SL), trail 1.2 ATR after TP1), MR TP clamp(|VWAP dev|, 0.12, 0.18) + SL 0.08 + A-S quote (gamma 0.1/bps, k 2/bps, tau 5 s, cap 2 bps, peg off), VPIN RUNE veto 30 s + maker-entry cancel in the GTX loop, kelly()/kelly_qty() (lambda 0.25, >= 20 trades/symbol, risk cap 0.50 U, notional cap $1000), bracket_plan() with rr_net/be_wr, quant_view() in snapshot, ledger fields; fetch_klines() + Runner.seed_bars(). Live: atr_scaler/kelly off.
 - Real ledger: quarter-Kelly f* = -0.18 (22 trades) -> minimum size. Static/ATR floor economics: SL 0.15 / TP1 0.375 -> RR 2.5 gross, 1.46 after fees, break-even win rate 40.7 %; zero-drift hit rate of +2.5R before -1R = 28.6 %.
 - tests/test_ultimate_quant.py (27). Verification: pytest 934 passed. Runner smoke: 3 engines, quant view JSON ok, kline seeds fail gracefully behind the sandbox proxy.
+
+## 2026-10-07 (l) Triple flow concordance, DRIFT lock, scanner slot routing
+- 15:25 SHORT (telemetry_state.json): VESKA AUTO SELL @ 83,979.2 (SWARM 80 %, ATR SL 84,105.2 / TP1 83,664.2); REGIME exit fired at 15:26:26 (gross +0.029 %, held by HOLD 79/90 s) and 15:31:34 (gross +0.011 %, held by FEE HURDLE); later -0.068 %. VPIN tripped 5x in 17 min (BTC 1.00/0.76, SOL 0.89/0.84).
+- micro_signals.concordance(); engine: Profile concordance_gate/concordance_mr/drift_lock/slot_yield/hurdle_concordance_override, churn_gate DRIFT LOCK + FLOW CONFLICT, quality()/better_peer()/candidate (SCANNER YIELD), hurdle override hook, radar flow + DRIFT LOCK, snapshot['flow']; UI flow-chip.
+- tests/test_concordance_guard.py (17). Verification: pytest 951 passed.

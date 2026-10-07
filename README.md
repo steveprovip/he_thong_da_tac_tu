@@ -138,3 +138,10 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - **MR**: lệnh maker đặt theo Avellaneda-Stoikov (r = s − qγσ²τ, nửa spread γσ²τ/2 + (1/γ)ln(1+γ/k)), không xa mid quá 2 bps, không bao giờ vượt touch; TP = khoảng cách về VWAP trong [0.12, 0.18] %, SL 0.08 %.
 - **Kelly ¼** theo từng cặp khi sổ có ≥ 20 lệnh của cặp đó; rủi ro tới SL tối đa 0.50 U/lệnh (demo), notional ≤ $1000; Kelly ≤ 0 → khối lượng tối thiểu. LIVE không dùng Kelly.
 - UI: chip `OFI`, `VPIN`, `RR` (SL/TP1, RR gộp / sau phí, % thắng hoà vốn), `KELLY ¼`.
+
+### 8.12 Cập nhật 07/10/2026 (l) — Đồng thuận dòng tiền 3 lớp, khoá DRIFT, nhường slot
+- Lệnh TREND: BUY cần CVD 15 s > 0, CVD 60 s ≥ +$300k (× hệ số coin), OFI L10 ≥ +0.35; SELL ngược lại. Thiếu OFI (chưa đủ dữ liệu) = chặn. Làn MR không áp dụng (bật `concordance_mr` sẽ tắt hẳn MR).
+- Regime DRIFT (60 s và 3 m không cùng pha, hoặc chưa đủ ngưỡng) → khoá mọi lệnh AUTO.
+- Quét đa cặp: cặp có ứng viên tốt hơn (điểm + 0.05 nếu regime cùng chiều + 0.05 nếu 3 dòng tiền cùng chiều) trong 1 s gần nhất được vào trước; cặp kém hơn ghi `SCANNER YIELD`.
+- Tuỳ chọn (tắt mặc định): `hurdle_concordance_override` cho REGIME/FLOW exit vượt rào cản phí khi cả 3 dòng tiền ngược vị thế.
+- UI: chip `FLOW: CONCORDANT BUY/SELL`, `FLOW: CONFLICT (LOCKED)`, `FLOW: DRIFT LOCK`; radar ghi `DRIFT LOCK`.

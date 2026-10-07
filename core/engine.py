@@ -96,6 +96,11 @@ class Profile:
     lock_trigger_pct: float = 0.25      # T2b PROFIT LOCK: MFE >= +0.25 % ...
     lock_pct: float = 0.15              # ... -> exit level entry + 0.15 %
     absorb_gate: bool = True            # block entries into an ABSORPTION TRAP (flow without price)
+    concordance_gate: bool = True       # TREND entries need CVD 15 s + CVD 60 s + OFI L10 all with the trade
+    concordance_mr: bool = False        # also on the MR lane (would disable it: MR buys against the last minute)
+    drift_lock: bool = True             # regime DRIFT (60 s / 3 m not aligned): no AUTO entry at all
+    slot_yield: bool = True             # scanner: a better-qualified symbol waiting for the slot goes first
+    hurdle_concordance_override: bool = False   # REGIME/FLOW exit skips the fee hurdle when all 3 flows oppose
     fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
@@ -511,6 +516,8 @@ class Engine:
         if fresh:
             self.cooldown_until = 0.0
         self.chop_locked = True                       # KER unknown at start -> locked
+        self.flow = {'state': 'UNKNOWN', 'buy_ok': False, 'sell_ok': False, 'why': ''}
+        self.candidate: Optional[tuple] = None        # (t, quality) of an entry this engine wants (slot routing)
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
         self.tox = {'vpin': None, 'buckets': 0, 'toxic': False, 'state': 'WARMUP'}
@@ -689,6 +696,7 @@ class Engine:
             await self.manage()
         self.chop_locked = msig.chop_locked(f.get('ker'), self.chop_locked, self.sig_cfg)
         self.absorb = msig.absorption(f, self.sig_cfg)
+        self.flow = msig.concordance(f, self.sig_cfg)
         self.tox = msig.toxicity(f, self.sig_cfg)
         if self.tox['toxic'] and self.p.vpin_gate:
             self.mark_toxic(self.tox['vpin'])
@@ -701,10 +709,42 @@ class Engine:
             ok, why = self.churn_gate(d, diag)
             if not ok:
                 d = replace(d, allowed=False, reason=why)
+        self.candidate = None
+        if d.allowed and not self.busy and not self.pos:
+            q = self.quality(d, diag)
+            self.candidate = (self.clock(), q)
+            rival = self.better_peer(q)
+            if rival is not None:
+                d = replace(d, allowed=False, reason=f'SCANNER YIELD -> {rival[0].p.symbol} '
+                                                     f'({rival[1] * 100:.0f}% > {q * 100:.0f}%)')
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
             await self.execute(d.side, d, 'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
         return d
+
+    def quality(self, d: Decision, diag: dict) -> float:
+        """Slot priority: conviction, +0.05 when the regime trend agrees, +0.05 when all three flows agree."""
+        q = self.conviction(d, diag)
+        if (self.reg or {}).get('name') == ('UP' if d.side == 'BUY' else 'DOWN'):
+            q += 0.05
+        if self.flow.get('buy_ok' if d.side == 'BUY' else 'sell_ok'):
+            q += 0.05
+        return q
+
+    def better_peer(self, q: float, max_age: float = 1.0) -> Optional[tuple]:
+        """A peer whose fresh candidate beats ours (ties: SCAN_SYMBOLS order) -> (engine, quality)."""
+        if not self.p.slot_yield:
+            return None
+        now, best = self.clock(), None
+        order = {s: i for i, s in enumerate(SCAN_SYMBOLS)}
+        for o in self.risk.engines:
+            c = o.candidate
+            if o is self or c is None or now - c[0] > max_age or o.pos or o.busy:
+                continue
+            ahead = c[1] > q + 1e-9 or (abs(c[1] - q) <= 1e-9 and order.get(o.p.symbol, 9) < order.get(self.p.symbol, 9))
+            if ahead and (best is None or c[1] > best[1]):
+                best = (o, c[1])
+        return best
 
     def lane(self, d: Decision) -> str:
         """'MR' when the decision is the mean-reversion setup (MR signal on the decision side), else 'TREND'."""
@@ -813,6 +853,8 @@ class Engine:
             label = f'{"LONG" if self.pos["side"] == "BUY" else "SHORT"} OPEN'
         elif self.busy:
             label = 'ORDER'
+        elif self.p.drift_lock and (self.reg or {}).get('name') == 'DRIFT':
+            label = 'DRIFT LOCK'
         elif mr:
             label = f'MR {mr["side"]} ({score * 100:.0f}%)'
         elif k is None:
@@ -824,6 +866,7 @@ class Engine:
         else:
             label = 'TREND SCAN'
         return {'symbol': self.p.symbol, 'label': label, 'ker': k, 'regime': (self.reg or {}).get('name'),
+                'flow': self.flow.get('state'),
                 'score': score, 'allowed': bool(d and d.allowed), 'reason': (d.reason if d else '')[:140],
                 'pos': bool(self.pos), 'price': f.get('price')}
 
@@ -845,12 +888,18 @@ class Engine:
         """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps."""
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
         lane = self.lane(d)
+        reg = self.reg or {}
+        if self.p.drift_lock and reg.get('name') == 'DRIFT':
+            return False, f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'
         if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
             return False, self.chop_reason()
         if self.p.macro_gate and d.side not in self.macro.get('allow', ('BUY', 'SELL')):
             return False, f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'
         if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
             return False, f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'
+        if self.p.concordance_gate and (lane == 'TREND' or self.p.concordance_mr):
+            if not self.flow.get('buy_ok' if d.side == 'BUY' else 'sell_ok'):
+                return False, f'FLOW CONFLICT {d.side} (LOCKED) · {self.flow.get("why", "")}'
         if lane == 'MR':
             if score < self.p.mr_min_score:
                 return False, f'MR score {score * 100:.1f}% < {self.p.mr_min_score * 100:.1f}%'
@@ -1208,6 +1257,9 @@ class Engine:
         limit = p.get('flow_limit') or self.flow_limit({})
         p['breathing'] = now - p['opened'] < self.p.flow_breath_s
         flow_due = self.p.flow_exit and adverse >= limit and not p['breathing']
+        against = self.flow.get('buy_ok' if p['side'] == 'SELL' else 'sell_ok')
+        if gate and against and self.p.hurdle_concordance_override:
+            gate = None                                         # all three flows oppose us: thesis dead, exit now
         if (regime_due or flow_due) and gate:
             self.note_hurdle_block(p, 'REGIME' if regime_due else 'FLOW', fav, mark, gate)
             regime_due = flow_due = False
@@ -1609,6 +1661,8 @@ class Engine:
             'profile': asdict(self.p), 'live_allowed': self.allow_live, 'symbols': list(SYMBOLS),
             'fee_model': self.fee_model(),
             'quant': self.quant_view(),
+            'flow': {**self.flow, 'gate': self.p.concordance_gate, 'drift_lock': self.p.drift_lock,
+                     'drift': (self.reg or {}).get('name') == 'DRIFT'},
             'governor': {'min_score': self.p.min_score, 'min_edge_bps': self.p.min_edge_bps,
                          'max_trades_hour': self.p.max_trades_hour, 'trades_hour': len(self.trade_times),
                          'cooldown_s': self.p.cooldown_s, 'flow_breath_s': self.p.flow_breath_s,

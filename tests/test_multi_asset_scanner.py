@@ -28,8 +28,9 @@ def sol_feed(now=None, px=150.0, burst_usd=90_000.0):
     top = round(px + 0.06, 2)
     for i in range(30):
         f.on_message(agg(top, burst_usd / top / 30, maker=False, sym=SOL), now - 10 + i * 0.3)
-    for _ in range(10):
-        f.on_message(depth(top, round(top + 0.01, 2), bq=900.0, aq=100.0, sym=SOL), now)
+    for i in range(10):                                                     # book lifted level by level: OFI > 0
+        b = round(top - 0.01 * (9 - i), 2)
+        f.on_message(depth(b, round(b + 0.01, 2), bq=900.0, aq=100.0, sym=SOL), now)
     return f
 
 
