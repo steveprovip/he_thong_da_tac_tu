@@ -2114,13 +2114,19 @@ class Engine:
             elif self.pos:
                 state = 'POSITION'
                 ps = self.pos
+                tp_pct = ps.get('tp_pct')
+                tp_str = f'+{tp_pct:.2f}%' if tp_pct is not None else '—'
+                side_str = 'LONG' if ps.get('side') in ('BUY', 'LONG') else 'SHORT'
                 marin = ('TRAILING RUNNER' if ps.get('trail_on') else 'BREAKEVEN LOCKED' if ps.get('be_locked')
                          else 'MICRO-BE LOCKED' if ps.get('mbe_locked')
-                         else f'{"LONG" if ps["side"] == "BUY" else "SHORT"} OPEN (TP1: +{ps["tp_pct"]:.2f}%)')
+                         else f'{side_str} OPEN (TP1: {tp_str})')
+                sl_val = ps.get('sl')
+                sl_str = f'{sl_val:g}' if sl_val is not None else '—'
+                qty_str = ps.get('qty_str') or str(ps.get('qty') or '')
                 label = (marin if name == 'MARIN' else
-                         f'GUARD {ps.get("stop_kind", "SL")} {ps["sl"]:g}' if name == 'RUNE' else
-                         f'FILLED {self.pos["side"]} {self.pos["qty_str"]}' if name == 'VESKA' else
-                         f'HOLDING {self.pos["side"]}')
+                         f'GUARD {ps.get("stop_kind", "SL")} {sl_str}' if name == 'RUNE' else
+                         f'FILLED {side_str} {qty_str}' if name == 'VESKA' else
+                         f'HOLDING {side_str}')
             elif veto:
                 state, label = 'VETO', (v.reason if v else 'veto')[:48]
             elif side in ('BUY', 'SELL'):
@@ -2140,25 +2146,29 @@ class Engine:
         margin = v.get('margin') or abs(amt) * entry / self.p.leverage
         upnl = v.get('upnl') or 0.0
         p = self.pos or {}
+        opened = p.get('opened')
+        age_s = (self.clock() - opened) if opened is not None else None
+        mfe_val = p.get('mfe_pct')
+        eject_in = (max(0.0, self.p.eject_s - (self.clock() - opened))
+                    if opened is not None and self.p.eject and mfe_val is not None and mfe_val < self.p.eject_mfe_pct else None)
         return {'symbol': self.p.symbol, 'side': 'LONG' if amt > 0 else 'SHORT', 'size': abs(amt),
                 'entry': entry, 'mark': mark, 'upnl': upnl, 'roe_pct': upnl / margin * 100 if margin else 0.0,
                 'liq': v.get('liq') or None, 'leverage': self.p.leverage,
                 'margin_type': 'Cross' if self.p.margin_type == 'CROSSED' else 'Isolated', 'margin': margin,
-                'tp': p.get('tp'), 'sl': p.get('sl'), 'age_s': self.clock() - p['opened'] if p else None,
+                'tp': p.get('tp'), 'sl': p.get('sl'), 'age_s': age_s,
                 'stop_kind': p.get('stop_kind'), 'be_locked': p.get('be_locked'), 'trail_on': p.get('trail_on'),
                 'mbe_locked': p.get('mbe_locked'), 'adverse_usd': p.get('adverse_usd'),
                 'soft_stop': p.get('soft_stop'), 'soft_exits': self.p.soft_exits,
                 'exiting': None if not p.get('exiting') else {k: p['exiting'][k] for k in
                                                                ('reason', 'px', 'reprices', 'started', 'floor')},
                 'flow_exit_usd': p.get('flow_limit') or self.feed.cfg.flow_exit_usd * self.feed.cfg.usd_scale,
-                'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - p['opened'])) if p else None,
+                'breath_left_s': max(0.0, self.p.flow_breath_s - (self.clock() - opened)) if opened is not None else None,
                 'regime_flip_usd': self.p.regime_flip_usd * self.feed.cfg.usd_scale,
                 'shield': bool(p.get('be_locked')), 'plock': bool(p.get('plock')),
                 'gross_pct': p.get('gross_pct'), 'hurdle': p.get('hurdle'), 'hurdle_pct': self.p.hurdle_pct,
                 'ratchet': bool(p.get('ratchet')), 'size_mult': p.get('size_mult'),
                 'alt_boost': bool(p.get('alt_boost')),
-                'eject_in_s': (max(0.0, self.p.eject_s - (self.clock() - p['opened']))
-                               if p and self.p.eject and p['mfe_pct'] < self.p.eject_mfe_pct else None),
+                'eject_in_s': eject_in,
                 'risk_at_stop': self.risk_at_stop(),
                 'bracket_src': p.get('bracket_src'), 'rr_gross': p.get('rr_gross'), 'rr_net': p.get('rr_net'),
                 'be_wr': p.get('be_wr'), 'atr_pct': p.get('atr_pct'), 'trail_gap': p.get('trail_gap'),
