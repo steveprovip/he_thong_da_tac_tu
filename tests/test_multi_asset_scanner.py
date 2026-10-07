@@ -84,8 +84,8 @@ async def test_btc_sideway_sol_breakout_scanner_trades_sol(tmp_path):
     assert d.allowed and sol.pos and sol.pos['symbol'] == SOL and sol.pos['entry_type'] == 'GTX'
     assert all(f['symbol'] == SOL and f['maker'] for f in venue.fills)
     assert sol.radar()['label'] == 'LONG OPEN' and doge.radar()['label'] == 'WARMUP'
-    fee_rt = sol.pos['qty'] * sol.pos['entry'] * 4e-4
-    assert fee_rt < 0.005                                                   # ~$5 notional: 0.002 U maker round trip
+    fee_rt = sol.pos['qty'] * sol.pos['entry'] * 4e-4                       # equal-risk size (2026-10-07n)
+    assert fee_rt < 0.02 and sol.risk_at_stop() == pytest.approx(0.15, rel=0.05)
 
 
 async def test_one_slot_blocks_every_other_symbol(tmp_path):                 # legacy single-slot mode

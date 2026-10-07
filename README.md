@@ -153,6 +153,13 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - Khởi động lại khi còn vị thế: DEMO nhận lại (ADOPTED) cùng SL đang có trên sàn (hoặc đặt SL mới), MARIN quản lý tiếp. LIVE vẫn chặn vị thế ngoài.
 - UI: bảng vị thế nhiều dòng, chip `PORTFOLIO n/3 · uPnL · rủi ro SL x/1.00 U`. Nút ĐÓNG VỊ THẾ đóng cặp đang xem.
 
+### 8.14 Cập nhật 07/10/2026 (n) — SL/TP riêng từng coin, VPIN bất đối xứng, size cân rủi ro, sửa lỗi -4130
+- Sàn SL/TP1 theo coin (dưới ATR scaler): BTC 0.15 % / 0.38 %, SOL 0.35 % / 0.875 % (quy tắc RR 2.5), DOGE 0.50 % / 1.25 %. ATR lớn hơn thì ATR thắng.
+- Size cân rủi ro cho SOL/DOGE: qty = 0.15 U / (giá × (SL + phí)) → ~0.30 SOL ở giá 117; BTC giữ 0.002 (mức tối thiểu sàn, rủi ro ~0.39 U).
+- VPIN: rổ BTC $2.5M, SOL $250k, DOGE $200k; ngưỡng 0.80; chỉ chặn lệnh NGƯỢC chiều dòng tiền độc (bỏ lệnh dừng RUNE toàn bộ); lệnh maker cùng chiều không bị huỷ.
+- Sửa lỗi: Binance chỉ cho 1 lệnh STOP closePosition mỗi chiều (-4130) → ratchet trước đây thất bại liên tục; nay huỷ SL cũ rồi đặt SL mới, lỗi thì khôi phục SL cũ, chờ 5 s mới thử lại. Lúc vào lệnh gặp -4130 (SL cũ còn sót) → dọn SL cũ rồi đặt lại thay vì đóng NO_STOP. Kiểm tra "SL đã bị vượt" dùng giá sổ lệnh hiện tại thay vì giá REST cũ.
+- UI: chip RR ghi tên coin; radar hiện SL/TP từng coin khi rê chuột.
+
 ### 8.13 Phiên bản v2.3.1 (07/10/2026) — 🏆 Bản Ổn Định Sinh Lời Chậm (Stable Slow-Profit Alpha Engine)
 - **Đặc điểm thực tế**: Đã kiểm chứng sinh lời ổn định thực tế (Số dư tài khoản tăng từ 4,922.00 U lên 4,923.45 U, PnL vị thế xanh đậm +0.1781 U / +1.06% ROE).
 - **Cơ chế**: Sửa triệt để lỗi Binance code -4067 (đồng bộ khởi động êm ái khi còn vị thế/lệnh chờ).

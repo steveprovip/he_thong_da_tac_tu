@@ -97,7 +97,7 @@ class SignalConfig:
     conc_ofi: float = 0.35
     vpin_bucket_usd: float = 1_000_000.0  # VPIN volume bucket (x usd_scale), exact aggressor side from aggTrade
     vpin_buckets: int = 10
-    vpin_max: float = 0.75              # VPIN > 0.75 -> toxic: cancel resting maker entries, RUNE veto 30 s
+    vpin_max: float = 0.80              # VPIN > 0.80 -> toxic: only entries AGAINST the toxic flow are vetoed
     bar_s: float = 60.0                 # 1 m OHLC bars for ATR / Yang-Zhang (seeded from REST 1 m klines)
     atr_n: int = 14
     atr_min_bars: int = 5               # fewer closed bars -> ATR unknown -> static brackets
@@ -272,14 +272,21 @@ def as_quote(mid: float, q: float, sigma_bps: float, gamma: float, k: float, tau
 def toxicity(f: dict, cfg: 'SignalConfig' = None) -> dict:
     """VPIN gate (Easley, Lopez de Prado & O'Hara 2012) on exact aggressor-signed volume buckets."""
     cfg = cfg or SignalConfig()
-    v = f.get('vpin')
-    return {'vpin': v, 'buckets': f.get('vpin_n', 0), 'max': cfg.vpin_max,
-            'toxic': v is not None and v > cfg.vpin_max,
-            'state': 'WARMUP' if v is None else 'TOXIC' if v > cfg.vpin_max else 'CLEAN'}
+    v, side = f.get('vpin'), f.get('vpin_side')
+    toxic = v is not None and v > cfg.vpin_max
+    return {'vpin': v, 'buckets': f.get('vpin_n', 0), 'max': cfg.vpin_max, 'toxic': toxic,
+            'side': side if toxic else None,
+            'blocks': ({'BUY': 'SELL', 'SELL': 'BUY'}.get(side) if toxic else None),   # only AGAINST the flow
+            'state': 'WARMUP' if v is None else (f'TOXIC {side}' if toxic else 'CLEAN')}
+
+
+VPIN_BUCKET_USD = {'BTCUSDT': 2_500_000.0, 'SOLUSDT': 250_000.0, 'DOGEUSDT': 200_000.0}   # per-symbol bucket size
 
 
 def config_for(symbol: str) -> SignalConfig:
-    return SignalConfig(usd_scale=USD_SCALE.get(symbol.upper(), 0.1))
+    sym, scale = symbol.upper(), USD_SCALE.get(symbol.upper(), 0.1)
+    vb = VPIN_BUCKET_USD.get(sym)
+    return SignalConfig(usd_scale=scale, **({'vpin_bucket_usd': vb / scale} if vb else {}))
 
 
 def streams_multi(symbols) -> dict:
@@ -324,7 +331,7 @@ class MicroFeed:
         self.book_a: list = []
         self.ofi: Deque[Tuple[float, float]] = deque()          # (t, e_t) multi-level OFI per book update
         self.vb_buy = self.vb_sell = 0.0                        # VPIN: open volume bucket (USD)
-        self.vb_closed: Deque[float] = deque(maxlen=max(cfg.vpin_buckets * 3, 30))   # |buy - sell| / V per bucket
+        self.vb_closed: Deque[float] = deque(maxlen=max(cfg.vpin_buckets * 3, 30))   # (buy - sell) / V per bucket
         self.bar: Optional[list] = None                         # open 1 m bar [start, o, h, l, c]
         self.bars: Deque[tuple] = deque(maxlen=120)             # closed 1 m bars
 
@@ -432,14 +439,22 @@ class MicroFeed:
                 self.vb_sell += take
             usd -= take
             if self.vb_buy + self.vb_sell >= size - 1e-6:
-                self.vb_closed.append(abs(self.vb_buy - self.vb_sell) / size)
+                self.vb_closed.append((self.vb_buy - self.vb_sell) / size)            # signed: keeps the side
                 self.vb_buy = self.vb_sell = 0.0
 
     def vpin_now(self) -> Optional[float]:
         n = self.cfg.vpin_buckets
         if len(self.vb_closed) < n:
             return None
-        return sum(list(self.vb_closed)[-n:]) / n
+        return sum(abs(x) for x in list(self.vb_closed)[-n:]) / n
+
+    def vpin_side(self) -> Optional[str]:
+        """Direction of the toxic flow: sign of the net imbalance over the VPIN buckets."""
+        n = self.cfg.vpin_buckets
+        if len(self.vb_closed) < n:
+            return None
+        net = sum(list(self.vb_closed)[-n:])
+        return 'BUY' if net > 0 else 'SELL' if net < 0 else None
 
     def _bar(self, now: float, px: float) -> None:
         b = math.floor(now / self.cfg.bar_s) * self.cfg.bar_s
@@ -487,7 +502,7 @@ class MicroFeed:
         px = self.last or self.price()
         ok = tot > 0 and len(ev) >= self.cfg.ofi_min_events
         return {'ofi_10s': sum(ev) / tot if ok else None, 'ofi_qty_10s': sum(ev), 'ofi_n': len(ev),
-                'vpin': self.vpin_now(), 'vpin_n': len(self.vb_closed),
+                'vpin': self.vpin_now(), 'vpin_n': len(self.vb_closed), 'vpin_side': self.vpin_side(),
                 'atr_1m': a, 'atr_pct': a / px * 100 if (a and px) else None,
                 'yz_pct': yz * 100 if yz is not None else None, 'bars_n': len(bars),
                 'sigma_bps': realized_sigma_bps(((t, x) for t, _, x in self.cvd_long), now, self.cfg.sigma_window_s)}

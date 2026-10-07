@@ -42,6 +42,7 @@ MODES = ('demo', 'live')
 SYMBOLS = ('BTCUSDT', 'DOGEUSDT', 'SOLUSDT')
 SYMBOL_QTY = {'BTCUSDT': 0.002}                 # others: smallest tradable size (min notional x 1.02)
 SCAN_SYMBOLS = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')   # demo multi-asset scanner: one slot, first setup wins
+ASSET_BRACKETS = {'BTCUSDT': (0.15, 0.38), 'SOLUSDT': (0.35, 0.85), 'DOGEUSDT': (0.50, 1.25)}  # (SL min %, TP1 min %)
 LIVE_CONFIRM = 'LIVE'
 FALLBACK_SPECS = {
     'BTCUSDT': {'step': 0.001, 'min_qty': 0.001, 'min_notional': 100.0, 'tick': 0.1},
@@ -116,6 +117,10 @@ class Profile:
     ratchet_trigger_pct: float = 0.15
     ratchet_lock_pct: float = 0.08
     adopt_external: bool = True         # demo: a position left on the venue (restart) is re-adopted by MARIN
+    asset_brackets: bool = True         # per-coin SL / TP1 floors (ASSET_BRACKETS) under the ATR scaler
+    risk_parity: bool = True            # coins without a fixed size: qty = risk_target / (price x (SL + fees))
+    risk_target_usdt: float = 0.15      # -> ~0.30 SOL at SL 0.35 % (BTC keeps its exchange minimum 0.002)
+    ratchet_retry_s: float = 5.0        # a failed exchange-stop move is retried after 5 s, not every tick
     fee_hurdle: bool = True             # FLOW / REGIME exits only outside -0.08 % < gross < +0.08 %
     hurdle_pct: float = 0.08
     hurdle_min_hold_s: float = 90.0     # and never in the first 90 s while gross >= 0
@@ -178,7 +183,8 @@ PROFILES = {
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0),
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
-                    atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False),  # live: max loss 0.05 U, minimum size
+                    atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
+                    asset_brackets=False),  # live: max loss 0.05 U, minimum size
 }
 
 
@@ -543,6 +549,8 @@ class Engine:
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
         self.tox = {'vpin': None, 'buckets': 0, 'toxic': False, 'state': 'WARMUP'}
         self.toxic_until = 0.0                        # VPIN pause (per symbol)
+        self.toxic_side: Optional[str] = None         # side the toxic flow pushes (BUY = aggressive buying)
+        self.toxic_vpin: Optional[float] = None
         if fresh:
             self.pause_until = 0.0
             self.trade_times = deque()
@@ -756,9 +764,6 @@ class Engine:
             r = (False, 'order in flight')
         elif (why := self.slot_block()) is not None:
             r = (False, why)
-        elif self.p.vpin_gate and now < self.toxic_until:
-            r = (False, f'VPIN TOXIC {(self.tox.get("vpin") or 0):.2f} > {self.sig_cfg.vpin_max} · '
-                        f'pause {self.toxic_until - now:.0f}s')
         elif now < self.pause_until:
             r = (False, f'{self.consec_losses} losses · pause {self.pause_until - now:.0f}s')
         elif now < self.cooldown_until:
@@ -793,7 +798,7 @@ class Engine:
         self.flow = msig.concordance(f, self.sig_cfg)
         self.tox = msig.toxicity(f, self.sig_cfg)
         if self.tox['toxic'] and self.p.vpin_gate:
-            self.mark_toxic(self.tox['vpin'])
+            self.mark_toxic(self.tox['vpin'], self.tox.get('side'))
         self.macro = msig.macro_bias(f, self.sig_cfg)
         self.reg = msig.regime(f, self.sig_cfg)
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
@@ -862,10 +867,16 @@ class Engine:
             tp, sl, src = min(p.mr_tp_max, max(p.mr_tp_min, dev)), p.mr_sl_pct, 'MR'
             prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
         elif p.atr_scaler and p.max_loss_usdt is None and atr_pct:
-            sl = max(p.atr_sl_floor_pct, p.atr_sl_mult * atr_pct)
-            tp = max(p.atr_tp1_mult * atr_pct, p.rr_min * sl)
+            sl_min, tp_min = self.asset_floors()
+            sl = max(sl_min, p.atr_sl_mult * atr_pct)
+            tp = max(p.atr_tp1_mult * atr_pct, p.rr_min * sl, tp_min)
             trail, src = max(p.atr_trail_floor_pct, p.atr_trail_mult * atr_pct), 'ATR'
             prof = replace(p, sl_pct=sl, tp_pct=tp, atr_trail_pct=trail)
+        elif p.max_loss_usdt is None and p.asset_brackets and self.p.symbol in ASSET_BRACKETS:
+            sl_min, tp_min = self.asset_floors()
+            sl = max(p.sl_pct, sl_min)
+            tp, src = max(p.tp_pct, p.rr_min * sl, tp_min), 'STATIC'
+            prof = replace(p, sl_pct=sl, tp_pct=tp)
         else:
             tp, sl, src, prof = p.tp_pct, p.sl_pct, 'STATIC', p
         e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
@@ -874,6 +885,22 @@ class Engine:
         return {'profile': prof, 'src': src, 'atr_pct': atr_pct, 'sl_pct': sl, 'tp_pct': tp, 'trail_pct': trail,
                 'rr_gross': tp / sl if sl > 0 else None, 'rr_net': win / loss if ok else None,
                 'be_wr': loss / (win + loss) if ok and win > 0 else None}
+
+    def asset_floors(self) -> tuple:
+        """(SL min %, TP1 min %) for this coin; without the table: the generic ATR floor and no TP floor."""
+        if self.p.asset_brackets and self.p.symbol in ASSET_BRACKETS:
+            return ASSET_BRACKETS[self.p.symbol]
+        return self.p.atr_sl_floor_pct, 0.0
+
+    def parity_qty(self, price: float, prof: Profile, route: str = 'gtx') -> Optional[float]:
+        """Equal-risk size for coins whose minimum is tiny: money at the stop ~ risk_target_usdt."""
+        if not self.p.risk_parity or prof.qty or self.p.max_loss_usdt is not None or not price or not self.spec:
+            return None
+        e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
+        risk_pct = (prof.sl_pct + (e_in + self.p.taker_bps + self.p.slip_bps) / 100.0) / 100.0
+        step = self.spec['step']
+        q = round(self.p.risk_target_usdt / (price * risk_pct) / step) * step
+        return q if q > 0 else None
 
     def kelly(self) -> dict:
         """Kelly on this symbol's settled trades (net PnL): f* = p - (1 - p) / b, b = avg win / avg loss."""
@@ -931,12 +958,19 @@ class Engine:
             return min(touch_px, round_tick(qt['bid'], tick, 'down'))
         return max(touch_px, round_tick(qt['ask'], tick, 'up'))
 
-    def mark_toxic(self, v: Optional[float]) -> None:
+    def mark_toxic(self, v: Optional[float], side: Optional[str] = None) -> None:
+        """Asymmetric: remember WHICH side the toxic flow pushes; only entries against it are vetoed."""
         now = self.clock()
-        if now >= self.toxic_until:
-            self.event(f'VPIN TOXIC {(v or 0):.2f} > {self.sig_cfg.vpin_max}: RUNE veto {self.p.vpin_pause_s:g}s, '
-                       f'resting maker entries cancelled')
-        self.toxic_until = now + self.p.vpin_pause_s
+        side = side or self.feed.vpin_side()
+        if now >= self.toxic_until or side != self.toxic_side:
+            against = {'BUY': 'SELL', 'SELL': 'BUY'}.get(side)
+            self.event(f'VPIN TOXIC {(v or 0):.2f} > {self.sig_cfg.vpin_max} ({side or "?"} flow): cấm {against or "—"} '
+                       f'{self.p.vpin_pause_s:g}s, {side or "—"} vẫn được vào')
+        self.toxic_until, self.toxic_side, self.toxic_vpin = now + self.p.vpin_pause_s, side, v
+
+    def toxic_blocks(self, side: str) -> bool:
+        return (self.p.vpin_gate and self.clock() < self.toxic_until and self.toxic_side is not None
+                and side != self.toxic_side)
 
     def radar(self) -> dict:
         """One scanner row: BTC: CHOP | SOL: TREND BUY (84%) | DOGE: MR SCAN."""
@@ -961,6 +995,7 @@ class Engine:
             label = 'TREND SCAN'
         return {'symbol': self.p.symbol, 'label': label, 'ker': k, 'regime': (self.reg or {}).get('name'),
                 'flow': self.flow.get('state'),
+                **{k: self.bracket_plan('SWARM', f).get(k) for k in ('sl_pct', 'tp_pct', 'src')},
                 'score': score, 'allowed': bool(d and d.allowed), 'reason': (d.reason if d else '')[:140],
                 'pos': bool(self.pos), 'price': f.get('price')}
 
@@ -983,6 +1018,9 @@ class Engine:
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
         lane = self.lane(d)
         reg = self.reg or {}
+        if self.toxic_blocks(d.side):
+            return False, (f'VPIN TOXIC {(self.toxic_vpin or 0):.2f} {self.toxic_side} flow · cấm {d.side} '
+                           f'{self.toxic_until - self.clock():.0f}s')
         if self.p.drift_lock and reg.get('name') == 'DRIFT':
             return False, f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'
         if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
@@ -1061,6 +1099,9 @@ class Engine:
             if path == 'MR':
                 px = self.mr_quote(side, f, px)
             kq = self.kelly_qty(px if route == 'gtx' else touch, base, route)
+            pq = self.parity_qty(px if route == 'gtx' else touch, base, route)
+            if pq and (kq is None or pq > kq):
+                kq = pq
             mult = self.size_mult(decision, self.diag, f) if tag == 'AUTO' else 1.0
             if mult > 1.0:
                 ref = px if route == 'gtx' else touch
@@ -1104,8 +1145,9 @@ class Engine:
                     if st.get('status') == 'FILLED':
                         break
                     v = self.feed.vpin_now() if self.p.vpin_gate else None
-                    if v is not None and v > self.sig_cfg.vpin_max:      # toxic flow: pull the bid/ask now
-                        self.mark_toxic(v)
+                    vs = self.feed.vpin_side() if v is not None else None
+                    if v is not None and v > self.sig_cfg.vpin_max and vs is not None and vs != side:
+                        self.mark_toxic(v, vs)                       # toxic flow AGAINST our quote: pull it now
                         toxic_abort = v
                         break
                     if peg and time.monotonic() - last_post >= self.p.peg_interval_s:
@@ -1186,7 +1228,7 @@ class Engine:
             self.event(f'VESKA {tag} {side} {qty_str} {sym} @ {fill:g} ({how}, {ms:.0f} ms) · {path} '
                        f'{decision.score * 100:.1f}% · TP1 {tp:g} x{fmt(self.pos["tp_qty"], step)} · SL {sl:g}')
             try:
-                await self.venue.stop(sym, opp, fmt(sl, tick), self.pos['sl_cid'])
+                await self.place_entry_stop(sym, opp, fmt(sl, tick), self.pos['sl_cid'])
             except Exception as exc:
                 self.event(f'MARIN stop rejected ({type(exc).__name__}: {exc}) -> closing at market')
                 await self.close('NO_STOP')
@@ -1221,7 +1263,10 @@ class Engine:
         try:
             await self.venue.stop(sym, opp, fmt(price, tick), cid)
         except Exception as exc:                            # e.g. -2021 would trigger immediately
-            mark = self.view.get('mark') or self.feed.price()
+            if getattr(exc, 'code', None) == -4130:          # Binance: ONE closePosition stop per direction
+                return await self.swap_stop(price, kind, cid)
+            b = self.book()                                  # live touch, not the last REST view (stale)
+            mark = (b.get('price') if not b.get('stale') else None) or self.view.get('mark') or self.feed.price()
             d = 1 if p['side'] == 'BUY' else -1
             if mark and d * (mark - price) <= 0:
                 self.event(f'MARIN {kind} {price:g} already crossed ({type(exc).__name__}) -> close reduce-only')
@@ -1235,6 +1280,47 @@ class Engine:
             await self.venue.cancel_stop(old)
         except Exception:
             pass
+        return True
+
+    async def place_entry_stop(self, sym: str, side: str, price: str, cid: str) -> None:
+        """-4130 at entry = a stale closePosition stop of an old trade still sits on the venue: clear, retry once."""
+        try:
+            await self.venue.stop(sym, side, price, cid)
+        except Exception as exc:
+            if getattr(exc, 'code', None) != -4130:
+                raise
+            for o in await self.venue.orders_view(sym):
+                if 'STOP' in str(o.get('type')) and o.get('side') == side and o.get('id') != cid:
+                    try:
+                        await self.venue.cancel_stop(o['id'])
+                    except Exception:
+                        pass
+            self.event(f'MARIN stale stop cleared on {sym} (-4130) -> stop re-placed')
+            await self.venue.stop(sym, side, price, cid)
+
+    async def swap_stop(self, price: float, kind: str, cid: str) -> bool:
+        """-4130 path: cancel the old closePosition stop, place the new one; on failure restore the old level,
+        and if even that fails close the position (never leave it naked)."""
+        p, sym, tick = self.pos, self.p.symbol, self.spec['tick']
+        opp = 'SELL' if p['side'] == 'BUY' else 'BUY'
+        try:
+            await self.venue.cancel_stop(p['sl_cid'])
+        except Exception:
+            pass
+        try:
+            await self.venue.stop(sym, opp, fmt(price, tick), cid)
+        except Exception as exc:
+            back = 'gs-' + uuid.uuid4().hex[:28]
+            try:
+                await self.venue.stop(sym, opp, fmt(p['sl'], tick), back)
+                p['sl_cid'] = back
+                self.event(f'MARIN move {kind} failed after cancel ({type(exc).__name__}) -> old stop {p["sl"]:g} restored')
+            except Exception:
+                self.event(f'MARIN no stop could be placed -> close {kind} reduce-only')
+                await self.close(kind)
+                return True
+            return False
+        p.update(sl=price, sl_cid=cid, stop_kind=kind, xstop_kind=kind)
         return True
 
     def mbe_price(self, p: dict) -> float:
@@ -1425,11 +1511,16 @@ class Engine:
         """MFE >= +0.15 %: move the EXCHANGE stop to entry +/- 0.08 % once - survives a restart or a dead feed."""
         if not self.p.ratchet or p.get('ratchet') or p['mfe_pct'] < self.p.ratchet_trigger_pct:
             return
+        if self.clock() < p.get('ratchet_retry_at', 0.0):
+            return
         tgt = round_tick(p['entry'] * (1 + d * self.p.ratchet_lock_pct / 100.0), self.spec['tick'],
                          'up' if d > 0 else 'down')
         if d * (tgt - p['sl']) <= 0 or d * (mark - tgt) <= 0:
             return
-        if await self.move_stop(tgt, 'RATCHET') and self.pos:
+        if not await self.move_stop(tgt, 'RATCHET'):
+            p['ratchet_retry_at'] = self.clock() + self.p.ratchet_retry_s
+            return
+        if self.pos:
             p['ratchet'] = True
             self.event(f'MARIN RATCHET at MFE {p["mfe_pct"]:+.3f}% -> exchange stop {tgt:g} '
                        f'(entry {"+" if d > 0 else "-"}{self.p.ratchet_lock_pct}%)')
@@ -1764,6 +1855,7 @@ class Engine:
         f = self.features or {}
         bp = {k: v for k, v in self.bracket_plan('SWARM', f).items() if k != 'profile'}
         return {'ofi': f.get('ofi_10s'), 'ofi_n': f.get('ofi_n'), 'vpin': f.get('vpin'), 'vpin_n': f.get('vpin_n'),
+                'vpin_side': self.toxic_side if self.clock() < self.toxic_until else None, 'symbol': self.p.symbol,
                 'tox': self.tox.get('state'), 'toxic_left': max(0.0, self.toxic_until - self.clock()),
                 'atr_pct': f.get('atr_pct'), 'yz_pct': f.get('yz_pct'), 'sigma_bps': f.get('sigma_bps'),
                 'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly()}

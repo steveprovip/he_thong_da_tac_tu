@@ -241,7 +241,7 @@
       const cls = l => /OPEN|ORDER/.test(l) ? 'open' : /^TREND (BUY|SELL)/.test(l) ? 'trend' : /^MR (BUY|SELL)/.test(l) ? 'mr'
         : /CHOP/.test(l) ? 'chop' : 'idle';
       const html = (sc.rows || []).map(r => `<button type="button" class="radar-chip ${cls(r.label)}${r.symbol === sc.focus ? ' focus' : ''}"`
-        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · ${r.reason || ''}`)}">`
+        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · SL ${fin(r.sl_pct) ? fx(r.sl_pct, 2) : '—'}% · TP1 ${fin(r.tp_pct) ? fx(r.tp_pct, 2) : '—'}% · ${r.reason || ''}`)}">`
         + `${esc(r.symbol.replace('USDT', ''))}: ${esc(r.label)}</button>`).join('<i>|</i>');
       const lead = sc.on ? '<b>SCANNER</b>' : '<b>1 CẶP</b>';
       if (rad.dataset.html !== html) { rad.innerHTML = lead + (html || ' —'); rad.dataset.html = html; }
@@ -264,7 +264,7 @@
       fin(qv.ofi) && Math.abs(qv.ofi) >= 0.65 ? (qv.ofi > 0 ? 'green' : 'red') : '');
     chip('vpin-chip', fin(qv.vpin) ? `VPIN ${fx(qv.vpin, 2)} · ${qv.tox}${qv.toxic_left > 0 ? ` ${fx(qv.toxic_left, 0)}s` : ''}` : 'VPIN — (warmup)',
       qv.tox === 'TOXIC' || qv.toxic_left > 0 ? 'red' : qv.tox === 'CLEAN' ? 'green' : '');
-    chip('rr-chip', fin(br.sl_pct) ? `${br.src} SL ${fx(br.sl_pct, 2)}% · TP1 ${fx(br.tp_pct, 2)}% · RR ${fx(br.rr_gross, 1)} gộp / ${fin(br.rr_net) ? fx(br.rr_net, 2) : '—'} sau phí · hoà vốn ≥ ${fin(br.be_wr) ? fx(br.be_wr * 100, 0) : '—'}% thắng` : 'RR —',
+    chip('rr-chip', fin(br.sl_pct) ? `${String(qv.symbol || '').replace('USDT', '')} ${br.src} SL ${fx(br.sl_pct, 2)}% · TP1 ${fx(br.tp_pct, 2)}% · RR ${fx(br.rr_gross, 1)} gộp / ${fin(br.rr_net) ? fx(br.rr_net, 2) : '—'} sau phí · hoà vốn ≥ ${fin(br.be_wr) ? fx(br.be_wr * 100, 0) : '—'}% thắng` : 'RR —',
       br.src === 'ATR' ? 'green' : '');
     chip('kelly-chip', kl.state === 'SAMPLE' ? `KELLY ¼: ${kl.n || 0}/${kl.min_n || 20} lệnh mẫu`
       : kl.state === 'EDGE' ? `KELLY ¼: ${fx(kl.f * 100, 1)}% vốn · f* ${sg(kl.f_star, 2)}`

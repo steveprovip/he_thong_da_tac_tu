@@ -104,3 +104,8 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - engine: Profile multi_slot/max_positions 3/portfolio_risk_usdt 1.0/portfolio_margin_frac 0.20, convex_* (swarm vote >= 0.90 + OFI >= 0.65 + CVD60 >= $1M -> 1.5x, >= 0.98 -> 2.0x), ratchet 0.15 -> 0.08, adopt_external (demo); risk_at_stop/margin_used/open_peers/slot_block/portfolio_check/portfolio_view/size_mult/min_qty/ratchet_stop/adopt; pending_risk for in-flight entries; better_peer off in multi-slot; snapshot['portfolio']; UI multi-row positions + portfolio chip.
 - Fixed 2 time-boundary flaky tests in test_winrate_maximizer.py (live 5 m candle closing mid-test).
 - tests/test_portfolio_multi_slot.py (20). Verification: pytest 971 passed.
+
+## 2026-10-07 (n) Asset brackets, equal-risk size, asymmetric VPIN, -4130 stop fixes
+- Ledger 23-26: #23 SOL NO_STOP (stop rejected -> market close in 1 s), #24 BTC REGIME +0.0610 (qty 0.001 = partial fill of a 2.0x order; 15x "move RATCHET failed: -4130"), #25 SOL SL -0.153 % (0.15 % floor), #26 SOL SL filled at -0.606 % with a 0.15 % stop (slippage on the demo venue).
+- micro_signals: VPIN_BUCKET_USD per symbol via config_for, signed buckets + vpin_side(), vpin_max 0.80, toxicity side/blocks. engine: ASSET_BRACKETS + asset_floors(), parity_qty() (risk_target 0.15 U), toxic_side/toxic_blocks() in churn_gate (RUNE blanket veto removed), peg cancel only against the flow, swap_stop()/place_entry_stop() for -4130, move_stop crossed-check on the live book, ratchet 5 s back-off; radar sl/tp; live: asset_brackets/risk_parity off.
+- tests/test_asset_calibrated_brackets.py (16). Verification: pytest 987 passed.

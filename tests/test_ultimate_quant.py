@@ -104,24 +104,25 @@ def test_vpin_buckets_on_exact_aggressor_volume():
     g.on_message(agg(PX, 2_500_000 / PX, maker=False), now)                    # one print spills over 3 buckets
     assert len(g.vb_closed) == 2 and g.vb_buy == pytest.approx(500_000) and g.vpin_now() is None   # warmup < 10
     sol = msig.MicroFeed('SOLUSDT', msig.config_for('SOLUSDT'))
-    sol.on_message(agg(150.0, 250_000 / 150.0, maker=True, sym='SOLUSDT'), now)
-    assert len(sol.vb_closed) == 2                                              # SOL bucket $100k
+    sol.on_message(agg(150.0, 500_000 / 150.0, maker=True, sym='SOLUSDT'), now)
+    assert len(sol.vb_closed) == 2 and sol.vb_closed[-1] == pytest.approx(-1.0)   # SOL bucket $250k, signed
 
 
 def test_toxicity_rule():
     T = msig.toxicity
-    assert T({'vpin': 0.80})['toxic'] and T({'vpin': 0.80})['state'] == 'TOXIC'
-    assert not T({'vpin': 0.75})['toxic'] and T({'vpin': 0.40})['state'] == 'CLEAN'
+    t = T({'vpin': 0.85, 'vpin_side': 'SELL'})
+    assert t['toxic'] and t['state'] == 'TOXIC SELL' and t['blocks'] == 'BUY'    # 0.75 -> 0.80, asymmetric
+    assert not T({'vpin': 0.80})['toxic'] and T({'vpin': 0.40})['state'] == 'CLEAN'
     assert T({})['state'] == 'WARMUP' and not T({})['toxic']
 
 
-async def test_vpin_over_075_rune_vetoes_new_entries_for_30s(tmp_path):
+async def test_vpin_over_075_rune_vetoes_new_entries_for_30s(tmp_path):    # 2026-10-07n: asymmetric, in churn_gate
     e, venue, feed = mock_engine(tmp_path)
     await e.sync()
     dump(feed, PX, 12_000_000, n=12)
     d = await e.tick()
     assert e.tox['toxic'] and not d.allowed and e.pos is None and not venue.fills
-    assert e.gates(e.features).rune[1].startswith('VPIN TOXIC 1.00 > 0.75')
+    assert e.toxic_side == 'SELL' and e.toxic_blocks('BUY') and not e.toxic_blocks('SELL')
     assert 29.0 < e.toxic_until - e.clock() <= 30.0
     assert any('VPIN TOXIC' in ev['message'] for ev in e.events)
 
@@ -135,7 +136,7 @@ async def test_vpin_spike_cancels_a_resting_maker_entry(tmp_path):
     assert venue.orders                                                         # post-only bid is resting
     dump(feed, PX, 12_000_000, n=12)                                            # toxic selling arrives
     r = await task
-    assert not r['ok'] and r['error'].startswith('VPIN 1.00 > 0.75') and not venue.fills and e.pos is None
+    assert not r['ok'] and r['error'].startswith('VPIN 1.00 > 0.8') and not venue.fills and e.pos is None
     assert e.toxic_until - e.clock() > 25
 
 
@@ -208,8 +209,8 @@ async def test_runner_trails_1_2_atr_after_tp1(tmp_path):
     await e.sync()
     p, entry = e.pos, e.pos['entry']
     gap = p['atr_trail_pct']
-    assert p['sl_pct'] == pytest.approx(0.15) and p['tp_pct'] == pytest.approx(0.375) and 0.10 <= gap < 0.20
-    book_at(feed, round(entry * 1.0038, 1))                                     # TP1 (+0.375 %) fills half
+    assert p['sl_pct'] == pytest.approx(0.15) and p['tp_pct'] == pytest.approx(0.38) and 0.10 <= gap < 0.20
+    book_at(feed, round(entry * 1.0039, 1))                                     # TP1 (BTC floor +0.38 %) fills half
     await e.sync()
     await e.tick()
     assert e.pos['tp1_filled']
@@ -316,7 +317,7 @@ def test_snapshot_quant_view_and_desk_chips(tmp_path):
 def test_ultimate_defaults():
     c, p = msig.SignalConfig(), eng.PROFILES['demo']
     assert (c.ofi_levels, c.ofi_window_s, c.ofi_min, c.ofi_min_events) == (10, 10.0, 0.65, 5)
-    assert (c.vpin_bucket_usd, c.vpin_buckets, c.vpin_max) == (1_000_000.0, 10, 0.75)
+    assert (c.vpin_bucket_usd, c.vpin_buckets, c.vpin_max) == (1_000_000.0, 10, 0.80)
     assert (p.atr_sl_mult, p.atr_tp1_mult, p.atr_trail_mult, p.rr_min) == (1.0, 2.5, 1.2, 2.5)
     assert (p.kelly_lambda, p.kelly_min_trades, p.kelly_max_risk_usdt, p.tp_pct, p.sl_pct) == (0.25, 20, 0.50, 0.50, 0.20)
     assert (p.as_gamma, p.as_k, p.as_max_offset_bps, p.mr_sl_pct) == (0.10, 2.0, 2.0, 0.08)
