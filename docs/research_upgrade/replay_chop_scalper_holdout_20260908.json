@@ -1,0 +1,128 @@
+{
+ "config": {
+  "ker_max": 0.4,
+  "spread_max_bps": 1.5,
+  "ttl_s": 3.0,
+  "tp_pct": 0.08,
+  "sl_pct": 0.12,
+  "be_after_s": 90.0,
+  "be_pct": 0.04,
+  "hard_s": 180.0,
+  "maker_bps": 2.0,
+  "taker_bps": 5.0,
+  "every_s": 20.0
+ },
+ "files": {
+  "data/l2/LINKUSDT/20260908.jsonl": {
+   "attempts": 982,
+   "cons": {
+    "fills": 308,
+    "fill_rate": 0.314,
+    "mean_net_bps": -7.601,
+    "median_net_bps": -5.416,
+    "win_rate": 0.26,
+    "p5_net_bps": -19.713,
+    "how": {
+     "sl": 110,
+     "be": 73,
+     "tp": 78,
+     "timeout": 47
+    }
+   },
+   "opt": {
+    "fills": 838,
+    "fill_rate": 0.853,
+    "mean_net_bps": -6.433,
+    "median_net_bps": -0.0,
+    "win_rate": 0.304,
+    "p5_net_bps": -19.715,
+    "how": {
+     "tp": 245,
+     "timeout": 123,
+     "sl": 257,
+     "be": 213
+    }
+   },
+   "_attempts": 982
+  },
+  "data/l2/SOLUSDT/20260908.jsonl": {
+   "attempts": 1006,
+   "cons": {
+    "fills": 255,
+    "fill_rate": 0.253,
+    "mean_net_bps": -6.515,
+    "median_net_bps": -5.059,
+    "win_rate": 0.239,
+    "p5_net_bps": -19.679,
+    "how": {
+     "sl": 54,
+     "tp": 57,
+     "be": 64,
+     "timeout": 80
+    }
+   },
+   "opt": {
+    "fills": 895,
+    "fill_rate": 0.89,
+    "mean_net_bps": -6.187,
+    "median_net_bps": -4.075,
+    "win_rate": 0.215,
+    "p5_net_bps": -19.664,
+    "how": {
+     "be": 273,
+     "sl": 153,
+     "tp": 167,
+     "timeout": 302
+    }
+   },
+   "_attempts": 1006
+  }
+ },
+ "all": {
+  "attempts": 1988,
+  "cons": {
+   "fills": 563,
+   "fill_rate": 0.283,
+   "mean_net_bps": -7.109,
+   "median_net_bps": -5.416,
+   "win_rate": 0.25,
+   "p5_net_bps": -19.699,
+   "how": {
+    "sl": 164,
+    "be": 137,
+    "tp": 135,
+    "timeout": 127
+   },
+   "net_ci95_block": {
+    "n": 563,
+    "mean_bps": -7.109,
+    "ci95": [
+     -7.772,
+     -6.29
+    ]
+   }
+  },
+  "opt": {
+   "fills": 1733,
+   "fill_rate": 0.872,
+   "mean_net_bps": -6.306,
+   "median_net_bps": -0.0,
+   "win_rate": 0.258,
+   "p5_net_bps": -19.683,
+   "how": {
+    "tp": 412,
+    "timeout": 425,
+    "sl": 410,
+    "be": 486
+   },
+   "net_ci95_block": {
+    "n": 1733,
+    "mean_bps": -6.306,
+    "ci95": [
+     -6.694,
+     -5.888
+    ]
+   }
+  }
+ }
+}

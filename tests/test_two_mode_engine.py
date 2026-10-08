@@ -227,6 +227,8 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('mr_flow_gate', False)        # MR anti-fade + net RR gates: test_mr_concordance_and_net_rr.py
     prof.setdefault('net_rr_min', 0.0)
     prof.setdefault('super_size', False)          # super-conviction size: test_mr_concordance_and_net_rr.py
+    prof.setdefault('chop_scalper', 'off')        # chop micro-scalper / drift acceleration: test_continuous_active_trading.py
+    prof.setdefault('drift_accel', False)
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')

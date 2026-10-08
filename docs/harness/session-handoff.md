@@ -43,3 +43,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - MR lane is effectively off (max rr 0.875); re-enable only with new MR brackets evaluated out of sample.
 - super_size is ON in demo (risk up to ~0.25 U/trade); evaluate rows with super_size=True before keeping it; rollback super_size=False.
 - Fill rate: GTX unfilled orders are queue-limited; next experiment is queue position (join vs improve 1 tick) using touch_qty_last, not faster re-peg.
+
+## Handoff — 2026-10-08 (t)
+- chop_scalper stays 'shadow' unless the user accepts a strategy measured at -6 to -7.5 bps per scalp; SHADOW_SCALP rows in engine_orders.jsonl give demo-venue opportunity counts.
+- drift_accel (0.5x) and the BTC minimum-size probe are ON in demo: evaluate rows with drift_probe / probe set before keeping them.
+- Next useful experiment: queue-imbalance-directed scalp (bookTicker has bid/ask qty) — preregister before running; demo fill starvation is a testnet queue artefact.

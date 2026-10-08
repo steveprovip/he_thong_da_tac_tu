@@ -177,6 +177,13 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.20 Cập nhật 08/10/2026 (t) — Đói cơ hội: sửa đo VFR, BTC probe, scalper chop (shadow)
+- VFR dùng spread của feed tín hiệu (book demo testnet rộng 13 bps từng làm SOL đóng băng giả).
+- BTC probe dùng size nhỏ nhất sàn nhận nếu rủi ro ≤ 15 % ngân sách (0.0001 BTC cũ luôn dưới min $50).
+- DRIFT ACCEL: CVD60 ≥ 3×|CVD3m| và ≥ $2M (×scale) → vào phía CVD60 với 0.5× size (demo).
+- Chop micro-scalper (TP 0.08 % / SL 0.12 % / BE 90 s) đã cài nhưng mặc định **shadow**: replay mainnet cho −6 đến −7.5 bps mỗi lệnh sau phí. `tools/replay_chop_scalper.py`.
+- Test: 1134 passed.
+
 ### 8.19 Cập nhật 08/10/2026 (s) — Chặn MR bắt dao rơi, lọc Net RR, tập trung size
 - MR không được mua khi OFI < −0.30 hoặc CVD 60 s < −$100k (×scale theo coin), bán đối xứng.
 - Mọi lệnh cần reward:risk sau phí ≥ 1.30 (kiểm ở gate và trên plan đã sizing). Với bracket MR hiện tại (TP ≤ 0.18 %, SL 0.08 %) làn MR không đạt → tắt thực tế. Profile live hiện tại (rr ≈ 0.47) bị từ chối.

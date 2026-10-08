@@ -53,6 +53,16 @@
       ],
       "status": "done",
       "evidence": "pytest 1102 passed 0 skipped; #39 blocked on mock by both gates; no historical SWARM trade below rr 1.30; super-size unvalidated (4 trades, in-sample)"
+    },
+    {
+      "id": "opportunity-starvation-20261008t",
+      "name": "Starvation fixes (VFR spread, BTC min probe), drift-accel probe, chop scalper in shadow",
+      "description": "Fix VFR to use the signal spread; BTC probe at venue minimum within budget; DRIFT acceleration half-size probe; chop micro-scalper implemented with shadow default",
+      "dependencies": [
+        "mr-antifade-netrr-20261008s"
+      ],
+      "status": "done",
+      "evidence": "pytest 1134 passed 0 skipped; scalper replay holdout -7.11/-6.31 bps per trade (CI<0) -> shadow"
     }
   ]
 }

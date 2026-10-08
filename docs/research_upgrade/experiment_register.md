@@ -66,3 +66,12 @@ Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần
 | S2 | gate | Net RR (bracket_plan rr_net, phí thật) ≥ 1.30 ở churn gate; kiểm lại trên plan đã sizing trong execute (cả live) | bật | `net_rr_min=0` | Không chặn lệnh SWARM nào trong lịch sử (min 1.46). MR tối đa 0.875 → **làn MR tắt hẳn** với bracket hiện tại. **Live**: TP 0.50 % vs SL ~0.89 % từ ngân sách 0.05 U → rr 0.47 → mọi lệnh live bị từ chối. |
 | S3 | đo | Fast re-peg: đã có (0.5 s, trần 0.15 %); thêm `touch_last`, `touch_qty_last` vào order log | — | — | 25/32 UNFILLED không re-peg → timeout do hàng đợi, không do drift. Không đổi tham số. |
 | S4 | sizing | Vote ≥ 0.95 VÀ OFI ≥ 0.80 cùng chiều → SOL 0.50 / DOGE 450 (trần $140, risk/margin portfolio vẫn áp) | bật demo, tắt live | `super_size=False` | **Chưa có bằng chứng**: 4 lệnh alt lịch sử thoả quy tắc (#26, #27, #38, #40) net +0.0443 U; quy tắc được đặt sau khi thấy #40 → selection bias. Ghi `super_size` trong ledger để đánh giá ngoài mẫu. |
+
+## Vòng (t) — 08/10/2026: đói cơ hội
+
+| ID | Loại | Thay đổi | Mặc định | Rollback | Bằng chứng / trạng thái |
+|---|---|---|---|---|---|
+| T1 | đo (bug) | VFR lấy spread của feed tín hiệu (thị trường đo ATR), không lấy book testnet | luôn bật | revert | VALIDATED (test). Bỏ đóng băng giả SOL. |
+| T2 | sizing (bug) | BTC probe = size nhỏ nhất venue chấp nhận nếu rủi ro ≤ 15 % ngân sách | bật | `btc_probe_min_tradable=False` | VALIDATED (test). BTC demo giao dịch được lại ở 0.0006 BTC. |
+| T3 | gate | DRIFT ACCEL: bỏ DRIFT lock cho phía CVD60 khi \|CVD60\| ≥ 3×\|CVD3m\| và ≥ $2M×scale, size 0.5× | bật demo, tắt live | `drift_accel=False` | **Chưa có bằng chứng** (L2 ghi lại không có trade/CVD). Ledger ghi `drift_probe` để đánh giá. |
+| T4 | chiến lược | Chop micro-scalper: KER < 0.40, spread ≤ 1.5 bps, phía theo OFI, GTX tại touch, TP 0.08 % maker, SL 0.12 %, BE sau 90 s, size 0.5× | **shadow** (ghi `SHADOW_SCALP`, không đặt lệnh); live off | `chop_scalper='on'` | **REJECTED để bật**: replay (tools/replay_chop_scalper.py) in-sample 09–10/09 SOL/LINK/BNB: −7.46 bps/lệnh [−9.53, −5.73] (fill bảo thủ), −6.82 [−8.53, −5.69] (lạc quan); holdout 08/09 SOL+LINK: −7.11 [−7.77, −6.29] / −6.31 [−6.69, −5.89]; tỉ lệ thắng 14–26 %. Bracket có RR sau phí 0.20 (cần thắng 83 %). Replay test cả hai phía, không có bộ lọc OFI (không có dữ liệu trade). |

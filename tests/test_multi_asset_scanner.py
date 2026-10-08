@@ -58,6 +58,8 @@ async def scanner(tmp_path, feeds=None, **prof):
     prof.setdefault('mr_flow_gate', False)        # MR anti-fade + net RR gates: test_mr_concordance_and_net_rr.py
     prof.setdefault('net_rr_min', 0.0)
     prof.setdefault('super_size', False)          # super-conviction size: test_mr_concordance_and_net_rr.py
+    prof.setdefault('chop_scalper', 'off')        # chop micro-scalper / drift acceleration: test_continuous_active_trading.py
+    prof.setdefault('drift_accel', False)
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))

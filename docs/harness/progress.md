@@ -150,3 +150,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Patches: micro_signals.mr_flow_veto; engine churn_gate MR flow gate + net RR gate (bracket_plan rr_net), execute plan_rr check (covers live loss-budget SL); order log touch_last/touch_qty_last; super_conviction + SUPER_SIZE (SOL 0.50 / DOGE 450, demo only); ledger super_size. mock_engine/scanner isolate the new gates (default off in fixtures).
 - Findings: net RR 1.30 makes the MR lane unreachable (max 0.875) and blocks every live entry (live rr 0.47); 25/32 unfilled GTX had no re-peg (queue, not drift); super-size rule fits 4 historical trades (+0.0443 U), not out-of-sample.
 - Checks: python -m pytest -q 1102 passed, 0 skipped.
+
+## 2026-10-08 (t) Opportunity starvation: VFR spread bug, BTC probe minimum, drift-accel probe, chop scalper (shadow)
+- Data: orders log 63 rows (7 in the 03:26-04:12 UTC run: 3 GTX unfilled, 4 BTC refusals), telemetry 04:12 UTC. Starvation causes: VFR used the demo testnet spread (SOL 13 bps), BTC probe 0.0001 < $50 minimum, GTX fill rate 5/40 on demo queues.
+- Patches: vfr_view spread from the signal feed; BTC probe uses the smallest tradable size within the 15 % budget; drift_acceleration() + drift_probe 0.5x; chop_scalper ('off'|'shadow'|'on', SCALP brackets 0.08/0.12, 90 s eject, half size, RUNE gates) default shadow -> SHADOW_SCALP rows; tools/replay_chop_scalper.py.
+- Replay: scalper -7.46 bps [-9.53,-5.73] (cons) / -6.82 [-8.53,-5.69] (opt) in-sample; holdout 2026-09-08 -7.11 [-7.77,-6.29] / -6.31 [-6.69,-5.89].
+- Checks: python -m pytest -q 1134 passed, 0 skipped.
