@@ -405,6 +405,32 @@ class Profile:
     # 10-08z scaled TP1: the resting 50 % maker TP sits at +tp1_scaled_pct (TREND only, when the size splits);
     # the runner keeps the ATR plan (net RR gate still evaluates the ATR TP).  Replay: +0.08 bps [0.04, 0.14].
     tp1_scaled_pct: Optional[float] = 0.30
+    tp1_scaled_big_pct: float = 0.35    # 10-08z2: TP1 >= +0.35 % when the entry notional >= cs_big_notional ($225)
+    cs_big_notional: float = 225.0
+    # 10-08z2 regime-adaptive conviction size caps (notional USD): chop (KER < 0.30 or the 3 flows disagree) $170
+    # (~1.5 SOL), trend (KER >= 0.40 and flows agree) $315 (~2.8 SOL), otherwise $225; cs_max_notional is the hard cap.
+    cs_chop_notional: float = 170.0
+    cs_mid_notional: float = 225.0
+    cs_trend_notional: float = 315.0
+    cs_chop_ker: float = 0.30
+    cs_trend_ker: float = 0.40
+    # 10-08z2 hard macro CVD shield (all lanes): no BUY while CVD 60 s < -300 k USD or CVD 3 m < -500 k; no SELL while
+    # > +300 k / +500 k (raw USD of the signal feed; the strong-trend regime ban is already swarm REGIME BAN).
+    # Replay 10/01-07: neutral (holdout -6.42 vs -6.56 bps, dev -6.82 vs -6.60); the ledger's losers #51/#53/#55
+    # were all WITH the macro flow.  'off' | 'on'.
+    cvd_shield: str = 'on'
+    cvd_shield_60s_usd: float = 300_000.0
+    cvd_shield_3m_usd: float = 500_000.0
+    # 10-08z2 three-layer alignment (CVD 3 m, CVD 60 s, CVD 15 s, OFI/OBI with the trade). 'off'|'shadow'|'on'.
+    # Shadow: replay ALIGN3 (CVD layers) -7.27 vs -6.56 bps holdout, -7.16 vs -6.60 dev (worse: late entries).
+    align3: str = 'shadow'
+    # 10-08z2 early adverse invalidation: within early_inval_s of the fill, CVD velocity 10 s >= 50 k USD/s against
+    # the position or OFI L10 flipped beyond -early_inval_ofi -> maker exit at the touch (no fee hurdle).
+    # 'off' | 'shadow' (ledger field early_invalid) | 'on'.  Shadow: replay mixed (dev +0.09, holdout -0.51 bps).
+    early_invalidation: str = 'shadow'
+    early_inval_s: float = 45.0
+    early_inval_vel_usd: float = 50_000.0
+    early_inval_ofi: float = 0.30
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -426,14 +452,14 @@ PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
-                    portfolio_risk_usdt=5.0, cs_max_notional=1000.0),   # 10-08z demo: risk cap 5 U, $1 000 ceiling
+                    portfolio_risk_usdt=5.0, cs_max_notional=350.0),    # 10-08z2: hard notional cap $350 (was $1 000)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
                     alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off',
-                    conviction_sizing='off', tp1_scaled_pct=None),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
+                    conviction_sizing='off', tp1_scaled_pct=None, align3='off', early_invalidation='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -885,6 +911,7 @@ class Engine:
         self.drift_probe: Optional[str] = None        # set by churn_gate when a DRIFT lock is lifted (half size)
         self.blockers: list = []                      # 10-08v: every churn gate that blocked the last candidate
         self.ker_adapt: Optional[dict] = None         # 10-08x adaptive KER result of the last churn check
+        self.align3_last: Optional[str] = None        # 10-08z2 three-layer alignment of the last churn check
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
@@ -1104,7 +1131,7 @@ class Engine:
         """10-08y Dynamic Conviction Sizing -> {'tier', 'frac', 'qty', 'notional', 'clip'} (qty None = no tier).
         Notional = tier fraction x wallet; clipped to the free portfolio risk at the stop and the margin cap."""
         p, sym = self.p, self.p.symbol
-        out = {'tier': None, 'frac': None, 'qty': None, 'notional': None, 'clip': None}
+        out = {'tier': None, 'frac': None, 'qty': None, 'notional': None, 'clip': None, 'regime': None}
         if not self.is_alt() or not price or not self.spec:
             return out
         score = max(d.score, (self.diag or {}).get('consensus') or 0.0)
@@ -1125,8 +1152,19 @@ class Engine:
         risk_pct = (base.sl_pct + (p.maker_bps + p.taker_bps + p.slip_bps) / 100.0) / 100.0
         free_risk = max(0.0, self.risk_cap() - sum(o.risk_at_stop() for o in self.open_peers()))
         free_margin = max(0.0, p.portfolio_margin_frac * wallet - sum(o.margin_used() for o in self.open_peers()))
+        f_ = self.features or {}
+        k_ = f_.get('ker')
+        aligned = bool(self.flow.get('buy_ok' if d.side == 'BUY' else 'sell_ok'))
+        if k_ is None or k_ < p.cs_chop_ker or not aligned:
+            reg_cap, reg = p.cs_chop_notional, 'regime chop'
+        elif k_ >= p.cs_trend_ker:
+            reg_cap, reg = p.cs_trend_notional, 'regime trend'
+        else:
+            reg_cap, reg = p.cs_mid_notional, 'regime mid'
+        out['regime'] = reg
         lims = {'risk cap': free_risk / risk_pct if risk_pct > 0 else notional,
                 'margin cap': free_margin * p.leverage,
+                reg: reg_cap,
                 'notional ceiling': p.cs_max_notional if p.cs_max_notional else notional}
         for why, lim in lims.items():
             if lim < notional - 1e-9:
@@ -1675,6 +1713,13 @@ class Engine:
         if self.toxic_blocks(d.side):
             out.append(('VPIN', f'VPIN TOXIC {(self.toxic_vpin or 0):.2f} {self.toxic_side} flow · cấm {d.side} '
                                 f'{self.toxic_until - self.clock():.0f}s'))
+        sh = self.cvd_shield(d.side)
+        if sh:
+            out.append(('CVD_SHIELD', sh))
+        al = self.align3_check(d.side)
+        self.align3_last = al
+        if al and self.p.align3 == 'on':
+            out.append(('ALIGN3', al))
         if self.p.vfr_gate:
             vv = self.vfr_view()
             if vv['frozen']:
@@ -1730,6 +1775,49 @@ class Engine:
             out.append(('EDGE', f'CHURN edge {edge:.1f} bps < {self.p.min_edge_bps:g} bps '
                                 f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)'))
         return out, probe
+
+    def early_invalid_due(self, p: dict, now: float, f: dict) -> Optional[str]:
+        """10-08z2: within early_inval_s of the fill, CVD velocity 10 s >= early_inval_vel_usd against the position
+        or OFI L10 flipped to <= -early_inval_ofi -> reason, else None."""
+        if self.p.early_invalidation not in ('shadow', 'on') or p.get('tag') != 'AUTO' or p.get('path') == 'SCALP':
+            return None
+        if now - p['opened'] > self.p.early_inval_s:
+            return None
+        d = 1 if p['side'] == 'BUY' else -1
+        vel = (f.get('cvd_vel_10s') or 0.0) * d
+        if vel <= -self.p.early_inval_vel_usd:
+            return f'CVD {vel / 1e3:+.0f}k/s against'
+        ofi = f.get('ofi_10s')
+        if ofi is not None and ofi * d <= -self.p.early_inval_ofi:
+            return f'OFI flipped {ofi:+.2f}'
+        return None
+
+    def cvd_shield(self, side: str) -> Optional[str]:
+        """10-08z2 hard macro CVD shield -> reason when `side` fights the macro flow, else None."""
+        if self.p.cvd_shield != 'on' or side not in ('BUY', 'SELL'):
+            return None
+        f = self.features or {}
+        c60, c3 = f.get('cvd_60s'), f.get('cvd_3m')
+        sg = 1 if side == 'BUY' else -1
+        bad = [(n, v, lim) for n, v, lim in (('CVD60s', c60, self.p.cvd_shield_60s_usd),
+                                             ('CVD3m', c3, self.p.cvd_shield_3m_usd))
+               if v is not None and sg * v < -lim]
+        if not bad:
+            return None
+        return f'CVD SHIELD no {side}: ' + ' · '.join(f'{n} {v / 1e3:+.0f}k vs {"-" if sg > 0 else "+"}{lim / 1e3:.0f}k'
+                                                       for n, v, lim in bad)
+
+    def align3_check(self, side: str) -> Optional[str]:
+        """10-08z2 three layers with the trade: CVD 3 m and CVD 60 s (macro), CVD 15 s and OFI L10 (micro), OBI
+        (book).  -> reason of the first layer that disagrees, else None.  A missing feature counts as disagreement."""
+        if self.p.align3 not in ('shadow', 'on') or side not in ('BUY', 'SELL'):
+            return None
+        f, sg = self.features or {}, (1 if side == 'BUY' else -1)
+        for name in ('cvd_3m', 'cvd_60s', 'cvd_15s', 'ofi_10s', 'obi'):
+            v = f.get(name)
+            if v is None or sg * v <= 0:
+                return f'ALIGN3 {name} {"—" if v is None else f"{v:+.3g}"} not with {side}'
+        return None
 
     def adaptive_ker(self, d: Decision, diag: dict) -> dict:
         """10-08x form formula: ker_eff = max(floor, ker_lock - slope x (score - 0.90)) for score >= 0.95, CVD
@@ -2117,7 +2205,10 @@ class Engine:
             if (self.p.tp1_scaled_pct and split and tag == 'AUTO' and path not in ('MR', 'SCALP')
                     and self.p.tp1_scaled_pct < pl['tp_pct']):          # 10-08z: 50 % maker TP1 closer, runner trails
                 d1 = 1 if side == 'BUY' else -1
-                tp = round_tick(fill * (1 + d1 * self.p.tp1_scaled_pct / 100.0), tick, 'up' if d1 > 0 else 'down')
+                tp1p = (max(self.p.tp1_scaled_pct, self.p.tp1_scaled_big_pct)
+                        if qty * fill >= self.p.cs_big_notional - 1e-9 else self.p.tp1_scaled_pct)
+                tp1p = min(tp1p, pl['tp_pct'])
+                tp = round_tick(fill * (1 + d1 * tp1p / 100.0), tick, 'up' if d1 > 0 else 'down')
             opp = 'SELL' if side == 'BUY' else 'BUY'
             self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': qty_str, 'entry': fill,
                         'opened': self.clock(), 'opened_ms': posted_ms - 1000, 'sl': sl, 'tp': tp,
@@ -2133,6 +2224,7 @@ class Engine:
                         'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
                         'tp_plan': tp_plan,
                         'conviction': {k[3:]: v for k, v in xm.items() if k.startswith('cs_')} or None,
+                        'align3': (self.align3_last or 'OK') if self.p.align3 in ('shadow', 'on') else None,
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
                         **({'eject_s': self.p.scalp_be_s, 'eject_mfe': 1e9} if path == 'SCALP' else {}),
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
@@ -2446,6 +2538,8 @@ class Engine:
             return
         if x.get('floor'):                     # EJECT-BE: SELL never below the scratch level, BUY never above
             want = max(want, x['floor']) if opp == 'SELL' else min(want, x['floor'])
+        if p.get('sl'):                        # 10-08z2: never a maker exit worse than the exchange stop (#51)
+            want = max(want, p['sl']) if opp == 'SELL' else min(want, p['sl'])
         now = time.monotonic()
         if x['cid']:
             st = await self.venue.order(sym, x['cid'])
@@ -2515,6 +2609,15 @@ class Engine:
             await self.work_soft_exit()
             return
         now = self.clock()
+        why_early = self.early_invalid_due(p, now, f)
+        if why_early and not p.get('early_invalid'):
+            p['early_invalid'] = {'t': round(now - p['opened'], 1), 'fav_pct': round(fav, 4), 'why': why_early,
+                                  'mode': self.p.early_invalidation}
+            if self.p.early_invalidation == 'on':
+                self.event(f'MARIN EARLY INVALIDATION {why_early} at {fav:+.3f}% -> post-only reduce at the touch '
+                           f'(fee hurdle bypassed, hard SL {p["sl"]:g} stays)')
+                await self.start_soft_exit('EARLY-INVALID')
+                return
         if self.eject_fast_due(p, now, f):
             self.event(f'MARIN FAST EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_fast_s:.0f}s, MFE '
                        f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_fast_mfe_pct}%, 15s velocity '
@@ -2911,6 +3014,9 @@ class Engine:
         pnl = parts['net']
         d = 1 if p['side'] == 'BUY' else -1
         notional = p['entry'] * p['qty']
+        if (reason or '').split('+')[-1] in ('SOFT-BE', 'SOFT-LOCK', 'SOFT-PRESTOP', 'SOFT-PROFIT', 'EJECT-BE') \
+                and parts.get('gross') is not None and parts['gross'] < 0:
+            reason = f'{reason}-LOSS'          # 10-08z2: a 'break-even' exit below the entry is labelled as a loss
         row = {'t': self.clock(), 'day': datetime.now().strftime('%Y-%m-%d'), 'mode': self.p.mode,
                'venue': self.venue.label, 'symbol': sym, 'side': p['side'], 'qty': p['qty'], 'entry': p['entry'],
                'exit': p['entry'] * (1 + d * (parts['gross'] / notional)) if notional else None,
@@ -2932,7 +3038,7 @@ class Engine:
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
-               'conviction': p.get('conviction'),
+               'conviction': p.get('conviction'), 'align3': p.get('align3'), 'early_invalid': p.get('early_invalid'),
                'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
                'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),

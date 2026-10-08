@@ -72,6 +72,9 @@ async def scanner(tmp_path, feeds=None, **prof):
     prof.setdefault('tp1_scaled_pct', None)
     prof.setdefault('portfolio_risk_usdt', 1.0)
     prof.setdefault('cs_max_notional', None)
+    prof.setdefault('cvd_shield', 'off')         # 10-08z2 shield / align3 / early invalidation / tp1 big: test_alpha_gating_drawdown.py
+    prof.setdefault('align3', 'off')
+    prof.setdefault('early_invalidation', 'off')
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))

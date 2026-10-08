@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.27 Cập nhật 08/10/2026 (z2) — CVD shield, trần size theo chế độ $170/$225/$315 (cứng $350), sửa 2 lỗi thoát lệnh
+- **Khám nghiệm #49–55**: gross +0.172 / phí 0.727 / net −0.555 U; ba lệnh thua lớn đều CÙNG chiều CVD vĩ mô (không phải bắt dao rơi).
+- **Đã bật**: CVD shield (no BUY khi CVD60 < −300 k hoặc CVD3m < −500 k, SELL đối xứng), trần conviction theo chế độ + trần cứng $350, TP1 +0.35 % khi ≥ $225, lệnh thoát maker không tệ hơn stop sàn (#51), nhãn `…-LOSS` khi lệnh "BE" lỗ thô (#55).
+- **Shadow**: đồng pha 3 tầng (replay xấu hơn), cắt sớm 45 s (replay không nhất quán). `tools/replay_alpha_gating.py`. Test: 1313 passed. Chi tiết: `docs/research_upgrade/report_alpha_gating_and_drawdown_elimination_2026-10-08z.md`.
+
 ### 8.26 Cập nhật 08/10/2026 (z) — Pre-stop maker exit, TP1 0.30 %, trần demo 5 U / $1 000
 - **#49**: stop sàn ratchet (+0.08 %) nằm TRÊN mức thoát maker mềm (+0.06 %) → STOP_MARKET taker, phí 6 bps ăn 85 % lãi gộp. Đã sửa: khi stop sàn ở vùng lãi, tier mềm `PRESTOP` = stop + 0.04 % (post-only, stop sàn giữ làm lưới an toàn).
 - **TP1 từng phần**: 50 % maker ở +0.30 %, runner theo ATR + trail. Replay holdout (`tools/replay_exit_policies.py`): +0.31 bps/vị thế [0.17, 0.48]; ca ratchet-stop +4.7 bps — nhưng tổng thể vẫn âm ~−6.9 bps (lỗ ở lệnh vào).

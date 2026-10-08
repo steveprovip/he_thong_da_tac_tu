@@ -95,7 +95,7 @@ async def test_fee_shield_is_not_a_guarantee_on_a_one_way_gap(tmp_path):
     lift(feed, e.pos['exiting']['px'])
     await e.sync()
     h = e.history[0]
-    assert h['reason'] == 'SOFT-BE' and h['pnl'] < 0
+    assert h['reason'] == 'SOFT-BE-LOSS' and h['pnl'] < 0      # 10-08z2: honest label
     assert h['pnl'] > -(h['qty'] * entry * (0.20 + 0.08) / 100)    # far better than the hard SL
 
 

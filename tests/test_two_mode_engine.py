@@ -241,6 +241,9 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('tp1_scaled_pct', None)
     prof.setdefault('portfolio_risk_usdt', 1.0)
     prof.setdefault('cs_max_notional', None)
+    prof.setdefault('cvd_shield', 'off')         # 10-08z2 shield / align3 / early invalidation / tp1 big: test_alpha_gating_drawdown.py
+    prof.setdefault('align3', 'off')
+    prof.setdefault('early_invalidation', 'off')
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')

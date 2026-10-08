@@ -110,7 +110,7 @@ async def test_scaled_tp1_scope(tmp_path, kw, path):
 # ============================================================================ 3. demo caps + breaker
 def test_demo_caps_and_live_unchanged():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
-    assert d.portfolio_risk_usdt == 5.0 and d.cs_max_notional == 1000.0 and d.pre_stop_maker and d.tp1_scaled_pct == 0.30
+    assert d.portfolio_risk_usdt == 5.0 and d.cs_max_notional == 350.0 and d.pre_stop_maker and d.tp1_scaled_pct == 0.30   # 10-08z2 cap $350
     assert l.portfolio_risk_usdt == 1.0 and l.tp1_scaled_pct is None and l.conviction_sizing == 'off'
     assert (l.max_loss_usdt, l.equity_cap) == (0.05, 3.85)
 
@@ -126,15 +126,17 @@ def sized(tmp_path, wallet, **prof):
 
 
 def test_notional_ceiling_clips(tmp_path):
-    e, d, f, base = sized(tmp_path, 20_000.0, portfolio_risk_usdt=100.0, cs_max_notional=1000.0)
+    e, d, f, base = sized(tmp_path, 20_000.0, portfolio_risk_usdt=100.0, cs_max_notional=1000.0,
+                         cs_trend_notional=1e9, cs_mid_notional=1e9, cs_chop_notional=1e9)
     cs = e.conviction_size(d, f, 150.0, base)
     assert cs['clip'] == 'notional ceiling' and cs['notional'] <= 1000.0 + 1e-9
 
 
 def test_risk_cap_5_allows_the_10pct_tier_on_4922(tmp_path):
+    """10-08z2: the 10 % tier ($492) is now cut by the regime cap (trend $315), not by the risk cap."""
     e, d, f, base = sized(tmp_path, 4922.0, portfolio_risk_usdt=5.0, cs_max_notional=1000.0)
     cs = e.conviction_size(d, f, 113.5, base)
-    assert cs['frac'] == 0.10 and cs['clip'] is None and cs['notional'] == pytest.approx(492.2, abs=1.2)
+    assert cs['frac'] == 0.10 and cs['clip'] == 'regime trend' and cs['notional'] <= 315.0
 
 
 def test_breaker_pauses_conviction_sizing(tmp_path):

@@ -199,3 +199,10 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Patches: Profile pre_stop_maker/pre_stop_gap_pct (PRESTOP soft tier), tp1_scaled_pct 0.30 (demo; live None), cs_max_notional/cs_breaker_*; demo portfolio_risk_usdt 5.0 + cs_max_notional 1000; pos tp_plan.
 - Replay tools/replay_exit_policies.py (aggTrades 10/01-07, holdout 06-07): PRE +0.25 [0.12,0.38] (through) / +0.38 (touch), PRE+TP30 +0.31 [0.17,0.48]; all policies still about -6.9 bps per position.
 - Checks: python -m pytest -q 1285 passed; git diff --check clean. No restart, no order, live unchanged.
+
+## 2026-10-08 (z2) Alpha gating & drawdown
+- Snapshot docs/research_upgrade/snapshot_2026-10-08z2; ledger 55 rows; #49-55 gross +0.1721 fee 0.7267 net -0.5546. Mainnet CVD at entry: losers #51/#53/#55 all with the macro flow; shield would have blocked only #50/#54 (+0.008 U).
+- Bugs fixed: soft maker exit could rest worse than the exchange stop (#51); SOFT-BE label on a raw loss (#55) -> '-LOSS' suffix.
+- Patches: cvd_shield (on), align3 (shadow), early_invalidation (shadow), regime caps 170/225/315 + cs_max_notional 350 (demo), tp1_scaled_big_pct 0.35 for >= $225.
+- Replay tools/replay_alpha_gating.py (aggTrades 10/01-07, holdout 06-07): BASE -6.56, SHIELD -6.42, ALIGN3 -7.27, EARLY -7.07 bps per position.
+- Checks: python -m pytest -q 1313 passed; git diff --check clean. No restart, no order.

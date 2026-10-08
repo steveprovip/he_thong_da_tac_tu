@@ -76,7 +76,7 @@ async def test_doge_37_reproduced_without_the_bound(tmp_path):
     book(feed, 0.08868, 0.08869)                            # a buyer finally lifts 0.08868
     await e.sync()
     r = last_row(tmp_path)
-    assert r['reason'] == 'SOFT-BE' and r['be_locked'] and r['taker_fills'] == 0
+    assert r['reason'] == 'SOFT-BE-LOSS' and r['be_locked'] and r['taker_fills'] == 0
     assert r['gross'] == pytest.approx(-0.03492, abs=1e-6)
     assert r['fee'] == pytest.approx(0.01032931, abs=2e-6) and r['pnl'] == pytest.approx(-0.04524931, abs=2e-6)
     assert r['stop_covered_entry'] is False                 # the exchange stop never moved off 0.08835

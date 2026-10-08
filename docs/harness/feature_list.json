@@ -133,6 +133,16 @@
       ],
       "status": "done",
       "evidence": "#49 root cause reproduced (soft BE under ratchet stop). Replay holdout 2026-10-06..07, 859 positions: PRE +0.25 bps [0.12,0.38] (through) / +0.38 (touch); PRE+TP30 +0.31 [0.17,0.48]; ratchet-stop cases +4.7/+7.0 bps; all policies still about -6.9 bps overall. pytest 1285 passed; git diff --check clean; ledger untouched (49 rows)."
+    },
+    {
+      "id": "alpha-gating-drawdown-20261008z2",
+      "name": "CVD shield, regime size caps ($350 hard), TP1 0.35 %, align3/early invalidation (shadow), soft-exit stop floor, honest -LOSS labels",
+      "description": "cvd_shield on (all lanes), align3 'shadow', early_invalidation 'shadow', cs_chop/mid/trend_notional 170/225/315 with cs_max_notional 350, tp1_scaled_big_pct 0.35 for >= $225, work_soft_exit floored at the exchange stop, SOFT-*/EJECT-BE with gross < 0 labelled -LOSS; tools/replay_alpha_gating.py",
+      "dependencies": [
+        "fee-optimization-soft-maker-20261008z"
+      ],
+      "status": "done",
+      "evidence": "Ledger #49-55 net -0.5546 U (fees 0.7267 > gross 0.1721); losers #51/#53/#55 aligned with macro CVD (aggTrades). Replay holdout: SHIELD -6.42 vs BASE -6.56, ALIGN3 -7.27, EARLY -7.07 bps. pytest 1313 passed; git diff --check clean; ledger untouched (55 rows)."
     }
   ]
 }

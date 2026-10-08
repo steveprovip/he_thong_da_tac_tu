@@ -22,6 +22,8 @@ BUY = ms.evaluate(sig(FLOW=('BUY', 1.0, 20), TREND=('BUY', 1.0, 20)), ms.Gates(c
 
 
 def sized(tmp_path, score=0.97, ofi=0.9, wallet=5000.0, **prof):
+    for k in ('cs_trend_notional', 'cs_mid_notional', 'cs_chop_notional'):   # 10-08z2 regime caps: own tests
+        prof.setdefault(k, 1e9)
     e, venue, feed = prod_engine(tmp_path, **prof)
     e.account = {'wallet': wallet, 'available': wallet}
     d, diag = passing_state(e)
@@ -128,7 +130,7 @@ def test_defaults():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
     assert d.conviction_sizing in ('shadow', 'on') and l.conviction_sizing == 'off'
     assert d.cs_tiers == ((0.95, 0.10), (0.90, 0.05), (0.80, 0.03)) and d.cs_super_ofi == 0.85
-    assert d.portfolio_risk_usdt == 5.0 and d.cs_max_notional == 1000.0   # 10-08z demo caps
+    assert d.portfolio_risk_usdt == 5.0 and d.cs_max_notional == 350.0   # 10-08z2 demo caps
     assert eng.SUPER_SIZE == {'SOLUSDT': 0.80, 'DOGEUSDT': 500.0} and l.portfolio_risk_usdt == 1.0
 
 

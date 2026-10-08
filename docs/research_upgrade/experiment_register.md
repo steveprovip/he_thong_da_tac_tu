@@ -132,3 +132,13 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | Z2 | thoát | TP1 50 % ở +0.30 % | như Z1 | +0.10 [0.05, 0.16] | bật demo; `tp1_scaled_pct=None` |
 | Z3 | sizing | Trần rủi ro 5 U / notional $1 000 demo | ledger (vòng y) | Kỳ vọng mỗi lệnh chưa dương (−3.6 bps) → tăng size phóng đại kết quả | bật theo yêu cầu người dùng, kèm Z4 |
 | Z4 | rủi ro | Cầu dao conviction: −5 U / 30 lệnh | test | VALIDATED (cơ học) | bật |
+
+## Vòng (z2) — 08/10/2026: alpha gating & drawdown
+
+| ID | Loại | Giả thuyết | Dữ liệu | Kết quả | Trạng thái |
+|---|---|---|---|---|---|
+| G1 | gate | CVD shield ±300 k / ±500 k giảm thua | ledger #50–55 + aggTrades replay 01–07/10 (holdout 06–07) | Ledger: thua lớn đều cùng chiều vĩ mô; replay trung tính (holdout −6.42 vs −6.56) | bật theo yêu cầu (vô hại) |
+| G2 | gate | Đồng pha 3 tầng | như G1 | Xấu hơn: −7.27 vs −6.56 holdout, −7.16 vs −6.60 dev | shadow |
+| G3 | sizing | Trần theo chế độ $170/$225/$315, cứng $350 | test | Giảm rủi ro (cơ học) | bật |
+| G5 | thoát | Cắt sớm ≤ 45 s | như G1 | Không nhất quán (dev +0.09, holdout −0.51) | shadow |
+| G6 | lỗi | Thoát maker tệ hơn stop sàn (#51), nhãn BE trên lệnh lỗ (#55) | ledger | Sửa + test | bật |

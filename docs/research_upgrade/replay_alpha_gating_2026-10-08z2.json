@@ -1,0 +1,183 @@
+{
+ "config": {
+  "maker": 2.0,
+  "taker": 5.0,
+  "slip": 1.0,
+  "early_s": 45.0,
+  "early_vel_usd_s": 50000.0,
+  "shield": {
+   "cvd60": 300000.0,
+   "cvd3m": 500000.0
+  },
+  "holdout": [
+   "2026-10-06",
+   "2026-10-07"
+  ]
+ },
+ "results": {
+  "dev|BASE": {
+   "n": 2051,
+   "net_bps": -6.595,
+   "ci95": [
+    -7.16,
+    -6.0
+   ],
+   "win_rate": 0.315,
+   "sum_bps": -13527.1,
+   "exits": {
+    "TIME": 1403,
+    "SOFT": 600,
+    "SL": 36,
+    "STOP": 12
+   }
+  },
+  "holdout|BASE": {
+   "n": 859,
+   "net_bps": -6.56,
+   "ci95": [
+    -7.36,
+    -5.65
+   ],
+   "win_rate": 0.3,
+   "sum_bps": -5634.8,
+   "exits": {
+    "TIME": 615,
+    "SOFT": 223,
+    "SL": 18,
+    "STOP": 3
+   }
+  },
+  "dev|SHIELD": {
+   "n": 2035,
+   "net_bps": -6.817,
+   "ci95": [
+    -7.3,
+    -6.3
+   ],
+   "win_rate": 0.31,
+   "sum_bps": -13873.1,
+   "exits": {
+    "TIME": 1402,
+    "SOFT": 577,
+    "SL": 45,
+    "STOP": 11
+   }
+  },
+  "holdout|SHIELD": {
+   "n": 850,
+   "net_bps": -6.415,
+   "ci95": [
+    -7.34,
+    -5.5
+   ],
+   "win_rate": 0.298,
+   "sum_bps": -5452.7,
+   "exits": {
+    "TIME": 619,
+    "SOFT": 214,
+    "SL": 14,
+    "STOP": 3
+   }
+  },
+  "dev|ALIGN3": {
+   "n": 1939,
+   "net_bps": -7.158,
+   "ci95": [
+    -7.71,
+    -6.56
+   ],
+   "win_rate": 0.298,
+   "sum_bps": -13878.5,
+   "exits": {
+    "TIME": 1334,
+    "SOFT": 555,
+    "SL": 41,
+    "STOP": 9
+   }
+  },
+  "holdout|ALIGN3": {
+   "n": 815,
+   "net_bps": -7.27,
+   "ci95": [
+    -8.04,
+    -6.48
+   ],
+   "win_rate": 0.283,
+   "sum_bps": -5925.0,
+   "exits": {
+    "TIME": 600,
+    "SOFT": 201,
+    "SL": 11,
+    "STOP": 3
+   }
+  },
+  "dev|EARLY": {
+   "n": 2112,
+   "net_bps": -6.504,
+   "ci95": [
+    -7.03,
+    -5.95
+   ],
+   "win_rate": 0.311,
+   "sum_bps": -13735.6,
+   "exits": {
+    "TIME": 1396,
+    "SOFT": 598,
+    "EARLY": 81,
+    "SL": 25,
+    "STOP": 12
+   }
+  },
+  "holdout|EARLY": {
+   "n": 885,
+   "net_bps": -7.072,
+   "ci95": [
+    -7.88,
+    -6.2
+   ],
+   "win_rate": 0.279,
+   "sum_bps": -6258.4,
+   "exits": {
+    "TIME": 614,
+    "SOFT": 218,
+    "SL": 18,
+    "STOP": 3,
+    "EARLY": 32
+   }
+  },
+  "dev|ALIGN3_EARLY": {
+   "n": 1992,
+   "net_bps": -6.858,
+   "ci95": [
+    -7.46,
+    -6.24
+   ],
+   "win_rate": 0.293,
+   "sum_bps": -13661.9,
+   "exits": {
+    "TIME": 1312,
+    "SOFT": 570,
+    "SL": 28,
+    "EARLY": 73,
+    "STOP": 9
+   }
+  },
+  "holdout|ALIGN3_EARLY": {
+   "n": 846,
+   "net_bps": -6.994,
+   "ci95": [
+    -7.72,
+    -6.28
+   ],
+   "win_rate": 0.279,
+   "sum_bps": -5916.9,
+   "exits": {
+    "TIME": 578,
+    "SOFT": 209,
+    "SL": 11,
+    "EARLY": 45,
+    "STOP": 3
+   }
+  }
+ }
+}

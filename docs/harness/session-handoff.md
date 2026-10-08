@@ -81,3 +81,6 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 ## Handoff — 2026-10-08 (z)
 - After the user restarts demo: check SOFT-PRESTOP exits vs RATCHET exchange exits (exit_mode, fee_bps) in the ledger; expected fewer 6 bps exits. The conviction breaker pauses sizing after -5 U over 30 conviction trades (clip 'breaker ...' on order rows).
 - Entry edge is still the binding problem (every exit policy negative overall in replay).
+
+## Handoff — 2026-10-08 (z2)
+- After restart: watch CVD_SHIELD in scanner.funnel, 'align3' and 'early_invalid' fields on ledger rows (shadow evidence), '-LOSS' suffixes, and conviction 'regime' caps. Re-run tools/replay_alpha_gating.py / ledger analysis after ~50 trades before enabling align3 or early_invalidation.
