@@ -214,6 +214,6 @@ def test_portfolio_snapshot_and_desk(tmp_path):
 
 def test_portfolio_defaults():
     p = eng.PROFILES['demo']
-    assert (p.multi_slot, p.max_positions, p.portfolio_risk_usdt, p.portfolio_margin_frac) == (True, 3, 1.0, 0.20)
+    assert (p.multi_slot, p.max_positions, p.portfolio_risk_usdt, p.portfolio_margin_frac) == (True, 3, 5.0, 0.20)   # 10-08z demo risk cap 5 U (was 1.0)
     assert (p.convex_score, p.convex_ofi, p.convex_cvd60_usd, p.convex_mult, p.convex_top_mult) == (0.90, 0.65, 1e6, 1.5, 2.0)
     assert (p.ratchet_trigger_pct, p.ratchet_lock_pct) == (0.15, 0.08) and p.adopt_external

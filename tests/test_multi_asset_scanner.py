@@ -68,6 +68,10 @@ async def scanner(tmp_path, feeds=None, **prof):
     prof.setdefault('ratchet2', False)
     prof.setdefault('adaptive_ker', 'off')       # 10-08x adaptive KER: test_chop_deadlock_resolution.py
     prof.setdefault('conviction_sizing', 'off')  # 10-08y conviction sizing: test_position_sizing_10pct.py
+    prof.setdefault('pre_stop_maker', False)     # 10-08z pre-stop maker / scaled TP1 / demo caps: test_fee_optimization_soft_maker.py
+    prof.setdefault('tp1_scaled_pct', None)
+    prof.setdefault('portfolio_risk_usdt', 1.0)
+    prof.setdefault('cs_max_notional', None)
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))

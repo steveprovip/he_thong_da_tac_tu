@@ -123,3 +123,12 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | Y2 | sizing | 10 % vốn rủi ro tại stop | như Y1 | Cần 23x; P(DD ≥ 50 %) 95 % (null 75 %) | **REJECTED** |
 | Y3 | thanh khoản | 4.35 SOL / 5 500 DOGE trượt giá | depth20 + aggTrades 30 phút demo/mainnet | Trượt 0 bps theo độ sâu hiển thị; khớp maker demo 3 s ≤ 10 % (cận trên) | ràng buộc là khớp, không phải impact |
 | Y4 | sizing | Dynamic Conviction Sizing 3/5/10 % | code + test | score chưa hiệu chuẩn (≥ 0.95: −1.0 bps) | **shadow** (`cs_*` trên order row); `conviction_sizing='on'` |
+
+## Vòng (z) — 08/10/2026: thất thoát phí khi thoát
+
+| ID | Loại | Giả thuyết / thay đổi | Dữ liệu | Kết quả | Trạng thái / rollback |
+|---|---|---|---|---|---|
+| Z1 | thoát | Pre-stop maker (tier mềm ≥ stop sàn + 0.04 %) giảm phí taker | aggTrades 01–07/10, holdout 06–07, 859 vị thế, 1 lần chạy + 2 độ nhạy | +0.25 bps [0.12, 0.38] (xuyên) / +0.38 (chạm); ca ratchet-stop +4.7 / +7.0 bps | **bật**; `pre_stop_maker=False` |
+| Z2 | thoát | TP1 50 % ở +0.30 % | như Z1 | +0.10 [0.05, 0.16] | bật demo; `tp1_scaled_pct=None` |
+| Z3 | sizing | Trần rủi ro 5 U / notional $1 000 demo | ledger (vòng y) | Kỳ vọng mỗi lệnh chưa dương (−3.6 bps) → tăng size phóng đại kết quả | bật theo yêu cầu người dùng, kèm Z4 |
+| Z4 | rủi ro | Cầu dao conviction: −5 U / 30 lệnh | test | VALIDATED (cơ học) | bật |

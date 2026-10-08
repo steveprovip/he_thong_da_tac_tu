@@ -77,3 +77,7 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 ## Handoff — 2026-10-08 (y)
 - Sizing was NOT raised. If the user wants larger demo sizes: conviction_sizing='on' plus an explicit portfolio_risk_usdt (e.g. 2.5 U for a 10 % SOL tier), pre-registered stop rule: after >= 50 trades under one policy, revert unless the bps/trade CI95 is > 0. Never risk-at-stop 10 %.
 - Re-run tools/simulate_position_sizing.py after each ~50 new trades; cs_* fields on order rows show what the conviction tiers would have sized.
+
+## Handoff — 2026-10-08 (z)
+- After the user restarts demo: check SOFT-PRESTOP exits vs RATCHET exchange exits (exit_mode, fee_bps) in the ledger; expected fewer 6 bps exits. The conviction breaker pauses sizing after -5 U over 30 conviction trades (clip 'breaker ...' on order rows).
+- Entry edge is still the binding problem (every exit policy negative overall in replay).

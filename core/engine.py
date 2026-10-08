@@ -392,6 +392,19 @@ class Profile:
     conviction_sizing: str = 'shadow'
     cs_tiers: tuple = ((0.95, 0.10), (0.90, 0.05), (0.80, 0.03))
     cs_super_ofi: float = 0.85
+    cs_max_notional: Optional[float] = None   # 10-08z hard notional ceiling for a conviction size (demo $1 000)
+    cs_breaker_usdt: float = 5.0        # 10-08z: conviction-sized trades lost >= 5 U over the last 30 -> back to the
+    cs_breaker_window: int = 30         # normal size until the window recovers (logged, no manual step needed)
+    # 10-08z pre-stop maker exit: once the EXCHANGE stop is in profit (ratchet), the soft maker exit level is kept
+    # at least pre_stop_gap_pct beyond it, so a retrace meets the post-only exit BEFORE the taker stop (#49: soft BE
+    # +0.06 % sat under the ratchet stop +0.08 % -> STOP_MARKET, 6 bps of fees).  Replay 10/06-07 holdout:
+    # +0.25 bps per position [0.12, 0.38] (fill through) / +0.38 [0.24, 0.53] (fill at the touch); on ratchet-stop
+    # cases +4.7 / +7.0 bps.  The exchange stop stays as the safety net.
+    pre_stop_maker: bool = True
+    pre_stop_gap_pct: float = 0.04
+    # 10-08z scaled TP1: the resting 50 % maker TP sits at +tp1_scaled_pct (TREND only, when the size splits);
+    # the runner keeps the ATR plan (net RR gate still evaluates the ATR TP).  Replay: +0.08 bps [0.04, 0.14].
+    tp1_scaled_pct: Optional[float] = 0.30
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -412,14 +425,15 @@ ATR15_FLOOR = {'BTCUSDT': 0.10}
 PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
-    'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on'),
+    'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
+                    portfolio_risk_usdt=5.0, cs_max_notional=1000.0),   # 10-08z demo: risk cap 5 U, $1 000 ceiling
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
                     alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off',
-                    conviction_sizing='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
+                    conviction_sizing='off', tp1_scaled_pct=None),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -1104,17 +1118,33 @@ class Engine:
             return out
         wallet = self.account.get('wallet') or self.account.get('available') or 0.0
         notional = out['frac'] * wallet
+        br = self.cs_breaker()
+        if br is not None:
+            out.update(clip=br, qty=None)                          # breaker: keep the normal size
+            return out
         risk_pct = (base.sl_pct + (p.maker_bps + p.taker_bps + p.slip_bps) / 100.0) / 100.0
         free_risk = max(0.0, self.risk_cap() - sum(o.risk_at_stop() for o in self.open_peers()))
         free_margin = max(0.0, p.portfolio_margin_frac * wallet - sum(o.margin_used() for o in self.open_peers()))
         lims = {'risk cap': free_risk / risk_pct if risk_pct > 0 else notional,
-                'margin cap': free_margin * p.leverage}
+                'margin cap': free_margin * p.leverage,
+                'notional ceiling': p.cs_max_notional if p.cs_max_notional else notional}
         for why, lim in lims.items():
             if lim < notional - 1e-9:
                 notional, out['clip'] = lim, why
         q = floor_step(notional / price, self.spec['step'])
         out.update(notional=round(q * price, 4), qty=q if q >= self.min_qty(price) - 1e-12 else None)
         return out
+
+    def cs_breaker(self) -> Optional[str]:
+        """10-08z: net PnL of the last cs_breaker_window conviction-sized trades on this coin <= -cs_breaker_usdt
+        -> 'breaker ...' (conviction sizing pauses), else None."""
+        rows = [r for r in self.all_rows if r.get('symbol', self.p.symbol) == self.p.symbol
+                and (r.get('conviction') or {}).get('qty') and r.get('pnl') is not None]
+        rows = rows[-self.p.cs_breaker_window:]
+        net = sum(float(r['pnl']) for r in rows)
+        if rows and net <= -self.p.cs_breaker_usdt + 1e-12:
+            return f'breaker {net:+.2f} U over {len(rows)} conviction trades'
+        return None
 
     def alt_boosted(self, d: Decision, diag: dict) -> bool:
         """SOL/DOGE priority: raw swarm vote (not the JEV lift) >= 0.90."""
@@ -2083,6 +2113,11 @@ class Engine:
             sl, tp = brackets(side, fill, pl, tick)
             half = floor_step(qty * base.tp1_frac, step)
             split = half >= self.spec['min_qty'] and qty - half >= self.spec['min_qty'] - 1e-12
+            tp_plan = tp
+            if (self.p.tp1_scaled_pct and split and tag == 'AUTO' and path not in ('MR', 'SCALP')
+                    and self.p.tp1_scaled_pct < pl['tp_pct']):          # 10-08z: 50 % maker TP1 closer, runner trails
+                d1 = 1 if side == 'BUY' else -1
+                tp = round_tick(fill * (1 + d1 * self.p.tp1_scaled_pct / 100.0), tick, 'up' if d1 > 0 else 'down')
             opp = 'SELL' if side == 'BUY' else 'BUY'
             self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': qty_str, 'entry': fill,
                         'opened': self.clock(), 'opened_ms': posted_ms - 1000, 'sl': sl, 'tp': tp,
@@ -2096,6 +2131,7 @@ class Engine:
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
                         'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
+                        'tp_plan': tp_plan,
                         'conviction': {k[3:]: v for k, v in xm.items() if k.startswith('cs_')} or None,
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
                         **({'eject_s': self.p.scalp_be_s, 'eject_mfe': 1e9} if path == 'SCALP' else {}),
@@ -2663,6 +2699,10 @@ class Engine:
             cands.append((self.shield_price(p), 'BE'))
         if p['mfe_pct'] >= self.p.lock_trigger_pct:
             cands.append((self.plock_price(p), 'PROFIT'))
+        if self.p.pre_stop_maker and p.get('sl') and d * (p['sl'] - p['entry']) > 0:
+            # 10-08z: exchange stop in profit -> meet the retrace with a maker exit before the taker stop
+            cands.append((round_tick(p['sl'] * (1 + d * self.p.pre_stop_gap_pct / 100.0), self.spec['tick'],
+                                     'up' if d > 0 else 'down'), 'PRESTOP'))
         gaps = []
         if p['mfe_pct'] >= self.p.trail_activate_pct:
             gaps.append(self.p.trail_tight_gap_pct if p['mfe_pct'] >= self.p.trail_tight_pct else self.p.trail_gap_pct)
@@ -2682,9 +2722,11 @@ class Engine:
                                       f'{self.p.fee_shield_pct}% and entry + fees + {self.p.be_offset_pct}%)',
                                 'PROFIT': f'MARIN T2b PROFIT LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
                                           f'{self.p.lock_pct}%)',
-                                'TRAIL': f'MARIN T4 TRAIL {p.get("trail_gap")}% behind peak {p["peak"]:g} -> {px:g}'}[k])
+                                'TRAIL': f'MARIN T4 TRAIL {p.get("trail_gap")}% behind peak {p["peak"]:g} -> {px:g}',
+                                'PRESTOP': f'MARIN PRE-STOP MAKER exit level {px:g} = exchange stop {p["sl"]:g} '
+                                           f'+ {self.p.pre_stop_gap_pct}% (maker before the taker stop)'}[k])
                 level, kind = px, k
-        if kind in ('BE', 'PROFIT', 'TRAIL'):
+        if kind in ('BE', 'PROFIT', 'TRAIL', 'PRESTOP'):
             p['be_locked'] = True
         if kind in ('PROFIT', 'TRAIL'):
             p['plock'] = True

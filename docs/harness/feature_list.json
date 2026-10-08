@@ -123,6 +123,16 @@
       ],
       "status": "done",
       "evidence": "Ledger 46 rows: SOL -1.98 bps/trade [-14.6,+9.1], Kelly f* < 0; 10 % notional median -19.4 U / 200 trades, DD p99 1.2 %; Option B P(DD>=50 %) 94.6 %; 4.35 SOL slippage 0 bps, demo maker fill <= 10 %/3 s. pytest 1272 passed; git diff --check clean; ledger untouched. Sizing not raised."
+    },
+    {
+      "id": "fee-optimization-soft-maker-20261008z",
+      "name": "Pre-stop maker exit, scaled TP1 0.30 %, demo caps 5 U / $1 000 with conviction breaker",
+      "description": "PRESTOP soft tier keeps the maker exit >= exchange stop + 0.04 % once the stop is in profit; 50 % TP1 at +0.30 % (TREND, demo); demo portfolio_risk_usdt 5.0 and cs_max_notional 1000; cs_breaker (-5 U over 30 conviction trades); tools/replay_exit_policies.py",
+      "dependencies": [
+        "position-sizing-10pct-20261008y"
+      ],
+      "status": "done",
+      "evidence": "#49 root cause reproduced (soft BE under ratchet stop). Replay holdout 2026-10-06..07, 859 positions: PRE +0.25 bps [0.12,0.38] (through) / +0.38 (touch); PRE+TP30 +0.31 [0.17,0.48]; ratchet-stop cases +4.7/+7.0 bps; all policies still about -6.9 bps overall. pytest 1285 passed; git diff --check clean; ledger untouched (49 rows)."
     }
   ]
 }

@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.26 Cập nhật 08/10/2026 (z) — Pre-stop maker exit, TP1 0.30 %, trần demo 5 U / $1 000
+- **#49**: stop sàn ratchet (+0.08 %) nằm TRÊN mức thoát maker mềm (+0.06 %) → STOP_MARKET taker, phí 6 bps ăn 85 % lãi gộp. Đã sửa: khi stop sàn ở vùng lãi, tier mềm `PRESTOP` = stop + 0.04 % (post-only, stop sàn giữ làm lưới an toàn).
+- **TP1 từng phần**: 50 % maker ở +0.30 %, runner theo ATR + trail. Replay holdout (`tools/replay_exit_policies.py`): +0.31 bps/vị thế [0.17, 0.48]; ca ratchet-stop +4.7 bps — nhưng tổng thể vẫn âm ~−6.9 bps (lỗ ở lệnh vào).
+- **Demo**: trần rủi ro 5 U, trần notional conviction $1 000, cầu dao −5 U / 30 lệnh conviction. Live không đổi. Test: 1285 passed. Chi tiết: `docs/research_upgrade/report_fee_optimization_soft_maker_2026-10-08z.md`.
+
 ### 8.25 Cập nhật 08/10/2026 (y) — Định cỡ vị thế 10 % ngân sách
 - **Tính lại**: ledger 46 lệnh; SOL 15 lệnh lãi +0.266 U nhưng −1.98 bps/lệnh trên notional (CI [−14.6, +9.1]); thắng TB +11.4 bps vs thua TB −22.0 bps (RR thực 0.52; 1.94 là RR kế hoạch).
 - **Monte Carlo** (`tools/simulate_position_sizing.py`, 10 000 × 200 lệnh): 10 % notional không cháy (DD p99 ~1.2 %) nhưng PnL trung vị −19 U; Kelly f* < 0. 10 % rủi ro tại stop: cần 23x, P(DD ≥ 50 %) ≈ 95 %.

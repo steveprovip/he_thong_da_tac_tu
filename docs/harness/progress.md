@@ -193,3 +193,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Liquidity (public depth20 + aggTrades, demo and mainnet): 0 bps taker slippage at 4.35 SOL / 5 500 DOGE; demo maker fill upper bound 10 % per 3 s at 4.35 SOL.
 - Patches: Profile conviction_sizing/cs_tiers/cs_super_ofi; Engine.conviction_size (clip to free risk/margin caps), cs_* on order rows, 'conviction' on ledger rows. Demo shadow, live off. No cap or size raised.
 - Checks: python -m pytest -q 1272 passed; git diff --check clean.
+
+## 2026-10-08 (z) Fee drag: pre-stop maker exit, scaled TP1, demo caps
+- Snapshot docs/research_upgrade/snapshot_2026-10-08z; ledger 49 rows. #49 BUY 2.04 SOL: ratchet exchange stop +0.08 % above the soft BE level +0.06 % -> STOP_MARKET, fee 6.0 bps (demo taker 4), net +0.0242.
+- Patches: Profile pre_stop_maker/pre_stop_gap_pct (PRESTOP soft tier), tp1_scaled_pct 0.30 (demo; live None), cs_max_notional/cs_breaker_*; demo portfolio_risk_usdt 5.0 + cs_max_notional 1000; pos tp_plan.
+- Replay tools/replay_exit_policies.py (aggTrades 10/01-07, holdout 06-07): PRE +0.25 [0.12,0.38] (through) / +0.38 (touch), PRE+TP30 +0.31 [0.17,0.48]; all policies still about -6.9 bps per position.
+- Checks: python -m pytest -q 1285 passed; git diff --check clean. No restart, no order, live unchanged.

@@ -1,0 +1,675 @@
+{
+ "touch_taker5": {
+  "config": {
+   "maker": 2.0,
+   "taker": 5.0,
+   "slip": 1.0,
+   "hold_s": 300.0,
+   "holdout": [
+    "2026-10-06",
+    "2026-10-07"
+   ],
+   "sl": {
+    "SOLUSDT": 0.35,
+    "DOGEUSDT": 0.5
+   },
+   "tp1_cur": {
+    "SOLUSDT": 0.88,
+    "DOGEUSDT": 1.25
+   }
+  },
+  "results": {
+   "dev|CUR": {
+    "n": 2051,
+    "net_bps": -6.939,
+    "ci95": [
+     -7.5,
+     -6.34
+    ],
+    "win_rate": 0.24,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 1459,
+     "SOFT": 391,
+     "STOP": 165,
+     "SL": 36
+    }
+   },
+   "dev|PRE": {
+    "n": 2051,
+    "net_bps": -6.627,
+    "ci95": [
+     -7.22,
+     -6.02
+    ],
+    "win_rate": 0.315,
+    "diff_vs_cur": 0.311,
+    "ci95_diff": [
+     0.16,
+     0.46
+    ],
+    "exits": {
+     "TIME": 1403,
+     "SOFT": 600,
+     "SL": 36,
+     "STOP": 12
+    }
+   },
+   "dev|TP30": {
+    "n": 2051,
+    "net_bps": -6.913,
+    "ci95": [
+     -7.45,
+     -6.32
+    ],
+    "win_rate": 0.24,
+    "diff_vs_cur": 0.026,
+    "ci95_diff": [
+     -0.05,
+     0.09
+    ],
+    "exits": {
+     "TIME": 1459,
+     "SOFT": 391,
+     "STOP": 165,
+     "SL": 36
+    }
+   },
+   "dev|PRE_TP30": {
+    "n": 2051,
+    "net_bps": -6.595,
+    "ci95": [
+     -7.16,
+     -6.0
+    ],
+    "win_rate": 0.315,
+    "diff_vs_cur": 0.343,
+    "ci95_diff": [
+     0.19,
+     0.5
+    ],
+    "exits": {
+     "TIME": 1403,
+     "SOFT": 600,
+     "SL": 36,
+     "STOP": 12
+    }
+   },
+   "holdout|CUR": {
+    "n": 859,
+    "net_bps": -6.99,
+    "ci95": [
+     -7.79,
+     -6.13
+    ],
+    "win_rate": 0.234,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 635,
+     "STOP": 60,
+     "SOFT": 146,
+     "SL": 18
+    }
+   },
+   "holdout|PRE": {
+    "n": 859,
+    "net_bps": -6.612,
+    "ci95": [
+     -7.41,
+     -5.73
+    ],
+    "win_rate": 0.3,
+    "diff_vs_cur": 0.378,
+    "ci95_diff": [
+     0.24,
+     0.53
+    ],
+    "exits": {
+     "TIME": 615,
+     "SOFT": 223,
+     "SL": 18,
+     "STOP": 3
+    }
+   },
+   "holdout|TP30": {
+    "n": 859,
+    "net_bps": -6.905,
+    "ci95": [
+     -7.72,
+     -6.03
+    ],
+    "win_rate": 0.234,
+    "diff_vs_cur": 0.084,
+    "ci95_diff": [
+     0.04,
+     0.14
+    ],
+    "exits": {
+     "TIME": 635,
+     "STOP": 60,
+     "SOFT": 146,
+     "SL": 18
+    }
+   },
+   "holdout|PRE_TP30": {
+    "n": 859,
+    "net_bps": -6.56,
+    "ci95": [
+     -7.36,
+     -5.65
+    ],
+    "win_rate": 0.3,
+    "diff_vs_cur": 0.43,
+    "ci95_diff": [
+     0.28,
+     0.6
+    ],
+    "exits": {
+     "TIME": 615,
+     "SOFT": 223,
+     "SL": 18,
+     "STOP": 3
+    }
+   }
+  },
+  "ratchet_stop_cases": {
+   "CUR": {
+    "n": 225,
+    "net_bps": 0.0,
+    "exits": {
+     "STOP": 225,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE": {
+    "n": 225,
+    "net_bps": 6.982,
+    "exits": {
+     "STOP": 15,
+     "SOFT": 210,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "TP30": {
+    "n": 225,
+    "net_bps": 0.0,
+    "exits": {
+     "STOP": 225,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE_TP30": {
+    "n": 225,
+    "net_bps": 6.982,
+    "exits": {
+     "STOP": 15,
+     "SOFT": 210,
+     "SL": 0,
+     "TIME": 0
+    }
+   }
+  }
+ },
+ "touch_taker4": {
+  "config": {
+   "maker": 2.0,
+   "taker": 4.0,
+   "slip": 1.0,
+   "hold_s": 300.0,
+   "holdout": [
+    "2026-10-06",
+    "2026-10-07"
+   ],
+   "sl": {
+    "SOLUSDT": 0.35,
+    "DOGEUSDT": 0.5
+   },
+   "tp1_cur": {
+    "SOLUSDT": 0.88,
+    "DOGEUSDT": 1.25
+   }
+  },
+  "results": {
+   "dev|CUR": {
+    "n": 2051,
+    "net_bps": -6.129,
+    "ci95": [
+     -6.67,
+     -5.55
+    ],
+    "win_rate": 0.334,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 1459,
+     "SOFT": 391,
+     "STOP": 165,
+     "SL": 36
+    }
+   },
+   "dev|PRE": {
+    "n": 2051,
+    "net_bps": -5.92,
+    "ci95": [
+     -6.48,
+     -5.33
+    ],
+    "win_rate": 0.334,
+    "diff_vs_cur": 0.209,
+    "ci95_diff": [
+     0.07,
+     0.35
+    ],
+    "exits": {
+     "TIME": 1403,
+     "SOFT": 600,
+     "SL": 36,
+     "STOP": 12
+    }
+   },
+   "dev|TP30": {
+    "n": 2051,
+    "net_bps": -6.112,
+    "ci95": [
+     -6.63,
+     -5.53
+    ],
+    "win_rate": 0.334,
+    "diff_vs_cur": 0.017,
+    "ci95_diff": [
+     -0.05,
+     0.08
+    ],
+    "exits": {
+     "TIME": 1459,
+     "SOFT": 391,
+     "STOP": 165,
+     "SL": 36
+    }
+   },
+   "dev|PRE_TP30": {
+    "n": 2051,
+    "net_bps": -5.894,
+    "ci95": [
+     -6.43,
+     -5.33
+    ],
+    "win_rate": 0.334,
+    "diff_vs_cur": 0.235,
+    "ci95_diff": [
+     0.09,
+     0.38
+    ],
+    "exits": {
+     "TIME": 1403,
+     "SOFT": 600,
+     "SL": 36,
+     "STOP": 12
+    }
+   },
+   "holdout|CUR": {
+    "n": 859,
+    "net_bps": -6.159,
+    "ci95": [
+     -6.94,
+     -5.32
+    ],
+    "win_rate": 0.328,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 635,
+     "STOP": 60,
+     "SOFT": 146,
+     "SL": 18
+    }
+   },
+   "holdout|PRE": {
+    "n": 859,
+    "net_bps": -5.871,
+    "ci95": [
+     -6.67,
+     -5.01
+    ],
+    "win_rate": 0.328,
+    "diff_vs_cur": 0.288,
+    "ci95_diff": [
+     0.16,
+     0.42
+    ],
+    "exits": {
+     "TIME": 615,
+     "SOFT": 223,
+     "SL": 18,
+     "STOP": 3
+    }
+   },
+   "holdout|TP30": {
+    "n": 859,
+    "net_bps": -6.082,
+    "ci95": [
+     -6.87,
+     -5.23
+    ],
+    "win_rate": 0.328,
+    "diff_vs_cur": 0.078,
+    "ci95_diff": [
+     0.03,
+     0.13
+    ],
+    "exits": {
+     "TIME": 635,
+     "STOP": 60,
+     "SOFT": 146,
+     "SL": 18
+    }
+   },
+   "holdout|PRE_TP30": {
+    "n": 859,
+    "net_bps": -5.824,
+    "ci95": [
+     -6.61,
+     -4.94
+    ],
+    "win_rate": 0.328,
+    "diff_vs_cur": 0.335,
+    "ci95_diff": [
+     0.19,
+     0.49
+    ],
+    "exits": {
+     "TIME": 615,
+     "SOFT": 223,
+     "SL": 18,
+     "STOP": 3
+    }
+   }
+  },
+  "ratchet_stop_cases": {
+   "CUR": {
+    "n": 225,
+    "net_bps": 1.0,
+    "exits": {
+     "STOP": 225,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE": {
+    "n": 225,
+    "net_bps": 7.049,
+    "exits": {
+     "STOP": 15,
+     "SOFT": 210,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "TP30": {
+    "n": 225,
+    "net_bps": 1.0,
+    "exits": {
+     "STOP": 225,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE_TP30": {
+    "n": 225,
+    "net_bps": 7.049,
+    "exits": {
+     "STOP": 15,
+     "SOFT": 210,
+     "SL": 0,
+     "TIME": 0
+    }
+   }
+  }
+ },
+ "through_taker5": {
+  "config": {
+   "maker_fill": "through",
+   "maker": 2.0,
+   "taker": 5.0,
+   "slip": 1.0,
+   "hold_s": 300.0,
+   "holdout": [
+    "2026-10-06",
+    "2026-10-07"
+   ],
+   "sl": {
+    "SOLUSDT": 0.35,
+    "DOGEUSDT": 0.5
+   },
+   "tp1_cur": {
+    "SOLUSDT": 0.88,
+    "DOGEUSDT": 1.25
+   }
+  },
+  "results": {
+   "dev|CUR": {
+    "n": 2051,
+    "net_bps": -7.206,
+    "ci95": [
+     -7.78,
+     -6.58
+    ],
+    "win_rate": 0.224,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 1516,
+     "STOP": 171,
+     "SOFT": 327,
+     "SL": 37
+    }
+   },
+   "dev|PRE": {
+    "n": 2051,
+    "net_bps": -7.048,
+    "ci95": [
+     -7.64,
+     -6.43
+    ],
+    "win_rate": 0.274,
+    "diff_vs_cur": 0.158,
+    "ci95_diff": [
+     0.04,
+     0.28
+    ],
+    "exits": {
+     "TIME": 1460,
+     "SOFT": 484,
+     "STOP": 70,
+     "SL": 37
+    }
+   },
+   "dev|TP30": {
+    "n": 2051,
+    "net_bps": -7.178,
+    "ci95": [
+     -7.75,
+     -6.59
+    ],
+    "win_rate": 0.226,
+    "diff_vs_cur": 0.029,
+    "ci95_diff": [
+     -0.05,
+     0.1
+    ],
+    "exits": {
+     "TIME": 1516,
+     "STOP": 171,
+     "SOFT": 327,
+     "SL": 37
+    }
+   },
+   "dev|PRE_TP30": {
+    "n": 2051,
+    "net_bps": -7.013,
+    "ci95": [
+     -7.58,
+     -6.41
+    ],
+    "win_rate": 0.275,
+    "diff_vs_cur": 0.193,
+    "ci95_diff": [
+     0.07,
+     0.32
+    ],
+    "exits": {
+     "TIME": 1460,
+     "SOFT": 484,
+     "STOP": 70,
+     "SL": 37
+    }
+   },
+   "holdout|CUR": {
+    "n": 859,
+    "net_bps": -7.21,
+    "ci95": [
+     -7.98,
+     -6.39
+    ],
+    "win_rate": 0.225,
+    "diff_vs_cur": 0.0,
+    "ci95_diff": [
+     0.0,
+     0.0
+    ],
+    "exits": {
+     "TIME": 653,
+     "STOP": 63,
+     "SOFT": 124,
+     "SL": 19
+    }
+   },
+   "holdout|PRE": {
+    "n": 859,
+    "net_bps": -6.964,
+    "ci95": [
+     -7.74,
+     -6.12
+    ],
+    "win_rate": 0.268,
+    "diff_vs_cur": 0.246,
+    "ci95_diff": [
+     0.12,
+     0.38
+    ],
+    "exits": {
+     "TIME": 632,
+     "SOFT": 182,
+     "STOP": 26,
+     "SL": 19
+    }
+   },
+   "holdout|TP30": {
+    "n": 859,
+    "net_bps": -7.112,
+    "ci95": [
+     -7.88,
+     -6.28
+    ],
+    "win_rate": 0.226,
+    "diff_vs_cur": 0.098,
+    "ci95_diff": [
+     0.05,
+     0.16
+    ],
+    "exits": {
+     "TIME": 653,
+     "STOP": 63,
+     "SOFT": 124,
+     "SL": 19
+    }
+   },
+   "holdout|PRE_TP30": {
+    "n": 859,
+    "net_bps": -6.896,
+    "ci95": [
+     -7.67,
+     -6.04
+    ],
+    "win_rate": 0.269,
+    "diff_vs_cur": 0.313,
+    "ci95_diff": [
+     0.17,
+     0.48
+    ],
+    "exits": {
+     "TIME": 632,
+     "SOFT": 182,
+     "STOP": 26,
+     "SL": 19
+    }
+   }
+  },
+  "ratchet_stop_cases": {
+   "CUR": {
+    "n": 234,
+    "net_bps": 0.0,
+    "exits": {
+     "STOP": 234,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE": {
+    "n": 234,
+    "net_bps": 4.718,
+    "exits": {
+     "STOP": 96,
+     "SOFT": 138,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "TP30": {
+    "n": 234,
+    "net_bps": 0.222,
+    "exits": {
+     "STOP": 234,
+     "SOFT": 0,
+     "SL": 0,
+     "TIME": 0
+    }
+   },
+   "PRE_TP30": {
+    "n": 234,
+    "net_bps": 4.94,
+    "exits": {
+     "STOP": 96,
+     "SOFT": 138,
+     "SL": 0,
+     "TIME": 0
+    }
+   }
+  }
+ }
+}
