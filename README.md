@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.23 Cập nhật 08/10/2026 (w) — Super-Alpha crossing, TTL động, ratchet 2, chịu lỗi mạng
+- **Bằng chứng trước**: 54 attempt SOL/DOGE thật có vote ≥ 0.95 → sau 5 phút giá biến động tối đa 28 bps (không lần nào 50 bps), 52 % cùng chiều. Crossing taker sau 2 s: −7.1 bps/cơ hội trên demo, −9.6 bps trên mainnet (CI95 < 0). TTL dài/động cũng làm net xấu hơn (`tools/counterfactual_super_alpha.py`).
+- **Đã triển khai**: crossing fallback (cổng SOL/DOGE, vote ≥ 0.95, OFI ≥ 0.85, edge ≥ 30, trần trượt 3 bps, RR sau phí taker ≥ 1.50, chỉ IOC phần còn lại, không MARKET) và TTL động ≤ 15 s (huỷ khi đi ngược) — **mặc định shadow** (`SHADOW_CROSS` / `SHADOW_DYN`), bật bằng `super_cross='on'` / `dyn_ttl='on'`; live tắt. Ratchet tầng 2 (MFE 0.25 % → stop phí thật + 0.05 %), tầng 1 fee-true theo phí vào. Retry −1008/503 an toàn (tra clientOrderId trước khi gửi lại; IOC không gửi lại khi không rõ), orphan được thử lại mỗi sync.
+- Test: 1222 passed. Chi tiết: `docs/research_upgrade/report_breakthrough_alpha_execution_2026-10-08w.md`.
+
 ### 8.22 Cập nhật 08/10/2026 (v) — Funnel "vì sao không vào lệnh", khả thi lane, GTX không khớp, net/cơ hội
 - **Vì sao ít lệnh (snapshot 13:25)**: phiên hiện tại có 11 attempt GTX tới sàn trong 0.91 h nhưng 0 khớp; toàn log 6/54 (11 %). Có 4 lần lệnh một mình tại touch demo vẫn không khớp trong 3 s → thiếu taker trên book testnet. BTC observe-only theo thiết kế; MR (rr tối đa 0.875) và live (rr 0.474) bất khả thi với gate 1.30.
 - **Bản vá**: `churn_checks()` + `core/exec_funnel.py` đếm mọi blocker (1 Hz, theo lane, hard/cost/statistical/config); `lane_feasibility()`; dashboard hết `undefined` (UI hiện "—" khi chưa biết); nhịp REST theo quyền giao dịch thay vì symbol đang xem, focus mặc định = SOL; huỷ lệnh entry mồ côi khi có lỗi sau POST (bug tái hiện bằng test).

@@ -31,3 +31,9 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 | 15 | hftbacktest (MIT; ~1 038 commit) https://hftbacktest.readthedocs.io/en/latest/order_fill.html | Queue model: RiskAverse (chỉ trade đẩy hàng), ProbQueue (power/log, f(0)=0, f(1)=1); không mô phỏng impact. | Replay V6 không có trade → `clear` (còn bảo thủ hơn RiskAverse), `prop` (ProbQueue tuyến tính), `front` (cận trên). | Khi có aggTrade: chạy hftbacktest RiskAverse + PowerProb(n=2,3) trên cùng cơ hội; nếu xếp hạng policy đổi so với V6 thì V6 không đủ tin. |
 | 16 | Lee & Lee, Spread-Gated Hawkes-Flocking, https://arxiv.org/abs/2609.36631 (v1 29/09/2026, preprint, chưa thấy phản biện) | Mô hình best quote Hawkes có kích thích chéo phụ thuộc spread; size lệnh tối ưu dựa vào xác suất khớp **cho từ bên ngoài**. | — | Không prototype: không giải quyết nút thắt (cần xác suất khớp, chính là thứ thiếu). |
 | 17 | ReLOBGen, https://arxiv.org/abs/2609.35867 | **Không kiểm tra được** (proxy trả HTTP 429). Không dùng. | — | — |
+
+## Bổ sung 08/10/2026 (w)
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 18 | Binance USD-M General Info, mục HTTP 503 (sửa 07/10/2026) https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info | 503 "Unknown error" = trạng thái không rõ, kiểm tra trước khi gửi lại; 503 "Service Unavailable" và −1008 = thất bại, retry backoff 200/400/800 ms (3–5 lần); cancel / reduce-only miễn −1008. | W4 |
+| 19 | Biais, Foucault & Moinas, Equilibrium Fast Trading (SSRN 2024360; JFE) | Đầu tư công nghệ nhanh tạo chọn ngược và dư thừa đầu tư; không phải quy tắc khớp taker theo alpha/phí. Form ghi nhầm "Salanié". | Chỉ bối cảnh |

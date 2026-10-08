@@ -97,3 +97,12 @@ Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần
 | V7 | sizing | Floor/super size SOL/DOGE (vòng u) có cải thiện không? | ledger | — | Không đánh giá được: 0 lệnh SOL/DOGE khớp dưới policy u/v (11 attempt 0 khớp) | giữ nguyên, không tăng thêm |
 
 Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội, một lần chạy; không có tham số nào được chọn trên holdout.
+
+## Vòng (w) — 08/10/2026: Super-Alpha crossing, TTL động, ratchet 2, retry mạng
+
+| ID | Loại | Giả thuyết / thay đổi | Dữ liệu | Tiêu chí | Kết quả | Trạng thái / rollback |
+|---|---|---|---|---|---|---|
+| W1 | thực thi | Vote ≥ 0.95 → crossing taker sau 2 s GTX bắt sóng 50–80 bps, net > 0 | 54 attempt thật vote ≥ 0.95 (SOL/DOGE 07–08/10), aggTrades demo + mainnet, 1 lần chạy, không tune | net/cơ hội CI95 > 0 trên demo và mainnet | Demo −7.08 [−12.87, −1.71], mainnet −9.64 [−15.69, −3.73]; MFE 5 phút max 28 bps, 0/54 ≥ 50 bps | **REJECTED để bật**; code + shadow (`SHADOW_CROSS`); `super_cross='on'` để bật |
+| W2 | thực thi | TTL động (≤ 15 s) tăng net | như W1 | như W1 | Demo −1.43 [−4.10, 0.35] vs GTX 3 s +0.12; mainnet −5.73 vs −3.99 | shadow (`SHADOW_DYN`) |
+| W3 | thoát | Ratchet 2 ở MFE 0.25 % → stop fee-true + 0.05 %; tầng 1 fee-true theo phí vào | test | stop-out tại giá stop ≥ +5 bps net | VALIDATED (test, cơ học); kinh tế chưa đo (4/54 đạt MFE 25 bps) | bật demo; `ratchet2=False` |
+| W4 | hạ tầng | −1008/503 không làm mất lệnh hay tạo lệnh trùng | fake client | gửi lại có giới hạn, IOC không gửi lại khi không rõ | VALIDATED (test) | bật |

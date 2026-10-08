@@ -89,7 +89,9 @@ class Funnel:
         fills = sum(o[k] for k in FILLS)
         hours = max(self.clock() - self.started, 0.0) / 3600.0
         return {'intents': sent, 'fills': fills, 'partial': o['PARTIAL'], 'cancels': sum(o[k] for k in CANCELS),
-                'refused': o['REFUSED'], 'rejected': o['REJECTED'], 'shadow': o['SHADOW_SCALP'],
+                'refused': o['REFUSED'], 'rejected': o['REJECTED'],
+                'shadow': sum(n for k, n in o.items() if str(k).startswith('SHADOW')),
+                'shadow_cross': o['SHADOW_CROSS'], 'errors': o['ERROR'],
                 'fill_rate': fills / sent if sent else None,
                 'trades_per_hour': fills / hours if hours >= 1 / 60 else None}
 

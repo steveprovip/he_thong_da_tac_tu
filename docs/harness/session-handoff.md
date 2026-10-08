@@ -63,3 +63,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Decisions for the user: (a) MR lane is enabled but cannot pass net RR 1.30 (max 0.875) — keep blocked, or turn it off explicitly; lowering the gate needs a >= 53 % MR win rate on holdout (history 0/2). (b) Live brackets are infeasible (rr 0.474: loss-budget SL 0.89 % > TP 0.50 %). (c) Candidate `peg=False` (replay +0.23 bps/opportunity on mainnet books) — not applied.
 - Evidence: placement does not create edge; every entry policy is negative after fees on mainnet replay, so more fills alone will not fix P&L. Next data: aggTrade + bookTicker for SOL/DOGE (queue replay with hftbacktest RiskAverse/ProbQueue, MR VWAP), user-stream fill time `T`, >= 200 attempts under one policy.
 - Rollback: see docs/research_upgrade/report_before_after_2026-10-08v.md §10.
+
+## Handoff — 2026-10-08 (w)
+- New code needs a user restart of demo. Then SHADOW_CROSS / SHADOW_DYN rows appear in data/engine_orders.jsonl (would-be taker price, OFI, taker RR). After >= 30 rows re-run tools/counterfactual_super_alpha.py; propose super_cross='on' only if net per opportunity has CI95 > 0 on demo AND mainnet.
+- Decision for the user: super_cross / dyn_ttl stay shadow (evidence negative) unless the user explicitly wants to test them on demo money (`super_cross='on'`, `dyn_ttl='on'` in PROFILES['demo']); live is always off.
+- Ratchet tier 2 and venue retries are active in demo.

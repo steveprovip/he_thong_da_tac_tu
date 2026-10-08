@@ -93,6 +93,16 @@
       ],
       "status": "done",
       "evidence": "Snapshot 13:25 Asia/Saigon: 54 sent / 6 filled (11.1 %); since 12:27 11 sent / 0 filled. Feasibility: TREND demo rr 1.94-2.39, MR max 0.875, live 0.474. Replay holdout 2026-09-08: every placement net/opportunity < 0, SKIP +1.87 bps [1.52, 2.18] vs PEG_T3; TTL 5/10 s and IOC worse. pytest 1188 passed; git diff --check clean; ledger unchanged. No runtime restart, no order sent, no size/TTL/peg change; no economic improvement demonstrated."
+    },
+    {
+      "id": "breakthrough-alpha-execution-20261008w",
+      "name": "Super-Alpha crossing fallback, dynamic TTL, ratchet tier 2, venue retries",
+      "description": "Crossing fallback (IOC remainder, 3 bps cap, taker RR >= 1.50, SOL/DOGE vote >= 0.95, OFI >= 0.85, edge >= 30) and dynamic TTL <= 15 s implemented, default shadow in demo and off in live; fee-true ratchet tiers; -1008/503 retry with clientOrderId reconciliation; orphan retry in sync; counterfactual tool on real attempts",
+      "dependencies": [
+        "execution-funnel-feasibility-20261008v"
+      ],
+      "status": "done",
+      "evidence": "Counterfactual on 54 real vote>=0.95 attempts (aggTrades demo+mainnet): GTX 2 s -> cross -7.08 bps/opp demo [-12.87,-1.71], -9.64 mainnet [-15.69,-3.73]; 5-min MFE max 28 bps. pytest 1222 passed; git diff --check clean; ledger untouched (44 rows). Not enabled: negative expected value."
     }
   ]
 }

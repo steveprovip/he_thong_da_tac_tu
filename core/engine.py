@@ -331,6 +331,40 @@ class Profile:
     edge_ratio_min: float = 2.5
     mock_balance: float = 1000.0
     test_hold_s: Optional[float] = None
+    # 10-08w Super-Alpha crossing: GTX unfilled after super_cross_after_s and the signal still qualifies (SOL/DOGE,
+    # vote >= 0.95, OFI >= 0.85 with the trade, edge >= 30 bps, fee-true RR with a taker entry >= 1.50, VPIN not
+    # toxic) -> cancel the GTX, take ONLY the remaining quantity with a LIMIT IOC capped at touch +/- 3 bps.
+    # 'off' | 'shadow' (log SHADOW_CROSS with the would-be taker price, no order) | 'on'.  Shadow by default:
+    # counterfactual of the 54 real attempts with vote >= 0.95 (10-08): taker entry -6.8 bps / opportunity on the
+    # demo venue [CI -12.6, -1.7], -12.7 bps on mainnet [-18.3, -7.0]; no 5-min move reached 50 bps.
+    super_cross: str = 'shadow'
+    super_cross_after_s: float = 2.0
+    super_cross_score: float = 0.95
+    super_cross_ofi: float = 0.85
+    super_cross_edge_bps: float = 30.0
+    super_cross_slip_bps: float = 3.0
+    super_cross_rr_min: float = 1.50
+    super_cross_symbols: tuple = ('SOLUSDT', 'DOGEUSDT')
+    # 10-08w dynamic TTL: past gtx_ttl_s keep the GTX resting (1 s at a time, at most dyn_ttl_max_s from the post)
+    # while OFI L10 stays >= dyn_ttl_ofi with the trade, the touch has not left > dyn_ttl_away_pct and the mid has
+    # not moved >= dyn_ttl_adverse_bps against the trade (then cancel at once).  'off' | 'shadow' | 'on'.  Shadow:
+    # counterfactual 10/15/20 s TTL on the same attempts: more fills, lower net per opportunity.
+    dyn_ttl: str = 'shadow'
+    dyn_ttl_max_s: float = 15.0
+    dyn_ttl_score: float = 0.90
+    dyn_ttl_ofi: float = 0.50
+    dyn_ttl_away_pct: float = 0.05
+    dyn_ttl_adverse_bps: float = 3.0
+    # 10-08w second exchange-stop ratchet: MFE >= +0.25 % -> stop at entry +/- (own fees + slip + 0.05 %) so a
+    # stop-out at the stop price is net >= +0.05 % (gaps / stop slippage can still make it less).
+    ratchet2: bool = True
+    ratchet2_trigger_pct: float = 0.25
+    ratchet2_buffer_pct: float = 0.05
+    # 10-08w venue retries (Binance USD-M general info, 503 variants): -1008 / 'Service Unavailable' = failure ->
+    # retry with backoff 0.2 / 0.4 / 0.8 s; unknown execution (timeout, transport) -> query by clientOrderId first,
+    # re-send with the SAME clientOrderId only if the order does not exist.
+    net_retries: int = 3
+    net_retry_base_s: float = 0.2
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -357,7 +391,7 @@ PROFILES = {
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
-                    alt_risk_share=0.0),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
+                    alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -493,17 +527,85 @@ class BinanceVenue(DemoVenue):
                 'liq': float(p.get('liquidationPrice') or 0), 'notional': abs(float(p.get('notional') or 0)),
                 'margin': float(p.get('initialMargin') or p.get('positionInitialMargin') or 0)}
 
+    # ---------------------------------------------------------------- 10-08w transient venue errors
+    retries, retry_base_s = 3, 0.2
+    TRANSIENT = (-1008, -1001, -1006, -1007, 'TRANSPORT', 'NON_JSON', 'HTTP_ERROR')
+
+    def transient(self, e) -> bool:
+        """5xx / overload / transport: worth a retry (429 / 418 are left to the client's rate brake)."""
+        st = getattr(e, 'status', 0) or 0
+        return getattr(e, 'code', None) in self.TRANSIENT or (st >= 500 and st not in (429, 418))
+
+    async def _sleep_retry(self, k: int) -> None:
+        await asyncio.sleep(self.retry_base_s * 2 ** k)
+
+    async def _query_raw(self, symbol: str, cid: str) -> Optional[dict]:
+        """Raw order by clientOrderId; None only when the venue says it does not exist (-2013)."""
+        from live.binance_futures_client import BinanceError
+        for k in range(self.retries + 1):
+            try:
+                return await self.c.order(symbol, cid)
+            except BinanceError as e:
+                if e.code == -2013:
+                    return None
+                if not self.transient(e) or k == self.retries:
+                    raise
+                await self._sleep_retry(k)
+        return None
+
+    async def _post(self, symbol: str, cid: str, send, resend_unknown: bool):
+        """POST with retries.  -1008 (throttled) = definite failure -> back off and re-send.  Unknown outcome
+        (timeout / transport / other 5xx) -> query the clientOrderId first: found -> that order; not found ->
+        re-send with the SAME clientOrderId only when resend_unknown (a resting GTX: a duplicate id is refused
+        while the first is open), never for IOC (a filled IOC is no longer open, a re-send could fill twice)."""
+        from live.binance_futures_client import BinanceError
+        for k in range(self.retries + 1):
+            try:
+                return await send()
+            except BinanceError as e:
+                if not self.transient(e):
+                    if k and e.code not in (-5022,):          # re-send refused (duplicate id?): look it up
+                        r = await self._query_raw(symbol, cid)
+                        if r is not None:
+                            return r
+                    raise
+                if k == self.retries:
+                    raise
+                if e.code != -1008:
+                    r = await self._query_raw(symbol, cid)
+                    if r is not None:
+                        return r
+                    if not resend_unknown:
+                        await asyncio.sleep(0.3)               # late landing: one more look, then give up
+                        r = await self._query_raw(symbol, cid)
+                        if r is not None:
+                            return r
+                        raise
+                await self._sleep_retry(k)
+
     async def ioc(self, symbol: str, side: str, qty: str, price: str, cid: str) -> tuple:
         """LIMIT IOC: takes what is available up to `price`, cancels the rest. -> (avg_fill, filled_qty)."""
-        r = await self.c.request('POST', '/fapi/v1/order', {
+        send = lambda: self.c.request('POST', '/fapi/v1/order', {
             'symbol': symbol, 'side': side, 'type': 'LIMIT', 'timeInForce': 'IOC', 'quantity': qty, 'price': price,
             'positionSide': 'BOTH', 'newClientOrderId': cid, 'newOrderRespType': 'RESULT'}, signed=True)
+        r = await self._post(symbol, cid, send, resend_unknown=False) or {}
         filled = float(r.get('executedQty') or 0)
         avg = float(r.get('avgPrice') or 0)
         if filled > 0 and avg <= 0:
             cq = float(r.get('cumQuote') or 0)
             avg = cq / filled if cq > 0 else float(price)
         return avg, filled
+
+    async def cancel(self, symbol: str, cid: str) -> None:
+        """Cancel is idempotent (unknown / done order = benign -2011 / -2013): retry transient failures."""
+        from live.binance_futures_client import BinanceError
+        for k in range(self.retries + 1):
+            try:
+                return await super().cancel(symbol, cid)
+            except BinanceError as e:
+                if not self.transient(e) or k == self.retries:
+                    raise
+                await self._sleep_retry(k)
 
     own_book = True                     # demo matching engine != mainnet: quote/manage on THIS venue's book
 
@@ -514,13 +616,20 @@ class BinanceVenue(DemoVenue):
 
     async def order(self, symbol: str, cid: str) -> dict:
         from live.binance_futures_client import BinanceError
-        for attempt in range(2):
+        miss = 0
+        for k in range(self.retries + 2):
             try:
                 return await super().order(symbol, cid)
             except BinanceError as e:
-                if e.code != -2013:                       # -2013: not visible yet / expired post-only
+                if e.code == -2013:                       # -2013: not visible yet / expired post-only
+                    miss += 1
+                    if miss >= 2:
+                        break
+                    await asyncio.sleep(0.3)
+                    continue
+                if not self.transient(e) or k >= self.retries:
                     raise
-                await asyncio.sleep(0.3)
+                await self._sleep_retry(k)
         return {'status': 'NOT_FOUND', 'filled': 0.0, 'avg': 0.0}
 
     async def entry_start_ms(self, symbol: str, amt: float, step: float, lookback_s: float = 12 * 3600) -> Optional[int]:
@@ -539,12 +648,15 @@ class BinanceVenue(DemoVenue):
 
     async def limit_gtx(self, symbol: str, side: str, qty: str, price: str, cid: str) -> None:
         from live.binance_futures_client import BinanceError
+        send = lambda: DemoVenue.limit_gtx(self, symbol, side, qty, price, cid)
         try:
-            await super().limit_gtx(symbol, side, qty, price, cid)
+            r = await self._post(symbol, cid, send, resend_unknown=True)
         except BinanceError as e:
             if e.code == -5022:
                 raise PostOnlyReject('-5022 post-only would take liquidity') from None
             raise
+        if isinstance(r, dict) and r.get('status') == 'EXPIRED' and not float(r.get('executedQty') or 0):
+            raise PostOnlyReject('GTX expired at entry (would take liquidity)')
 
     async def orders_view(self, symbol: str) -> list:
         out = []
@@ -731,6 +843,7 @@ class Engine:
         self.drift_probe: Optional[str] = None        # set by churn_gate when a DRIFT lock is lifted (half size)
         self.blockers: list = []                      # 10-08v: every churn gate that blocked the last candidate
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
+        self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
@@ -1592,7 +1705,8 @@ class Engine:
                'fill_wait_ms': ms('t_ack', 't_fill'), 'total_ms': ms('t0', 't_done'),
                'score': decision.score, 'consensus': (self.diag or {}).get('consensus'),
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
-               'error': err[:160] or None}
+               'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
+               'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'error': err[:160] or None}
         self.funnel.outcome(outcome)
         try:
             path = self.ledger.parent / 'engine_orders.jsonl'
@@ -1747,8 +1861,46 @@ class Engine:
                                    f'({backoff}/{self.p.gtx_backoff_ticks})')
                 st, deadline = {}, time.monotonic() + self.p.gtx_ttl_s
                 peg = self.p.peg and decision.score >= self.p.peg_min_score and path != 'MR'
-                last_post = time.monotonic()
-                while time.monotonic() < deadline:
+                last_post = t_post = time.monotonic()
+                auto = tag == 'AUTO' and path not in ('MR', 'SCALP')
+                cross_mode = self.p.super_cross if auto else 'off'
+                dyn_mode = self.p.dyn_ttl if auto else 'off'
+                cross_at = t_post + self.p.super_cross_after_s if cross_mode in ('shadow', 'on') else None
+                do_cross, dyn_logged, mid0 = False, False, self.feed.price()
+                while True:
+                    now_m = time.monotonic()
+                    if now_m >= deadline:
+                        # 10-08w dynamic TTL: extend 1 s at a time while the signal holds, never past dyn_ttl_max_s
+                        if dyn_mode not in ('shadow', 'on') or now_m - t_post >= self.p.dyn_ttl_max_s - 1e-9:
+                            break
+                        keep, why_keep = await self.dyn_keep(side, decision, px0, mid0)
+                        if dyn_mode == 'shadow' or not keep:
+                            if dyn_mode == 'shadow' and keep and not dyn_logged:
+                                dyn_logged = True
+                                self._shadow_row({'outcome': 'SHADOW_DYN', 'side': side, 'path': path, 'px': px,
+                                                  'qty': pl['qty'], 'why': why_keep, 'score': decision.score,
+                                                  'max_s': self.p.dyn_ttl_max_s})
+                            if dyn_mode == 'on' and not keep:
+                                xm['dyn_cut'] = why_keep
+                            break
+                        deadline = min(now_m + 1.0, t_post + self.p.dyn_ttl_max_s)
+                        xm['dyn_ttl_s'] = round(deadline - t_post, 1)
+                    elif xm.get('dyn_ttl_s') and dyn_mode == 'on':
+                        keep, why_keep = await self.dyn_keep(side, decision, px0, mid0)
+                        if not keep:                              # adverse / signal gone: pull it at once
+                            xm['dyn_cut'] = why_keep
+                            break
+                    if cross_at is not None and now_m >= cross_at:
+                        cross_at = None
+                        why_x, info = await self.cross_check(decision, side, pl, base)
+                        xm['cross_check'] = why_x or 'OK'
+                        if why_x is None and cross_mode == 'on':
+                            do_cross = True
+                            break
+                        if why_x is None:
+                            self._shadow_row({'outcome': 'SHADOW_CROSS', 'side': side, 'path': path, 'qty': pl['qty'],
+                                              'gtx_px': px, **info, 'score': decision.score,
+                                              'after_s': self.p.super_cross_after_s})
                     st = await self.venue.order(sym, cid)
                     if st.get('status') == 'FILLED':
                         xm['t_fill'] = time.perf_counter()               # seen by polling (+<= 0.1 s + REST)
@@ -1786,6 +1938,8 @@ class Engine:
                     await self.venue.cancel(sym, cid)
                     st = await self.venue.order(sym, cid)
                 filled, fill = float(st.get('filled') or 0), float(st.get('avg') or px)
+                if do_cross:
+                    filled, fill = await self.cross_remaining(side, pl, filled, fill, xm, tag)
             if reprices:
                 self.event(f'PEG {side} repriced x{reprices} {fmt(px0, tick)} -> {fmt(px, tick)} '
                            f'({"filled" if filled > 0 else "unfilled"})')
@@ -1838,8 +1992,11 @@ class Engine:
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
-                        'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'], 'entry_type': route.upper(),
-                        'entry_fee_bps': self.p.taker_bps if route == 'ioc' else self.p.maker_bps,
+                        'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'],
+                        'entry_type': xm.get('entry_type') or route.upper(),
+                        'entry_fee_bps': xm.get('entry_fee_bps') or (self.p.taker_bps if route == 'ioc' else
+                                                                      self.p.maker_bps),
+                        'crossed': xm.get('crossed'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                         'signal_mid': xm.get('signal_mid'), 'venue_mid': xm.get('venue_mid'),
                         'basis_bps': basis_bps(xm.get('signal_mid'), xm.get('venue_mid')),
                         'ack_ms': xm.get('ack_ms'),
@@ -1874,6 +2031,88 @@ class Engine:
             if not self.pos:
                 self.phase = 'SCANNING'
 
+    async def cross_check(self, decision: Decision, side: str, pl: dict, base: Profile) -> tuple:
+        """10-08w Super-Alpha crossing gate, evaluated on FRESH features at the fallback time.
+        -> (None, info) when every condition holds, else (reason, info)."""
+        p, sym, d = self.p, self.p.symbol, 1 if side == 'BUY' else -1
+        await self.refresh_book(0.25)
+        b, f = self.book(), self.feed.features(self.clock())
+        touch = b.get('ask') if side == 'BUY' else b.get('bid')
+        info = {'touch': touch, 'ofi': f.get('ofi_10s'), 'edge_bps': (self.diag or {}).get('edge_bps')}
+        if sym not in (p.super_cross_symbols or ()) or self.observer:
+            return f'{sym} not a crossing symbol', info
+        vote = max(decision.score, (self.diag or {}).get('consensus') or 0.0)
+        if vote < p.super_cross_score - 1e-9:
+            return f'vote {vote:.3f} < {p.super_cross_score}', info
+        ofi = (f.get('ofi_10s') or 0.0) * d
+        if ofi < p.super_cross_ofi - 1e-9:
+            return f'OFI {ofi:+.2f} < {p.super_cross_ofi} with the trade', info
+        if (info['edge_bps'] or 0.0) < p.super_cross_edge_bps:
+            return f'edge {info["edge_bps"]} < {p.super_cross_edge_bps} bps', info
+        if self.toxic_blocks(side):
+            return 'VPIN toxic against the side', info
+        if not touch or b.get('stale'):
+            return 'no fresh venue touch', info
+        lim = round_tick(touch * (1 + d * p.super_cross_slip_bps / 1e4), self.spec['tick'], 'down' if d > 0 else 'up')
+        pi = plan(side, lim, self.spec, replace(base, entry='market'), self.account.get('available'), qty=pl['qty'])
+        rr = self.plan_rr(pi, 'ioc') if pi['ok'] else None
+        info.update(limit=lim, rr_ioc=None if rr is None else round(rr, 3))
+        if rr is None or rr < p.super_cross_rr_min:
+            return f'taker RR {"—" if rr is None else f"{rr:.2f}"} < {p.super_cross_rr_min}', info
+        return None, info
+
+    async def cross_remaining(self, side: str, pl: dict, filled: float, fill: float, xm: dict, tag: str) -> tuple:
+        """Take ONLY the unfilled remainder with one LIMIT IOC at touch +/- slip cap (never a MARKET, never more than
+        the planned quantity). -> (cumulative filled, volume-weighted average price)."""
+        p, sym, step, tick = self.p, self.p.symbol, self.spec['step'], self.spec['tick']
+        d = 1 if side == 'BUY' else -1
+        rem = floor_step(pl['qty'] - filled, step)
+        await self.refresh_book(0.0)
+        b = self.book()
+        touch = b.get('ask') if side == 'BUY' else b.get('bid')
+        if rem < self.spec['min_qty'] - 1e-12 or not touch or rem * touch < self.spec.get('min_notional', 0.0):
+            xm['cross_check'] = f'remainder {fmt(rem, step)} below the venue minimum'
+            return filled, fill
+        lim = round_tick(touch * (1 + d * p.super_cross_slip_bps / 1e4), tick, 'down' if d > 0 else 'up')
+        cid = f'gx{tag[0].lower()}-' + uuid.uuid4().hex[:26]
+        xm['cid_live'] = cid
+        avg2, got = await self.venue.ioc(sym, side, fmt(rem, step), fmt(lim, tick), cid)
+        xm['crossed'] = round(got, 12)
+        self.event(f'SUPER-ALPHA CROSS {side} {fmt(rem, step)} IOC limit {fmt(lim, tick)} (touch {touch:g} '
+                   f'+/- {p.super_cross_slip_bps:g} bps) -> filled {fmt(got, step)}'
+                   + (f' @ {avg2:g}' if got else ''))
+        if got <= 0:
+            return filled, fill
+        tot = filled + got
+        xm['entry_fee_bps'] = (filled * p.maker_bps + got * (p.taker_bps + p.slip_bps)) / tot
+        xm['entry_type'] = 'GTX+IOC' if filled > 0 else 'IOC'
+        xm['t_fill'] = time.perf_counter()
+        return tot, ((fill * filled if filled else 0.0) + avg2 * got) / tot
+
+    async def dyn_keep(self, side: str, decision: Decision, px0: float, mid0: Optional[float]) -> tuple:
+        """10-08w dynamic TTL: keep resting while the score >= dyn_ttl_score, OFI L10 >= dyn_ttl_ofi with the trade,
+        the touch has not left > dyn_ttl_away_pct from the first quote and the mid has not moved >= adverse bps
+        against the trade.  The swarm is not re-run inside the order loop (the engine lock is held), so the vote
+        is the decision's.  -> (keep, reason)."""
+        p, d = self.p, 1 if side == 'BUY' else -1
+        f = self.feed.features(self.clock())
+        if decision.score < p.dyn_ttl_score - 1e-9:
+            return False, f'score {decision.score:.2f} < {p.dyn_ttl_score}'
+        ofi = (f.get('ofi_10s') or 0.0) * d
+        if ofi < p.dyn_ttl_ofi - 1e-9:
+            return False, f'OFI {ofi:+.2f} < {p.dyn_ttl_ofi}'
+        mid = self.feed.price()
+        if mid and mid0:
+            mv = d * (mid / mid0 - 1) * 1e4
+            if mv <= -p.dyn_ttl_adverse_bps:
+                return False, f'ADVERSE {mv:+.1f} bps'
+        await self.refresh_book(0.5)
+        b = self.book()
+        touch = b.get('bid') if side == 'BUY' else b.get('ask')
+        if touch and px0 and d * (touch - px0) > 0 and abs(touch / px0 - 1) * 100 > p.dyn_ttl_away_pct:
+            return False, f'touch left {abs(touch / px0 - 1) * 100:.3f}% > {p.dyn_ttl_away_pct}%'
+        return True, f'OFI {ofi:+.2f} · score {decision.score:.2f}'
+
     async def cancel_orphan_entry(self, xm: dict) -> None:
         """10-08v: an exception between posting the GTX entry and settling it (uncertain POST, REST error while
         polling) used to leave the maker order resting on the venue with no owner: a late fill then appeared as
@@ -1888,6 +2127,7 @@ class Engine:
             st = await self.venue.order(sym, cid)
         except Exception as exc:
             xm['orphan'] = 'UNKNOWN'
+            self.orphans[cid] = {'t': self.clock(), 'tries': 0}
             self.event(f'VESKA orphan entry {cid[:10]}… cancel/query failed ({type(exc).__name__}) -> '
                        f'reconcile on next sync')
             return
@@ -2266,28 +2506,41 @@ class Engine:
         self.event(f'MARIN {why} exit HELD by {gate} - waiting for >= +{self.p.hurdle_pct}% / <= -{self.p.hurdle_pct}% '
                    f'(hard SL {p["sl0"]:g} stays live)')
 
+    def fee_true_pct(self, p: dict) -> float:
+        """Entry fee of THIS position + taker stop-out + slip, in % (maker entry 0.08 %, IOC entry 6 bps -> 0.12 %)."""
+        e_in = p.get('entry_fee_bps')
+        e_in = self.p.maker_bps if e_in is None else e_in
+        return (e_in + self.p.taker_bps + self.p.slip_bps) / 100.0
+
     async def ratchet_stop(self, p: dict, d: int, mark: float, fav: float) -> None:
-        """MFE >= +0.15 %: move the EXCHANGE stop to entry +/- 0.08 % once - survives a restart or a dead feed."""
-        if not self.p.ratchet or p.get('ratchet') or p['mfe_pct'] < self.p.ratchet_trigger_pct:
+        """MFE >= +0.15 %: move the EXCHANGE stop to entry +/- max(0.08 %, own fees) once - survives a restart or a
+        dead feed.  10-08w tier 2: MFE >= +0.25 % -> entry +/- (own fees + 0.05 %)."""
+        if not self.p.ratchet or self.clock() < p.get('ratchet_retry_at', 0.0):
             return
-        if self.clock() < p.get('ratchet_retry_at', 0.0):
+        if not p.get('ratchet'):
+            if p['mfe_pct'] < self.p.ratchet_trigger_pct:
+                return
+            lock, kind, key = max(self.p.ratchet_lock_pct, self.fee_true_pct(p)), 'RATCHET', 'ratchet'
+        elif (self.p.ratchet2 and p.get('ratchet') is True and not p.get('ratchet2')
+              and p['mfe_pct'] >= self.p.ratchet2_trigger_pct):
+            lock, kind, key = self.fee_true_pct(p) + self.p.ratchet2_buffer_pct, 'RATCHET2', 'ratchet2'
+        else:
             return
-        tgt = round_tick(p['entry'] * (1 + d * self.p.ratchet_lock_pct / 100.0), self.spec['tick'],
-                         'up' if d > 0 else 'down')
+        tgt = round_tick(p['entry'] * (1 + d * lock / 100.0), self.spec['tick'], 'up' if d > 0 else 'down')
         if d * (tgt - p['sl']) <= 0 or d * (mark - tgt) <= 0:
             return
-        if not await self.move_stop(tgt, 'RATCHET'):
-            p['ratchet_fails'] = p.get('ratchet_fails', 0) + 1
-            p['ratchet_retry_at'] = self.clock() + self.p.ratchet_retry_s * 2 ** (p['ratchet_fails'] - 1)
-            if p['ratchet_fails'] >= self.p.ratchet_max_fail:
-                p['ratchet'] = 'FAILED'
-                self.event(f'MARIN RATCHET gave up after {p["ratchet_fails"]} failures - exchange stop stays '
+        if not await self.move_stop(tgt, kind):
+            fails = p[f'{key}_fails'] = p.get(f'{key}_fails', 0) + 1
+            p['ratchet_retry_at'] = self.clock() + self.p.ratchet_retry_s * 2 ** (fails - 1)
+            if fails >= self.p.ratchet_max_fail:
+                p[key] = 'FAILED'
+                self.event(f'MARIN {kind} gave up after {fails} failures - exchange stop stays '
                            f'{p["sl"]:g}; soft tiers still manage the exit')
             return
         if self.pos:
-            p['ratchet'] = True
-            self.event(f'MARIN RATCHET at MFE {p["mfe_pct"]:+.3f}% -> exchange stop {tgt:g} '
-                       f'(entry {"+" if d > 0 else "-"}{self.p.ratchet_lock_pct}%)')
+            p[key] = True
+            self.event(f'MARIN {kind} at MFE {p["mfe_pct"]:+.3f}% -> exchange stop {tgt:g} '
+                       f'(entry {"+" if d > 0 else "-"}{lock:.3f}%)')
 
     async def _manage_soft(self, p: dict, d: int, mark: float, fav: float) -> None:
         """4 tiers (soft maker exits): T1 +0.08 % -> entry +0.03 % · T2 +0.12 % -> entry + fees + 0.02 %
@@ -2432,8 +2685,26 @@ class Engine:
         self.event(f'MARIN ADOPT {"LONG" if d > 0 else "SHORT"} {fmt(qty, step)} {sym} @ {entry:g} · stop {sl:g}'
                    f'{" (sàn, giữ nguyên)" if stop else " (đặt mới)"} · MFE {self.pos["mfe_pct"]:+.3f}% -> MARIN quản lý lại')
 
+    async def retry_orphans(self) -> None:
+        """10-08w: cancel + read every entry whose cancel failed earlier (venue 5xx); a fill is ADOPTed below."""
+        for cid, o in list(self.orphans.items()):
+            try:
+                await self.venue.cancel(self.p.symbol, cid)
+                st = await self.venue.order(self.p.symbol, cid)
+            except Exception as exc:
+                o['tries'] += 1
+                if o['tries'] >= 20:
+                    self.orphans.pop(cid, None)
+                    self.event(f'VESKA orphan {cid[:10]}… still unreachable after 20 syncs -> left to the venue '
+                               f'order view ({type(exc).__name__})')
+                continue
+            self.orphans.pop(cid, None)
+            self.event(f'VESKA orphan {cid[:10]}… reconciled: {st.get("status")} filled {st.get("filled") or 0:g}')
+
     async def sync(self, force_settle: bool = False) -> None:
         sym = self.p.symbol
+        if self.orphans and not self.busy:
+            await self.retry_orphans()
         self.view = await self.venue.position_view(sym)
         try:
             self.account = await self.venue.account_view()
