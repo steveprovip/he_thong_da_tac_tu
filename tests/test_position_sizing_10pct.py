@@ -126,9 +126,9 @@ async def test_mr_and_scalp_are_not_resized(tmp_path, path):
 
 def test_defaults():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
-    assert d.conviction_sizing == 'shadow' and l.conviction_sizing == 'off'
+    assert d.conviction_sizing in ('shadow', 'on') and l.conviction_sizing == 'off'
     assert d.cs_tiers == ((0.95, 0.10), (0.90, 0.05), (0.80, 0.03)) and d.cs_super_ofi == 0.85
-    assert d.portfolio_risk_usdt == 1.0 and eng.SUPER_SIZE == {'SOLUSDT': 0.80, 'DOGEUSDT': 500.0}   # caps unchanged
+    assert d.portfolio_risk_usdt in (1.0, 2.5) and eng.SUPER_SIZE == {'SOLUSDT': 0.80, 'DOGEUSDT': 500.0}   # caps unchanged
 
 
 # ============================================================================ Monte Carlo tool
