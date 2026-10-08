@@ -51,3 +51,14 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 | 23 | Vince (1992), The Mathematics of Money Management | Optimal f, chuỗi thua và rủi ro cháy | Y2 |
 | 24 | Almgren & Chriss (2000), Optimal Execution of Portfolio Transactions, J. Risk | Tác động tạm thời/vĩnh viễn theo size/độ sâu | Y3 |
 | 25 | Binance USD-M public `/fapi/v1/depth`, `/fapi/v1/aggTrades` (demo-fapi + fapi, 08/10 ~16:5x) | Độ sâu hiển thị & dòng taker 30 phút | Y3 |
+
+## Bổ sung 08/10/2026 (aa) — chi tiết & URL trong `research_alpha_after_fees_2026-10-08.md`
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 26 | Albers et al. (arXiv 2502.18625), vi cấu trúc Binance BTC perp | Taker theo imbalance ≈ +1 bp gross/RT ở độ trễ ~2 ms; âm sau phí taker 1.5 bps | AA1: khung giây không đủ edge |
+| 27 | Nghiên cứu lệnh maker live BTC perp (233 k lệnh; ghi chú `microstructure_ofi_mm.md`) | Fill maker bị chọn bất lợi ~−0.8 bp sau 5 s | AA1 |
+| 28 | Zarattini, Pagani & Barbon (2025), trend-following ensemble crypto | Breakout daily top-20, Sharpe net > 1.5 với phí 10–50 bps (bảng chi tiết sau paywall) | AA3 tiền định |
+| 29 | Bailey & López de Prado (2012, 2014) PSR / Deflated Sharpe | Phạt số cấu hình đã thử | `core/fast_eval.py` |
+| 30 | Wald (1945) SPRT; Johari et al. (2017) mixture SPRT | Dừng sớm có kiểm soát sai lầm | `core/fast_eval.py`, `tools/edge_check.py` |
+| 31 | BIS WP "Crypto carry" (2023); He, Manela, Ross & von Wachter "Fundamentals of Perpetual Futures" | Carry/funding dự báo rủi ro 1–3 tháng, không dự báo hướng ngắn hạn | AA4 |
+| 32 | data.binance.vision USD-M monthly klines 1h + fundingRate (BTC/SOL/DOGE 2022-01..2026-09) | OHLCV + taker buy volume; bookTicker USD-M dừng sau 2024-03-30 | AA2–AA4 |

@@ -206,3 +206,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Patches: cvd_shield (on), align3 (shadow), early_invalidation (shadow), regime caps 170/225/315 + cs_max_notional 350 (demo), tp1_scaled_big_pct 0.35 for >= $225.
 - Replay tools/replay_alpha_gating.py (aggTrades 10/01-07, holdout 06-07): BASE -6.56, SHIELD -6.42, ALIGN3 -7.27, EARLY -7.07 bps per position.
 - Checks: python -m pytest -q 1313 passed; git diff --check clean. No restart, no order.
+
+## 2026-10-08 (aa) Fast research loop & horizon pivot
+- Deep research (4 parallel researchers + writer): docs/research_upgrade/research_alpha_after_fees_2026-10-08.md. Seconds-horizon OFI and VIP0 market making are negative after fees in the literature; only 4h-daily trend has published net-positive evidence.
+- New: core/fast_eval.py (required_n, SPRT, mSPRT, paired_diff, PSR/DSR, ledger_bps, verdict), tools/edge_check.py (ledger verdict by code/symbol, --paired), tools/factor_scan.py (96 configs, 1h/4h/1d, DEV 2022-24 / VAL 2025 / HOLDOUT 2026-01..09, walk-forward, DSR), tools/record_market.py (/public depth@100ms+bookTicker, /market aggTrade+forceOrder, REST snapshots, hourly gz; --light).
+- Results: ledger 9 code hashes in 55 trades, -3.48 bps/trade, SPRT BAD; 1h/4h trend negative OOS after taker costs; ENS 1d LS (pre-registered) OOS SR +0.21, +24.6 bps/RT net, PSR 0.61 (not significant).
+- Checks: python -m pytest -q 1360 passed; recorder 20 s mainnet smoke OK. No restart, no order, engine/Profile unchanged; .gitignore += data/recordings/.

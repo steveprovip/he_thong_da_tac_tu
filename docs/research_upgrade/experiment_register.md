@@ -142,3 +142,13 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | G3 | sizing | Trần theo chế độ $170/$225/$315, cứng $350 | test | Giảm rủi ro (cơ học) | bật |
 | G5 | thoát | Cắt sớm ≤ 45 s | như G1 | Không nhất quán (dev +0.09, holdout −0.51) | shadow |
 | G6 | lỗi | Thoát maker tệ hơn stop sàn (#51), nhãn BE trên lệnh lỗ (#55) | ledger | Sửa + test | bật |
+
+## Vòng (aa) — 08/10/2026: vòng nghiên cứu nhanh & chuyển khung thời gian
+
+| ID | Loại | Giả thuyết | Dữ liệu | Kết quả | Trạng thái |
+|---|---|---|---|---|---|
+| AA1 | đánh giá | Ledger hiện tại đủ để kết luận edge | ledger 55 dòng, `tools/edge_check.py` | 9 hash code / 55 lệnh (~6 lệnh mỗi bản); toàn bộ −3.48 bps se 2.0; SPRT(−3 vs +2) = BAD, mSPRT vs 0 p 0.29 | quan sát |
+| AA2 | horizon | Trend 1h/4h vượt phí | klines 1h + funding BTC/SOL/DOGE 2022-01..2026-09, `tools/factor_scan.py`, VAL 2025 + HOLDOUT 2026 | 1h median SR VAL −0.56 (7 % > 0); ENS 1h LS OOS −9.9 bps/RT; 4h ENS LS −7.3 bps/RT | bác bỏ (taker) |
+| AA3 | horizon | Trend 1d vượt phí | như AA2; ENS 1d LS đăng ký trước | OOS SR +0.21, +24.6 bps/RT net, PSR 0.61; ENS_VT 1d LO SR +0.42 PSR 0.72; B&H SR −0.19; DSR(DEV, 96 cấu hình) ≤ 0.47 | giả thuyết có triển vọng, chưa xác nhận |
+| AA4 | lọc | Funding 3 ngày > 0.03 %/8h chặn long | như AA2 | Không kích hoạt lần nào trong OOS | vô hiệu ở 2025–26 |
+| AA5 | dữ liệu | Recorder L2 + aggTrades + forceOrder | smoke 20 s mainnet | Đủ stream sau khi tách route /public & /market; ~20 MB/h SOL (đầy đủ) | công cụ sẵn sàng, không chạy nền |

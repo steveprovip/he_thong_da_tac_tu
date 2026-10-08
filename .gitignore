@@ -92,3 +92,6 @@ third_party/*/.env
 # 10-08v: raw log snapshots stay local (hashes in SHA256SUMS.txt are committed)
 docs/research_upgrade/snapshot_*/**/*.jsonl
 docs/research_upgrade/snapshot_*/**/telemetry_state.json
+
+# raw mainnet market-data recordings (tools/record_market.py)
+data/recordings/

@@ -84,3 +84,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 
 ## Handoff — 2026-10-08 (z2)
 - After restart: watch CVD_SHIELD in scanner.funnel, 'align3' and 'early_invalid' fields on ledger rows (shadow evidence), '-LOSS' suffixes, and conviction 'regime' caps. Re-run tools/replay_alpha_gating.py / ledger analysis after ~50 trades before enabling align3 or early_invalidation.
+
+## Handoff — 2026-10-08 (aa)
+- Judge every change with tools/edge_check.py --by code; freeze code until SPRT decides (~45 trades at sigma 15 bps). Do not interpret < 30 trades.
+- Next: make replay tools emit per-position bps lists for edge_check --paired; optional paper/shadow daily trend sleeve (ENS 1d LS + ENS_VT 1d LO) monitored with mSPRT; run tools/record_market.py --light continuously for maker-fill replay.
+- Live cap 3.85 U is below Binance min notional (5 U; BTC 100 U): any trend sleeve is demo/paper only.

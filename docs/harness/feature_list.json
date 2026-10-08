@@ -143,6 +143,16 @@
       ],
       "status": "done",
       "evidence": "Ledger #49-55 net -0.5546 U (fees 0.7267 > gross 0.1721); losers #51/#53/#55 aligned with macro CVD (aggTrades). Replay holdout: SHIELD -6.42 vs BASE -6.56, ALIGN3 -7.27, EARLY -7.07 bps. pytest 1313 passed; git diff --check clean; ledger untouched (55 rows)."
+    },
+    {
+      "id": "fast-research-loop-20261008aa",
+      "name": "Fast research loop (SPRT/mSPRT/DSR/paired), ledger edge check, 1h-1d factor scan, mainnet L2 recorder",
+      "description": "core/fast_eval.py, tools/edge_check.py, tools/factor_scan.py, tools/record_market.py; tests/test_fast_research_loop.py (48)",
+      "dependencies": [
+        "alpha-gating-drawdown-20261008z2"
+      ],
+      "status": "done",
+      "evidence": "Ledger 55 rows, 9 code hashes, -3.48 bps/trade, SPRT(-3 vs +2) BAD; factor scan OOS 2025-01..2026-09: 1h/4h negative after taker costs, ENS 1d LS +24.6 bps/RT net PSR 0.61; pytest 1360 passed; recorder smoke OK"
     }
   ]
 }

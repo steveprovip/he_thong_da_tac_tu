@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.28 Cập nhật 08/10/2026 (aa) — Vòng nghiên cứu nhanh, chuyển khung thời gian
+- **Vì sao chậm biết đúng/sai**: 55 lệnh nhưng 9 phiên bản code (~6 lệnh/bản); σ ≈ 15 bps/lệnh → cần ~93 lệnh (SPRT ~45) để phân biệt −3 với +2 bps. `python tools/edge_check.py --by code` cho kết luận trong < 1 s (toàn ledger: −3.48 bps, SPRT BAD).
+- **Vì sao lãi thấp**: biến động 10 s của BTC ~1.9 bps < phí round-trip; OFI/market making VIP0 âm sau phí theo các nghiên cứu (`docs/research_upgrade/research_alpha_after_fees_2026-10-08.md`).
+- **Factor scan** (`tools/factor_scan.py`, 2022–2026, OOS 2025-01..2026-09): 1h/4h thua phí; trend 1d dương OOS (ENS 1d LS +24.6 bps/RT net) nhưng chưa có ý nghĩa thống kê (PSR 0.61). Chưa bật gì.
+- **Recorder** `tools/record_market.py --light` (L2 + aggTrades + liquidation, không key, không lệnh). Test: 1360 passed. Chi tiết: `docs/research_upgrade/report_fast_research_loop_and_horizon_pivot_2026-10-08.md`.
+
 ### 8.27 Cập nhật 08/10/2026 (z2) — CVD shield, trần size theo chế độ $170/$225/$315 (cứng $350), sửa 2 lỗi thoát lệnh
 - **Khám nghiệm #49–55**: gross +0.172 / phí 0.727 / net −0.555 U; ba lệnh thua lớn đều CÙNG chiều CVD vĩ mô (không phải bắt dao rơi).
 - **Đã bật**: CVD shield (no BUY khi CVD60 < −300 k hoặc CVD3m < −500 k, SELL đối xứng), trần conviction theo chế độ + trần cứng $350, TP1 +0.35 % khi ≥ $225, lệnh thoát maker không tệ hơn stop sàn (#51), nhãn `…-LOSS` khi lệnh "BE" lỗ thô (#55).
