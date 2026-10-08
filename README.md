@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.21 Cập nhật 08/10/2026 (u) — Cách ly BTC, dồn size sang SOL/DOGE, eject 120 s
+- BTC chỉ quan sát (feed, swarm, telemetry), không vào lệnh; vị thế BTC còn sót vẫn được quản lý.
+- SOL tối thiểu 0.40, DOGE tối thiểu 300 cho lệnh trend thường; super-conviction 0.80 SOL / 500 DOGE.
+- EJECT-FAST: sau 120 s, MFE < 0.08 % và vận tốc 15 s < 0.025 % → thoát maker tại touch. `tools/replay_eject.py`.
+- Test: 1158 passed.
+
 ### 8.20 Cập nhật 08/10/2026 (t) — Đói cơ hội: sửa đo VFR, BTC probe, scalper chop (shadow)
 - VFR dùng spread của feed tín hiệu (book demo testnet rộng 13 bps từng làm SOL đóng băng giả).
 - BTC probe dùng size nhỏ nhất sàn nhận nếu rủi ro ≤ 15 % ngân sách (0.0001 BTC cũ luôn dưới min $50).

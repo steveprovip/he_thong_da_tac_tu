@@ -184,7 +184,7 @@ async def test_sol_super_conviction_opens_the_concentrated_size(tmp_path):
     d = await fill_sol(sol, feeds[SOL], sol.tick())
     await sol.sync()
     p = sol.pos
-    assert d.allowed and p['super_size'] and p['qty'] == pytest.approx(0.50)
+    assert d.allowed and p['super_size'] and p['qty'] == pytest.approx(eng.SUPER_SIZE[SOL])      # 0.80 since 10-08u
     assert p['qty'] * p['entry'] <= 140.0 and sol.risk_at_stop() < 0.85
     assert any('ALPHA CONCENTRATION SOL' in ev['message'] for ev in sol.events)
 
@@ -196,14 +196,14 @@ async def test_without_super_conviction_the_size_is_unchanged(tmp_path):
     sol = es[SOL]
     await fill_sol(sol, feeds[SOL], sol.tick())
     await sol.sync()
-    assert sol.pos and not sol.pos['super_size'] and sol.pos['qty'] < 0.50
+    assert sol.pos and not sol.pos['super_size'] and sol.pos['qty'] < eng.SUPER_SIZE[SOL]
 
 
 def test_super_size_table_and_risk():
-    assert eng.SUPER_SIZE == {'SOLUSDT': 0.50, DOGE: 450.0}
-    doge_risk = 450 * 0.0890 * (0.50 + 0.08) / 100                         # DOGE SL floor 0.50 % + fees
-    sol_risk = 0.50 * 116.0 * (0.35 + 0.08) / 100
-    assert doge_risk < 0.25 and sol_risk < 0.26                               # inside the 1.0 U portfolio cap
+    assert eng.SUPER_SIZE == {'SOLUSDT': 0.80, DOGE: 500.0}                  # 10-08u (was 0.50 / 450)
+    doge_risk = 500 * 0.0890 * (0.50 + 0.08) / 100                         # DOGE SL floor 0.50 % + fees
+    sol_risk = 0.80 * 116.0 * (0.35 + 0.08) / 100
+    assert doge_risk < 0.26 and sol_risk < 0.40 and doge_risk + sol_risk < 1.0   # both inside the 1.0 U cap
 
 
 def test_super_size_respects_the_notional_cap(tmp_path):

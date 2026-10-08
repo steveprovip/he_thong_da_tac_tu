@@ -156,3 +156,8 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Patches: vfr_view spread from the signal feed; BTC probe uses the smallest tradable size within the 15 % budget; drift_acceleration() + drift_probe 0.5x; chop_scalper ('off'|'shadow'|'on', SCALP brackets 0.08/0.12, 90 s eject, half size, RUNE gates) default shadow -> SHADOW_SCALP rows; tools/replay_chop_scalper.py.
 - Replay: scalper -7.46 bps [-9.53,-5.73] (cons) / -6.82 [-8.53,-5.69] (opt) in-sample; holdout 2026-09-08 -7.11 [-7.77,-6.29] / -6.31 [-6.69,-5.89].
 - Checks: python -m pytest -q 1134 passed, 0 skipped.
+
+## 2026-10-08 (u) BTC observe-only, SOL/DOGE size floor + super 0.80/500, 120 s low-velocity eject
+- Ledger 41 rows: BTC 28 rows 6 wins -1.4999 (AUTO -1.4303), SOL 10 rows 6 wins +0.2522, DOGE 3 rows -0.0813. #41 = BTC 0.0007 probe, EJECT, -0.0468.
+- Patches: Profile observe_only (BTC) blocks every entry path + scalper, keeps feed/telemetry/position management; ALT_SIZE_FLOOR SOL 0.40 / DOGE 300 (alt_size_floor); SUPER_SIZE 0.80 / 500; eject_fast_due (120 s, MFE < 0.08 %, |vel15| < 0.025 %) -> EJECT-FAST at touch; tools/replay_eject.py (B-A not distinguishable from 0).
+- Checks: python -m pytest -q 1158 passed, 0 skipped.

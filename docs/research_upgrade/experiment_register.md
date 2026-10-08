@@ -75,3 +75,11 @@ Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần
 | T2 | sizing (bug) | BTC probe = size nhỏ nhất venue chấp nhận nếu rủi ro ≤ 15 % ngân sách | bật | `btc_probe_min_tradable=False` | VALIDATED (test). BTC demo giao dịch được lại ở 0.0006 BTC. |
 | T3 | gate | DRIFT ACCEL: bỏ DRIFT lock cho phía CVD60 khi \|CVD60\| ≥ 3×\|CVD3m\| và ≥ $2M×scale, size 0.5× | bật demo, tắt live | `drift_accel=False` | **Chưa có bằng chứng** (L2 ghi lại không có trade/CVD). Ledger ghi `drift_probe` để đánh giá. |
 | T4 | chiến lược | Chop micro-scalper: KER < 0.40, spread ≤ 1.5 bps, phía theo OFI, GTX tại touch, TP 0.08 % maker, SL 0.12 %, BE sau 90 s, size 0.5× | **shadow** (ghi `SHADOW_SCALP`, không đặt lệnh); live off | `chop_scalper='on'` | **REJECTED để bật**: replay (tools/replay_chop_scalper.py) in-sample 09–10/09 SOL/LINK/BNB: −7.46 bps/lệnh [−9.53, −5.73] (fill bảo thủ), −6.82 [−8.53, −5.69] (lạc quan); holdout 08/09 SOL+LINK: −7.11 [−7.77, −6.29] / −6.31 [−6.69, −5.89]; tỉ lệ thắng 14–26 %. Bracket có RR sau phí 0.20 (cần thắng 83 %). Replay test cả hai phía, không có bộ lọc OFI (không có dữ liệu trade). |
+
+## Vòng (u) — 08/10/2026: cách ly BTC, size SOL/DOGE, eject 120 s
+
+| ID | Loại | Thay đổi | Mặc định | Rollback | Bằng chứng / trạng thái |
+|---|---|---|---|---|---|
+| U1 | phạm vi | BTC observe-only: feed, swarm, telemetry chạy; không vào lệnh (kể cả MANUAL), không shadow scalper; vị thế có sẵn vẫn được quản lý/đóng | bật (demo) | `observe_only=()` | Giảm rủi ro, không cần bằng chứng lợi nhuận. BTC AUTO −1.43 U / 27 lệnh qua nhiều phiên bản. |
+| U2 | sizing | SOL ≥ 0.40 / DOGE ≥ 300 cho lệnh trend thường; super size 0.80 SOL / 500 DOGE (từ 0.50 / 450) | bật demo, tắt live | `alt_size_floor=False`, SUPER_SIZE cũ | **Chưa có bằng chứng**: SOL 10 lệnh, CI chứa 0. Rủi ro tối đa ~0.40 U (SOL) + ~0.26 U (DOGE) < 1.0 U. |
+| U3 | thoát lệnh | ≥ 120 s, MFE < 0.08 %, \|vận tốc 15 s\| < 0.025 % → maker exit tại touch (EJECT-FAST); không áp cho SCALP/TP1 đã khớp | bật demo, tắt live | `eject_fast=False` | Replay (tools/replay_eject.py, vào lệnh ngẫu nhiên, mainnet 09–10/09, 611 vị thế): B − A = −0.05 bps [−1.20, +1.73] (bảo thủ), +0.60 [−0.60, +2.36] (lạc quan) → **không khác biệt đo được** về cơ học thoát. Giá trị thật phụ thuộc lệnh chậm có kỳ vọng âm hay không — chưa đủ dữ liệu (1 lệnh alt thoả điều kiện: #36). |

@@ -229,6 +229,9 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('super_size', False)          # super-conviction size: test_mr_concordance_and_net_rr.py
     prof.setdefault('chop_scalper', 'off')        # chop micro-scalper / drift acceleration: test_continuous_active_trading.py
     prof.setdefault('drift_accel', False)
+    prof.setdefault('observe_only', ())           # BTC observer / alt size floor / fast eject: test_isolate_btc_sol_doge_alpha.py
+    prof.setdefault('alt_size_floor', False)
+    prof.setdefault('eject_fast', False)
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')

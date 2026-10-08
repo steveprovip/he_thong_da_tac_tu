@@ -259,6 +259,12 @@ class Profile:
     drift_accel_min_usd: float = 2_000_000.0
     drift_probe_mult: float = 0.5       # ... at half size (probe)
     btc_probe_min_tradable: bool = True  # BTC probe = smallest size the venue accepts if it fits the 15 % budget
+    observe_only: tuple = ('BTCUSDT',)  # 10-08u: feed + telemetry only, no entries (BTC 28 trades, AUTO net -1.43 U)
+    alt_size_floor: bool = True         # SOL >= 0.40 / DOGE >= 300 on normal trend entries (ALT_SIZE_FLOOR)
+    eject_fast: bool = True             # >= 120 s, MFE < 0.08 % and |15 s velocity| < 0.025 % -> maker exit at touch
+    eject_fast_s: float = 120.0
+    eject_fast_mfe_pct: float = 0.08
+    eject_fast_vel_pct: float = 0.025
     alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
     alt_kelly_min_n: int = 20           # ... needs >= 20 of them (was 5: 7 SOL trades sized 0.45 -> 1.06 SOL)
@@ -334,7 +340,9 @@ ALT_SIZE = {'SOLUSDT': (0.70, 1.20, 140.0), 'DOGEUSDT': (300.0, 500.0, 140.0)}
 ALT_SIZE_CAP = ALT_SIZE                 # name kept for 2026-10-07o callers
 # 10-08s super-conviction size (vote >= 0.95 and OFI >= 0.80 with the trade): replaces the base cap for that trade,
 # still under the $140 notional cap of ALT_SIZE and the portfolio risk / margin checks.
-SUPER_SIZE = {'SOLUSDT': 0.50, 'DOGEUSDT': 450.0}
+SUPER_SIZE = {'SOLUSDT': 0.80, 'DOGEUSDT': 500.0}       # 10-08u: 0.50 / 450 -> 0.80 / 500
+# 10-08u minimum size of a normal (non-probe, non-MR, non-scalp) SOL/DOGE trend entry (was parity ~0.30 SOL / ~290 DOGE)
+ALT_SIZE_FLOOR = {'SOLUSDT': 0.40, 'DOGEUSDT': 300.0}
 # VFR horizon floor: BTC also needs ATR 15 m >= 0.10 % (VFR >= 3 already implies ~0.12 % at 4 bps of fees).
 ATR15_FLOOR = {'BTCUSDT': 0.10}
 
@@ -347,7 +355,7 @@ PROFILES = {
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
-                    drift_accel=False,
+                    drift_accel=False, alt_size_floor=False, eject_fast=False,
                     alt_risk_share=0.0),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
@@ -853,6 +861,11 @@ class Engine:
             out.update(frozen=True, why=f'VFR FROZEN {sym} ATR15m {a15:.3f}% < {floor}%')
         return out
 
+    @property
+    def observer(self) -> bool:
+        """Observe-only symbol: features, swarm and telemetry run; no entry (an existing position is still managed)."""
+        return self.p.symbol in (self.p.observe_only or ())
+
     def drift_acceleration(self, side: str) -> Optional[str]:
         """CVD 60 s >= ratio x |CVD 3 m| and >= min $ (x scale), on `side`: fresh flow overrides the stale 3 m
         window. -> reason text (probe allowed) or None."""
@@ -1138,10 +1151,13 @@ class Engine:
             if rival is not None:
                 d = replace(d, allowed=False, reason=f'SCANNER YIELD -> {rival[0].p.symbol} '
                                                      f'({rival[1] * 100:.0f}% > {q * 100:.0f}%)')
+        if self.observer and d.allowed:
+            d = replace(d, allowed=False, reason=f'OBSERVER (no entries) · would be {d.side} {d.score * 100:.0f}%')
+            self.candidate = None
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
             await self.execute(d.side, d, 'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
-        elif not d.allowed and not self.busy and not self.pos and self.spec:
+        elif not d.allowed and not self.busy and not self.pos and self.spec and not self.observer:
             await self.chop_scalp(d, f)
         return d
 
@@ -1313,6 +1329,8 @@ class Engine:
             label = f'{"LONG" if self.pos["side"] == "BUY" else "SHORT"} OPEN'
         elif self.busy:
             label = 'ORDER'
+        elif self.observer:
+            label = 'OBSERVER'
         elif self.p.vfr_gate and vv['frozen'] and vv['vfr'] is not None:
             label = f'FROZEN VFR {vv["vfr"]:.1f}'
         elif self.p.drift_lock and (self.reg or {}).get('name') == 'DRIFT':
@@ -1489,6 +1507,8 @@ class Engine:
 
     async def _execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                        entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
+        if self.observer:
+            return {'ok': False, 'error': f'OBSERVER: {self.p.symbol} is observe-only (no entries)'}
         if self.busy or self.pos or self.slot_block():
             why = self.slot_block()
             return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
@@ -1515,6 +1535,10 @@ class Engine:
                 kq = pq
             mult = self.size_mult(decision, self.diag, f) if tag == 'AUTO' else 1.0
             ref = px if route == 'gtx' else touch
+            floor_q = ALT_SIZE_FLOOR.get(sym) if (self.p.alt_size_floor and tag == 'AUTO'
+                                                   and path not in ('MR', 'SCALP')) else None
+            if floor_q and (kq or base.qty or 0.0) < floor_q:
+                kq = floor_step(min(floor_q, ALT_SIZE[sym][2] / ref), step)
             if mult > 1.0:
                 kq = ceil_step(max(kq or base.qty or 0.0, self.min_qty(ref)) * mult, step)
             boosted = tag == 'AUTO' and path != 'MR' and self.alt_boosted(decision, self.diag)
@@ -1982,6 +2006,12 @@ class Engine:
             await self.work_soft_exit()
             return
         now = self.clock()
+        if self.eject_fast_due(p, now, f):
+            self.event(f'MARIN FAST EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_fast_s:.0f}s, MFE '
+                       f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_fast_mfe_pct}%, 15s velocity '
+                       f'{(f.get("px_vel_15s") or 0):+.3f}% weak -> post-only reduce at the touch')
+            await self.start_soft_exit('EJECT-FAST')
+            return
         if self.eject_due(p, now):
             px = self.eject_floor(p)
             self.event(f'MARIN TIME-DECAY EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_s:.0f}s, MFE '
@@ -2077,6 +2107,13 @@ class Engine:
         return ((self.p.eject or own is not None) and self.p.soft_exits and not p.get('tp1_filled')
                 and now - p['opened'] >= (own or self.p.eject_s)
                 and p['mfe_pct'] < p.get('eject_mfe', self.p.eject_mfe_pct))
+
+    def eject_fast_due(self, p: dict, now: float, f: dict) -> bool:
+        """Low-velocity time decay: >= 120 s, MFE never reached +0.08 %, |px_vel_15s| < 0.025 % (unknown -> no)."""
+        vel = f.get('px_vel_15s')
+        return (self.p.eject_fast and self.p.soft_exits and p.get('eject_s') is None and not p.get('tp1_filled')
+                and now - p['opened'] >= self.p.eject_fast_s and p['mfe_pct'] < self.p.eject_fast_mfe_pct
+                and vel is not None and abs(vel) < self.p.eject_fast_vel_pct)
 
     def eject_floor(self, p: dict) -> float:
         """Fee-true scratch: entry +/- (entry fee + maker exit fee) -> net PnL ~ 0 when the reduce order fills."""

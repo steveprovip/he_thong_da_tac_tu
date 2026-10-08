@@ -63,6 +63,16 @@
       ],
       "status": "done",
       "evidence": "pytest 1134 passed 0 skipped; scalper replay holdout -7.11/-6.31 bps per trade (CI<0) -> shadow"
+    },
+    {
+      "id": "btc-observer-alt-size-20261008u",
+      "name": "BTC observe-only, SOL/DOGE size floor and super size, 120 s low-velocity eject",
+      "description": "BTC feed/telemetry without entries; SOL >= 0.40 / DOGE >= 300, super 0.80/500; EJECT-FAST at 120 s on weak velocity",
+      "dependencies": [
+        "opportunity-starvation-20261008t"
+      ],
+      "status": "done",
+      "evidence": "pytest 1158 passed 0 skipped; replay eject B-A -0.05 bps [-1.20,+1.73] / +0.60 [-0.60,+2.36]; sizing unvalidated (SOL 10 trades)"
     }
   ]
 }

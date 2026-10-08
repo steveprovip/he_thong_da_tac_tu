@@ -48,3 +48,7 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - chop_scalper stays 'shadow' unless the user accepts a strategy measured at -6 to -7.5 bps per scalp; SHADOW_SCALP rows in engine_orders.jsonl give demo-venue opportunity counts.
 - drift_accel (0.5x) and the BTC minimum-size probe are ON in demo: evaluate rows with drift_probe / probe set before keeping them.
 - Next useful experiment: queue-imbalance-directed scalp (bookTicker has bid/ask qty) — preregister before running; demo fill starvation is a testnet queue artefact.
+
+## Handoff — 2026-10-08 (u)
+- BTC is observe-only in demo (rollback observe_only=()). Larger SOL/DOGE sizes are unvalidated: review rows by policy id after the next runs; rollback alt_size_floor=False and SUPER_SIZE 0.50/450.
+- EJECT-FAST is mechanically neutral in replay; judge it on SOL/DOGE rows with reason EJECT-FAST vs EJECT-BE.

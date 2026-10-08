@@ -60,6 +60,9 @@ async def scanner(tmp_path, feeds=None, **prof):
     prof.setdefault('super_size', False)          # super-conviction size: test_mr_concordance_and_net_rr.py
     prof.setdefault('chop_scalper', 'off')        # chop micro-scalper / drift acceleration: test_continuous_active_trading.py
     prof.setdefault('drift_accel', False)
+    prof.setdefault('observe_only', ())           # BTC observer / alt size floor / fast eject: test_isolate_btc_sol_doge_alpha.py
+    prof.setdefault('alt_size_floor', False)
+    prof.setdefault('eject_fast', False)
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))
