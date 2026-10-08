@@ -31,3 +31,9 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - First task: reproduce DOGE BUY 291 @0.08880 -> SOFT-BE average exit 0.08868, net -0.04524931 despite be_locked=true; trace soft-target vs confirmed exchange protection. Then instrument/reproduce SOL RATCHET cancellation/new-stop failure/restore using actual sanitized error codes. No profitability improvement or runtime fix was performed by this brief task.
 - SOL ADOPT has now closed in the ledger; investigate accounting ownership/entry fees instead of treating its earlier UNKNOWN outcome as still open. Keep prior instrumentation and sizing patches.
 - Post-edit init.sh: 1052 project tests passed (86.99 s), toolkit 15 passed/1 skipped; prompt consistency/snapshot and git diff --check passed. No trading process was started or restarted by this brief task.
+
+## Handoff — 2026-10-08 (r)
+- Decision for the user: enable `soft_exit_escalate` (caps tail, costs ~0.4-1.1 bps per protective exit in replay) or keep shadow; or move the exchange stop to the BE level at arm time (replay C: mean -1.5 bps, tightest tail). Data in docs/research_upgrade/experiment_register.md R2.
+- Next demo run will record `stop_events` (code/meaning/trigger/bid/ask/mark/naked_ms) for any stop move failure and `shadow_escalate` for protective exits — check them before changing stop workingType (hypothesis: -2021 with CONTRACT_PRICE on the testnet book).
+- Possible next code step (needs demo test, docs do not confirm): reduceOnly+quantity STOP_MARKET placed before cancelling the old stop to remove the naked window; watch for -2022/-4045.
+- Rollback: soft_exit_escalate stays False; ratchet_max_fail large restores endless retries; all ledger fields additive.

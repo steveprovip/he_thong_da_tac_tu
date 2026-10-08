@@ -75,18 +75,68 @@ def basis_bps(signal_mid: Optional[float], venue_mid: Optional[float]) -> Option
     return round((venue_mid / signal_mid - 1.0) * 1e4, 3)
 
 
-async def kill_switch(engines) -> None:
-    """Dashboard KILL: tracked positions close through Engine.close('KILL') so the ledger records them;
-    untracked venue positions are flattened as before."""
+def entry_start_from_fills(fills, amt: float, step: float) -> Optional[int]:
+    """fills = [(t_ms, signed_qty)] oldest first. Walk back from the newest fill until the signed sum equals the
+    open position: -> time (ms) of the first fill that built it, None if the history does not reconcile."""
+    cum, tol = 0.0, max(step, 1e-12) / 2
+    for t, q in reversed(list(fills)):
+        cum += q
+        if abs(cum - amt) <= tol:
+            return int(t)
+        if (amt > 0 and cum > amt + tol) or (amt < 0 and cum < amt - tol):
+            return None
+    return None
+
+
+# Canonical texts of Binance USD-M codes seen around orders/stops. Raw exchange messages are NOT logged (the
+# client strips them on purpose); the meaning comes from the public error-code page (checked 2026-10-07).
+BINANCE_CODES = {-2021: 'order would immediately trigger', -4130: 'closePosition stop already open in this direction',
+                 -5022: 'post-only would take liquidity', -2011: 'cancel rejected / unknown order',
+                 -2013: 'order does not exist', -4045: 'max stop order limit', -2022: 'reduce-only conflicts',
+                 -4137: 'quantity must be 0 with closePosition', -4138: 'reduceOnly must be true with closePosition',
+                 -1111: 'precision over the maximum', -4014: 'price not a multiple of tick', -1021: 'timestamp outside recvWindow',
+                 'TRANSPORT': 'network/timeout (execution uncertain)', 'NON_JSON': 'non-JSON response'}
+
+
+def err_txt(exc: BaseException) -> str:
+    """Exception -> 'Type code=.. (meaning)'; no raw exchange text, request params or keys."""
+    code = getattr(exc, 'code', None)
+    if code is None:
+        return f'{type(exc).__name__}: {str(exc)[:120]}'
+    out = f'{type(exc).__name__} code={code}'
+    if code in BINANCE_CODES:
+        out += f' ({BINANCE_CODES[code]})'
+    if getattr(exc, 'uncertain', False):
+        out += ' uncertain'
+    return out
+
+
+async def kill_switch(engines) -> list:
+    """Dashboard KILL (idempotent): tracked positions close through Engine.close('KILL') so the ledger records
+    them; untracked venue positions are flattened; then every symbol is re-read and swept once more if not flat.
+    -> [{'symbol', 'flat', 'amt'}] (also an event per symbol)."""
+    report = []
     for x in engines:
         try:
             if x.pos:
                 async with x.lock:
                     await x.close('KILL')
             else:
-                await x.venue.flatten(x.p.symbol)
+                await x.venue.flatten(x.p.symbol)                # also cancels stray entry / stop orders
         except Exception as exc:
-            x.event(f'flatten error {exc}')
+            x.event(f'flatten error {err_txt(exc)}')
+    for x in engines:
+        amt = None
+        try:
+            amt = (await x.venue.position_view(x.p.symbol)).get('amt') or 0.0
+            if amt:
+                await x.venue.flatten(x.p.symbol)
+                amt = (await x.venue.position_view(x.p.symbol)).get('amt') or 0.0
+        except Exception as exc:
+            x.event(f'KILL reconcile error {err_txt(exc)}')
+        report.append({'symbol': x.p.symbol, 'flat': amt == 0.0, 'amt': amt})
+        x.event(f'KILL RECONCILE {x.p.symbol}: ' + ('flat' if amt == 0.0 else f'NOT FLAT amt={amt}'))
+    return report
 SHUTDOWN_FILE = ROOT / 'data' / 'shutdown_request.json'
 MODES = ('demo', 'live')
 SYMBOLS = ('BTCUSDT', 'DOGEUSDT', 'SOLUSDT')
@@ -181,6 +231,11 @@ class Profile:
     alt_size_boost: bool = False        # the vote >= 90 % SIZE lift itself (OFF 10-07q, same reason as convex);
                                         # alt_boost keeps the BTC 15 % risk share and the BTC probe rule
     order_log: bool = True              # every entry attempt -> engine_orders.jsonl (fill / cancel / reject stats)
+    soft_exit_escalate: bool = False    # bounded chase for protective maker exits (SOFT-* / FLOW / REGIME):
+    soft_exit_deadline_s: float = 5.0   # ... unfilled 5 s while price is at/past the exit reference,
+    soft_exit_max_slip_pct: float = 0.03  # ... or 0.03 % past it -> reduce-only MARKET exit. OFF = SHADOW: the
+                                        # trigger is only recorded (replay 10-08: every bound cost 0.1-1.3 bps/exit)
+    ratchet_max_fail: int = 3           # exchange-stop moves: back-off doubles per failure, stop after 3 per trade
     alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
     alt_kelly_min_n: int = 20           # ... needs >= 20 of them (was 5: 7 SOL trades sized 0.45 -> 1.06 SOL)
@@ -432,6 +487,12 @@ class BinanceVenue(DemoVenue):
                 await asyncio.sleep(0.3)
         return {'status': 'NOT_FOUND', 'filled': 0.0, 'avg': 0.0}
 
+    async def entry_start_ms(self, symbol: str, amt: float, step: float, lookback_s: float = 12 * 3600) -> Optional[int]:
+        """First fill (ms) of the fills that built the open position `amt` (ADOPT fee reconciliation)."""
+        trades, complete = await self.c.history_since(symbol, int((time.time() - lookback_s) * 1000))
+        fills = sorted((int(x['time']), float(x['qty']) * (1 if x.get('side') == 'BUY' else -1)) for x in trades)
+        return entry_start_from_fills(fills, amt, step)
+
     async def realized_parts(self, symbol: str, start_ms: int) -> dict:
         trades, _ = await self.c.history_since(symbol, start_ms)
         gross = sum(float(x.get('realizedPnl', 0)) for x in trades)
@@ -524,6 +585,10 @@ class MockVenue(ShadowVenue):
         if (side == 'BUY' and float(price) >= ask) or (side == 'SELL' and float(price) <= bid):
             raise PostOnlyReject('-5022 post-only would take liquidity')
         await super().limit_gtx(symbol, side, qty, price, cid)
+
+    async def entry_start_ms(self, symbol: str, amt: float, step: float) -> Optional[int]:
+        fills = [(f['t'], f['qty'] * (1 if f['side'] == 'BUY' else -1)) for f in self.fills if f['symbol'] == symbol]
+        return entry_start_from_fills(fills, amt, step)
 
     async def realized_parts(self, symbol: str, start_ms: int) -> dict:
         rows = [f for f in self.fills if f['symbol'] == symbol and f.get('t', 0) >= start_ms]
@@ -1544,6 +1609,7 @@ class Engine:
         except Exception as exc:                            # e.g. -2021 would trigger immediately
             if getattr(exc, 'code', None) == -4130:          # Binance: ONE closePosition stop per direction
                 return await self.swap_stop(price, kind, cid)
+            self.note_stop(kind, 'place', price, exc)
             b = self.book()                                  # live touch, not the last REST view (stale)
             mark = (b.get('price') if not b.get('stale') else None) or self.view.get('mark') or self.feed.price()
             d = 1 if p['side'] == 'BUY' else -1
@@ -1551,7 +1617,7 @@ class Engine:
                 self.event(f'MARIN {kind} {price:g} already crossed ({type(exc).__name__}) -> close reduce-only')
                 await self.close(kind)
                 return True
-            self.event(f'MARIN move {kind} failed: {type(exc).__name__}: {exc}')
+            self.event(f'MARIN move {kind} failed: {err_txt(exc)}')
             return False
         old = p['sl_cid']
         p.update(sl=price, sl_cid=cid, stop_kind=kind, xstop_kind=kind)
@@ -1582,25 +1648,50 @@ class Engine:
         and if even that fails close the position (never leave it naked)."""
         p, sym, tick = self.pos, self.p.symbol, self.spec['tick']
         opp = 'SELL' if p['side'] == 'BUY' else 'BUY'
+        t_off = time.perf_counter()
         try:
             await self.venue.cancel_stop(p['sl_cid'])
-        except Exception:
-            pass
+        except Exception as exc:
+            self.note_stop(kind, 'cancel', p['sl'], exc)          # may still have succeeded (timeout)
         try:
             await self.venue.stop(sym, opp, fmt(price, tick), cid)
         except Exception as exc:
+            self.note_stop(kind, 'swap', price, exc)
             back = 'gs-' + uuid.uuid4().hex[:28]
             try:
                 await self.venue.stop(sym, opp, fmt(p['sl'], tick), back)
                 p['sl_cid'] = back
-                self.event(f'MARIN move {kind} failed after cancel ({type(exc).__name__}) -> old stop {p["sl"]:g} restored')
-            except Exception:
-                self.event(f'MARIN no stop could be placed -> close {kind} reduce-only')
+                naked = round((time.perf_counter() - t_off) * 1000, 1)
+                p['stop_events'][-1]['naked_ms'] = naked
+                self.event(f'MARIN move {kind} {price:g} failed after cancel ({err_txt(exc)}) -> old stop '
+                           f'{p["sl"]:g} restored, unprotected {naked:.0f} ms')
+            except Exception as exc2:
+                self.note_stop(kind, 'restore', p['sl'], exc2)
+                self.event(f'MARIN no stop could be placed ({err_txt(exc2)}) -> close {kind} reduce-only')
                 await self.close(kind)
                 return True
             return False
         p.update(sl=price, sl_cid=cid, stop_kind=kind, xstop_kind=kind)
         return True
+
+    def note_stop(self, kind: str, step: str, price: float, exc: BaseException) -> None:
+        """Keep the last 10 stop-API failures of this trade with the context needed to diagnose them."""
+        p = self.pos
+        if not p:
+            return
+        b = self.book()
+        ev = p.setdefault('stop_events', [])
+        ev.append({'t': round(self.clock(), 3), 'kind': kind, 'step': step, 'trigger': price,
+                   'code': getattr(exc, 'code', None), 'meaning': BINANCE_CODES.get(getattr(exc, 'code', None)),
+                   'uncertain': getattr(exc, 'uncertain', None), 'working_type': 'CONTRACT_PRICE',
+                   'venue_bid': b.get('bid'), 'venue_ask': b.get('ask'), 'venue_mark': self.view.get('mark'),
+                   'signal_mid': self.feed.price(), 'sl_before': p.get('sl')})
+        del ev[:-10]
+
+    def stop_covers_entry(self, p: dict) -> bool:
+        """True only when the EXCHANGE stop sits at/through the entry (a soft target is not protection)."""
+        d = 1 if p['side'] == 'BUY' else -1
+        return p.get('sl') is not None and d * (p['sl'] - p['entry']) >= 0
 
     def mbe_price(self, p: dict) -> float:
         d = 1 if p['side'] == 'BUY' else -1
@@ -1641,8 +1732,11 @@ class Engine:
         p = self.pos
         if p.get('exiting'):
             return
+        b = self.book()
+        ref = p.get('soft_stop') if reason.startswith('SOFT-') else None
+        ref = ref or (b.get('price') if not b.get('stale') else None) or self.view.get('mark') or p['entry']
         p['exiting'] = {'reason': reason, 'cid': None, 'px': None, 'posted': 0.0, 'started': self.clock(),
-                        'reprices': 0, 'floor': floor, 'floor0': floor}
+                        'reprices': 0, 'floor': floor, 'floor0': floor, 'ref': ref}
         try:
             await self.venue.cancel(self.p.symbol, p['tp_cid'])     # the exit order owns the whole size now
         except Exception:
@@ -1721,6 +1815,9 @@ class Engine:
                 mk[k] = [round(fav * 100, 3), round(age, 2)]    # [bps with the trade, actual age at sample]
         if p.get('exiting'):
             x = p['exiting']
+            if self.soft_exit_due(p, x, mark):
+                await self.escalate_exit(p, x, mark)
+                return
             if x.get('floor') and self.clock() - p['opened'] >= self.p.eject_hard_s:
                 x.update(floor=None, reason='EJECT')
                 self.event(f'MARIN EJECT escalate: BE order unfilled after {self.p.eject_hard_s:.0f}s -> '
@@ -1785,6 +1882,38 @@ class Engine:
         else:
             await self._manage_hard(p, d, mark, fav)
 
+    def soft_exit_due(self, p: dict, x: dict, mark: float) -> bool:
+        """Bounded chase (2026-10-07r, DOGE #37): a protective maker exit escalates to a reduce-only taker exit
+        once price is soft_exit_max_slip_pct beyond its reference, or after soft_exit_deadline_s while price is
+        still at/beyond it. EJECT keeps its own floor -> touch schedule."""
+        if x['reason'].startswith('EJECT') or not x.get('ref') or not mark:
+            return False
+        d = 1 if p['side'] == 'BUY' else -1
+        adverse = d * (x['ref'] - mark) / x['ref'] * 100          # > 0: price went past the exit reference
+        x['adverse_pct'] = round(adverse, 4)
+        due = adverse >= self.p.soft_exit_max_slip_pct or (
+            adverse >= 0 and self.clock() - x['started'] >= self.p.soft_exit_deadline_s)
+        if due and not self.p.soft_exit_escalate:
+            if 'shadow_escalate' not in x:                      # counterfactual for later evaluation
+                b = self.book()
+                x['shadow_escalate'] = {'after_s': round(self.clock() - x['started'], 2), 'mark': mark,
+                                        'touch': b.get('bid') if d > 0 else b.get('ask'),
+                                        'adverse_pct': x['adverse_pct']}
+            return False
+        return due
+
+    async def escalate_exit(self, p: dict, x: dict, mark: float) -> None:
+        reason = f'{x["reason"]}>TAKER'
+        self.event(f'MARIN EXIT ESCALATED {x["reason"]}: maker unfilled {self.clock() - x["started"]:.1f}s, price '
+                   f'{x.get("adverse_pct", 0):+.3f}% past ref {x["ref"]:g} -> reduce-only MARKET (taker fee, loss capped)')
+        if x.get('cid'):
+            try:
+                await self.venue.cancel(self.p.symbol, x['cid'])
+            except Exception as exc:
+                self.event(f'MARIN exit cancel: {err_txt(exc)}')
+        p['exit_escalated'] = True
+        await self.close(reason)
+
     def eject_due(self, p: dict, now: float) -> bool:
         """Time decay: a soft-exit position open >= eject_s whose best excursion never reached +eject_mfe_pct."""
         return (self.p.eject and self.p.soft_exits and not p.get('tp1_filled')
@@ -1829,7 +1958,12 @@ class Engine:
         if d * (tgt - p['sl']) <= 0 or d * (mark - tgt) <= 0:
             return
         if not await self.move_stop(tgt, 'RATCHET'):
-            p['ratchet_retry_at'] = self.clock() + self.p.ratchet_retry_s
+            p['ratchet_fails'] = p.get('ratchet_fails', 0) + 1
+            p['ratchet_retry_at'] = self.clock() + self.p.ratchet_retry_s * 2 ** (p['ratchet_fails'] - 1)
+            if p['ratchet_fails'] >= self.p.ratchet_max_fail:
+                p['ratchet'] = 'FAILED'
+                self.event(f'MARIN RATCHET gave up after {p["ratchet_fails"]} failures - exchange stop stays '
+                           f'{p["sl"]:g}; soft tiers still manage the exit')
             return
         if self.pos:
             p['ratchet'] = True
@@ -1955,8 +2089,16 @@ class Engine:
                 self.event(f'MARIN adopt: stop failed ({type(exc).__name__}) - soft exits only')
         now = self.clock()
         peak = max(entry, mark) if d > 0 else min(entry, mark)
+        start_ms = None
+        if hasattr(self.venue, 'entry_start_ms'):
+            try:
+                start_ms = await self.venue.entry_start_ms(sym, amt, step)
+            except Exception as exc:
+                self.event(f'MARIN adopt: entry fills lookup failed ({err_txt(exc)}) - entry fee UNKNOWN')
+        opened_ms = start_ms - 1 if start_ms else int((t0 or now) * 1000) - 1000
         self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': fmt(qty, step), 'entry': entry,
-                    'opened': now, 'opened_ms': int((t0 or now) * 1000) - 1000, 'sl': sl, 'tp': None, 'sl0': sl,
+                    'cost_complete': bool(start_ms),
+                    'opened': now, 'opened_ms': opened_ms, 'sl': sl, 'tp': None, 'sl0': sl,
                     'sl_cid': sl_cid, 'tp_cid': 'gt-adopt-' + uuid.uuid4().hex[:20], 'stop_kind': 'SL',
                     'tp_qty': qty, 'split': False, 'tp1_filled': False, 'be_locked': False, 'mbe_locked': False,
                     'trail_on': False, 'peak': peak, 'mfe_pct': d * (peak / entry - 1) * 100, 'adverse_usd': 0.0,
@@ -2036,7 +2178,11 @@ class Engine:
                'pnl_pct': pnl / (notional / self.p.leverage) * 100 if notional else 0.0, 'reason': reason,
                'be_locked': p['be_locked'], 'mbe_locked': p.get('mbe_locked'), 'tp1': p['tp1_filled'],
                'mfe_pct': p['mfe_pct'], 'adverse_usd': p.get('adverse_usd'), 'regime': p.get('regime'),
-               'exit_mode': 'maker' if x else 'exchange', 'exit_reprices': (x or {}).get('reprices'),
+               'exit_mode': ('maker+taker' if p.get('exit_escalated') else 'maker') if x else 'exchange',
+               'exit_reprices': (x or {}).get('reprices'), 'exit_ref': (x or {}).get('ref'),
+               'shadow_escalate': (x or {}).get('shadow_escalate'),
+               'stop_covered_entry': self.stop_covers_entry(p), 'stop_events': p.get('stop_events') or None,
+               'cost_complete': p.get('cost_complete', True),
                'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
                'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
                'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
@@ -2117,8 +2263,10 @@ class Engine:
                 tp_pct = ps.get('tp_pct')
                 tp_str = f'+{tp_pct:.2f}%' if tp_pct is not None else '—'
                 side_str = 'LONG' if ps.get('side') in ('BUY', 'LONG') else 'SHORT'
-                marin = ('TRAILING RUNNER' if ps.get('trail_on') else 'BREAKEVEN LOCKED' if ps.get('be_locked')
-                         else 'MICRO-BE LOCKED' if ps.get('mbe_locked')
+                covered = self.stop_covers_entry(ps) if ps.get('entry') is not None else False
+                marin = ('TRAILING RUNNER' if ps.get('trail_on') else
+                         ('BREAKEVEN LOCKED' if covered else 'BE TARGET (soft)') if ps.get('be_locked')
+                         else ('MICRO-BE LOCKED' if covered else 'MICRO-BE TARGET (soft)') if ps.get('mbe_locked')
                          else f'{side_str} OPEN (TP1: {tp_str})')
                 sl_val = ps.get('sl')
                 sl_str = f'{sl_val:g}' if sl_val is not None else '—'
@@ -2157,6 +2305,9 @@ class Engine:
                 'margin_type': 'Cross' if self.p.margin_type == 'CROSSED' else 'Isolated', 'margin': margin,
                 'tp': p.get('tp'), 'sl': p.get('sl'), 'age_s': age_s,
                 'stop_kind': p.get('stop_kind'), 'be_locked': p.get('be_locked'), 'trail_on': p.get('trail_on'),
+                'stop_covers_entry': self.stop_covers_entry(p) if p.get('entry') is not None else None,
+                'protection': (None if not p else 'EXCHANGE STOP >= ENTRY' if self.stop_covers_entry(p)
+                               else 'SOFT TARGET ONLY' if p.get('soft_stop') is not None else 'HARD SL ONLY'),
                 'mbe_locked': p.get('mbe_locked'), 'adverse_usd': p.get('adverse_usd'),
                 'soft_stop': p.get('soft_stop'), 'soft_exits': self.p.soft_exits,
                 'exiting': None if not p.get('exiting') else {k: p['exiting'][k] for k in

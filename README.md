@@ -177,6 +177,13 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.18 Cập nhật 08/10/2026 (r) — Vòng đời lệnh thoát và stop
+- "BE LOCKED" chỉ hiện khi stop trên sàn đã qua giá vào; mục tiêu mềm hiện "BE TARGET soft · CHƯA BẢO VỆ".
+- Lỗi dời stop ghi mã Binance + nghĩa, giá venue, mark và thời gian không có stop; thử lại giãn dần, bỏ sau 3 lần.
+- Vị thế ADOPT đối soát fill vào lệnh để có đủ phí; KILL kiểm tra lại từng symbol.
+- Thoát maker có giới hạn (chuyển MARKET khi giá đi qua mốc 0.03 % hoặc 5 s) đã có nhưng **tắt** (chỉ ghi shadow): replay cho thấy tốn 0.4–1.1 bps mỗi lần thoát dù giảm lỗ đuôi. `tools/replay_soft_exit.py`.
+- Test: 1070 passed.
+
 ### 8.17 Cập nhật 07/10/2026 (q) — Kế toán, đo khớp/độ trễ, sizing an toàn
 - Gross/phí trên dashboard chỉ cộng dòng có đủ dữ liệu (dòng TEST thiếu gross/fee được đếm riêng). KILL từ dashboard giờ đóng vị thế qua MARIN và ghi ledger.
 - Mỗi lần vào lệnh ghi `data/engine_orders.jsonl` (FILLED/PARTIAL/UNFILLED/REJECTED/TOXIC/REFUSED, decide→send, send→ack, ack→fill, basis tín hiệu↔venue). Ledger schema 2 thêm policy id, commit, basis, markout 1/5/30 s.

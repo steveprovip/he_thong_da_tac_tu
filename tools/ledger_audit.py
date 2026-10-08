@@ -99,6 +99,16 @@ def sessions(rows: list) -> list:
     return res
 
 
+def entry_fee_suspect(r: dict, maker_bps: float = 2.0) -> bool:
+    """ADOPTED rows written before 2026-10-07r may miss the entry fee (fill window started after the entry):
+    fee below 1.5 x one maker side means only the exit side was found. cost_complete=False is explicit."""
+    if r.get('cost_complete') is False:
+        return True
+    if r.get('tag') != 'ADOPTED' or r.get('fee') is None or not r.get('qty') or not r.get('entry'):
+        return False
+    return r['fee'] < 1.5 * r['qty'] * r['entry'] * maker_bps / 1e4
+
+
 def audit(rows: list) -> dict:
     key = lambda f: (lambda r: r.get(f) if r.get(f) is not None else 'UNKNOWN')
     by = lambda f: OrderedDict((k, group_stats([r for r in rows if key(f)(r) == k]))
@@ -114,6 +124,11 @@ def audit(rows: list) -> dict:
                         for f in ('gross', 'fee', 'entry_type', 'maker_fills', 'latency_ms', 'tag', 'path')},
         reconcile_gross_minus_fee_ne_net=recon,
         all=group_stats(rows), auto_only=group_stats(strategy),
+        cost_incomplete_rows=[i for i, r in enumerate(rows, 1) if entry_fee_suspect(r)],
+        known_cost_net=round(sum(r['pnl'] for r in rows if r.get('gross') is not None and r.get('fee') is not None
+                                 and not entry_fee_suspect(r)), 8),
+        adopted_entry_fee_estimate=round(sum(r['qty'] * r['entry'] * 2e-4 for r in rows if entry_fee_suspect(r)), 8),
+        by_tag=by('tag'), by_policy=by('policy'),
         by_symbol=by('symbol'), by_entry_type=by('entry_type'), by_path=by('path'), by_reason=by('reason'),
         sessions=sessions(rows),
         latency_ms_ledger={'n': len(lat), 'p50': lat[len(lat) // 2] if lat else None,

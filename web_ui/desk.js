@@ -197,7 +197,8 @@
         pos.be_locked ? 'buy' : ''],
       [pos.exiting ? `MAKER EXIT ${pos.exiting.reason} @ ${fx(pos.exiting.px, pdp(pos.exiting.px))}${fin(pos.exiting.floor) ? ` (sàn BE ${fx(pos.exiting.floor, pdp(pos.exiting.floor))})` : ''} · re-peg x${pos.exiting.reprices}`
         : pos.trail_on ? `TRAILING (soft ${fx(pos.soft_stop, pdp(pos.soft_stop))}) · MFE ${sg(pos.mfe_pct, 2)}%`
-        : pos.be_locked ? `BE ${pos.soft_exits ? 'soft ' + fx(pos.soft_stop, pdp(pos.soft_stop)) : 'LOCKED'} · MFE ${sg(pos.mfe_pct, 2)}%`
+        : pos.be_locked ? (pos.stop_covers_entry ? `BE LOCKED (stop sàn ${fx(pos.sl, pdp(pos.sl))}) · MFE ${sg(pos.mfe_pct, 2)}%`
+          : `BE TARGET soft ${fx(pos.soft_stop, pdp(pos.soft_stop))} · CHƯA BẢO VỆ (SL sàn ${fx(pos.sl, pdp(pos.sl))}) · MFE ${sg(pos.mfe_pct, 2)}%`)
         : pos.mbe_locked ? `MICRO-BE · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k`
         : pos.ratchet ? `RATCHET · SL sàn ${fx(pos.sl, pdp(pos.sl))} · MFE ${sg(pos.mfe_pct, 2)}%`
         : pos.tag === 'EXTERNAL' ? 'EXTERNAL' : `${pos.tag === 'ADOPTED' ? 'ADOPTED · ' : ''}${pos.alt_boost ? 'PRIORITY · ' : ''}${pos.size_mult > 1 ? `x${pos.size_mult} · ` : ''}${fin(pos.eject_in_s) ? `EJECT ${fx(pos.eject_in_s, 0)}s · ` : ''}micro-BE khi +${fx(pos.microbe_trigger_pct, 2)}% · MFE ${sg(pos.mfe_pct, 2)}% · flow ngược $${fx((pos.adverse_usd || 0) / 1e3, 0)}k/${fx((pos.flow_exit_usd || 0) / 1e3, 0)}k · ${fx(pos.age_s, 0)}s${pos.breath_left_s > 0 ? ` · THỞ ${fx(pos.breath_left_s, 0)}s` : ''}`,

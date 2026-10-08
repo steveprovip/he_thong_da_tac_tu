@@ -24,3 +24,36 @@ Các vòng 10-07 (f)…(p) đã đổi ≥ 40 ngưỡng (KER 0.40/0.45→0.38/0.
 | E3 | edge_bps có dự báo outcome? | edge_bps + markout 30 s/net của ≥ 200 attempt; chia theo thời gian, holdout 30 % cuối | hệ số/AUC trên holdout không khác ngẫu nhiên (CI chứa 0 / 0.5) |
 | E4 | GTX vs IOC trên cùng cơ hội | replay hftbacktest với latency từ Q3 + L2 ghi lại | chênh net/attempt không vượt CI khi stress phí +2 bps, latency ×2 |
 | E5 | Gate NO EDGE (f* ≤ 0 → không vào) | quyết định chính sách + shadow để tránh khoá chết | — |
+
+## Vòng (r) — 08/10/2026: vòng đời lệnh thoát / stop
+
+| ID | Loại | Thay đổi | Mặc định | Rollback | Trạng thái |
+|---|---|---|---|---|---|
+| R1 | ngữ nghĩa | `stop_covers_entry`, `protection` (EXCHANGE STOP >= ENTRY / SOFT TARGET ONLY / HARD SL ONLY); MARIN ghi "BE TARGET (soft)" thay vì "BREAKEVEN LOCKED" khi stop sàn chưa qua entry; ledger `stop_covered_entry` | luôn bật | revert | VALIDATED (test) |
+| R2 | thoát lệnh | bounded chase: SOFT-*/FLOW/REGIME maker exit → reduce-only MARKET khi giá qua mốc ≥ 0.03 % hoặc ≥ 5 s mà vẫn ở/qua mốc | **OFF (shadow)**: ghi `shadow_escalate` | `soft_exit_escalate=True` | REJECTED cho bật mặc định (replay dưới) |
+| R3 | stop API | `err_txt` (mã + nghĩa chuẩn, không chép text sàn); `stop_events` (bước, mã, trigger, bid/ask venue, mark, mid tín hiệu, naked_ms); back-off ×2, bỏ sau 3 lần (`ratchet_max_fail`) | luôn bật | `ratchet_max_fail` lớn | VALIDATED (test) |
+| R4 | kế toán | ADOPT tìm fill tạo vị thế (`entry_start_ms`) → phí vào có trong ledger; không đối soát được → `cost_complete=False` | luôn bật | revert | VALIDATED (test) |
+| R5 | KILL | `kill_switch` idempotent + reconcile từng symbol (flatten lại 1 lần, event NOT FLAT) | luôn bật | revert | VALIDATED (test) |
+
+### R2 — replay (tools/replay_soft_exit.py), dữ liệu mainnet bookTicker
+Câu hỏi: khi BE (MFE ≥ 0.12 %) đã arm và giá quay về mốc entry+0.06 %, chính sách nào cho net tốt hơn? Sự kiện tổng hợp: long+short tại mid mỗi 20 s; phí maker 2 / taker 5 bps; SL 0.35 %. Không có dữ liệu trade → hai mô hình fill maker: bảo thủ (chỉ khi giá xuyên qua lệnh) và lạc quan (thêm: đứng đầu touch ≥ 1 s). Không phải DOGE, không phải venue demo.
+
+In-sample (SOL/LINK/BNB 09–10/09/2026, 164 sự kiện): A chase mean −0.02 / +0.79 bps (bảo thủ / lạc quan), p5 −6.1 / −2.8, worst −16.1; C exchange stop mean −1.79, p5 −3.6, worst −9.9. Lưới (mọi cấu hình đều được ghi, không chọn lọc) — chênh B − A theo cặp, CI95 block bootstrap:
+
+| slip, deadline | B−A bảo thủ (bps) | B−A lạc quan (bps) | p5 A → B (bảo thủ) | worst A → B | số lần escalate (bảo thủ / lạc quan) |
+|---|---|---|---|---|---|
+| slip=0.03 dl=5.0 | -1.14 [-1.771, -0.711] | -0.36 [-0.885, -0.002] | -6.09 → -4.91 | -16.12 → -13.26 | 92 / 32 |
+| slip=0.03 dl=30.0 | -0.60 [-1.246, -0.138] | -0.36 [-0.885, -0.002] | -6.09 → -4.91 | -16.12 → -13.26 | 60 / 32 |
+| slip=0.03 dl=inf | -0.50 [-1.06, -0.09] | -0.36 [-0.885, -0.002] | -6.09 → -4.91 | -16.12 → -13.26 | 56 / 32 |
+| slip=0.06 dl=5.0 | -1.10 [-1.695, -0.729] | +0.03 [-0.118, 0.117] | -6.09 → -7.42 | -16.12 → -14.94 | 76 / 8 |
+| slip=0.06 dl=30.0 | -0.42 [-0.97, -0.118] | +0.03 [-0.118, 0.117] | -6.09 → -7.49 | -16.12 → -14.94 | 32 / 8 |
+| slip=0.06 dl=inf | -0.33 [-0.837, -0.058] | +0.03 [-0.118, 0.117] | -6.09 → -7.49 | -16.12 → -14.94 | 28 / 8 |
+| slip=0.1 dl=5.0 | -1.28 [-1.773, -0.877] | -0.14 [-0.327, 0.0] | -6.09 → -7.49 | -16.12 → -19.95 | 75 / 6 |
+| slip=0.1 dl=30.0 | -0.24 [-0.483, -0.021] | -0.12 [-0.304, 0.0] | -6.09 → -6.09 | -16.12 → -19.95 | 11 / 5 |
+| slip=0.1 dl=inf | -0.14 [-0.329, 0.0] | -0.12 [-0.304, 0.0] | -6.09 → -6.09 | -16.12 → -19.95 | 6 / 5 |
+| slip=inf dl=5.0 | -1.17 [-1.71, -0.803] | -0.02 [-0.07, 0.0] | -6.09 → -7.49 | -16.12 → -16.12 | 70 / 1 |
+| slip=inf dl=30.0 | -0.10 [-0.291, 0.007] | +0.00 [0.0, 0.0] | -6.09 → -6.09 | -16.12 → -16.12 | 5 / 0 |
+
+Holdout chưa dùng (SOL+LINK 08/09/2026, 672 sự kiện, cấu hình 0.03 %/5 s cố định trước): B − A = −1.06 bps [−1.41, −0.61] (bảo thủ), −0.42 [−0.58, −0.25] (lạc quan); worst −15.5 → −8.5; p5 bảo thủ −7.4 → −5.0 nhưng lạc quan −3.6 → −5.0. C stop: mean −1.50, p5 −2.65, worst −8.5.
+
+Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần thoát trung bình** ở cả in-sample và holdout; không cấu hình nào cải thiện net trung bình. Theo tiêu chí chấp nhận → giữ shadow. Quyết định đổi mean lấy tail là của người dùng (chi phí đã đo ở trên). Ca DOGE (−17.5 bps net) nằm ở đuôi, tệ hơn worst của A trong replay (DOGE tick = 1.1 bps, book demo).

@@ -28,9 +28,21 @@
       "id": "loss-continuation-brief-20261007r",
       "name": "DOGE SOFT-BE loss and failed stop replacement research brief",
       "description": "Prepare a continuation prompt with fresh ledger/code evidence and primary sources; no runtime or trading changes",
-      "dependencies": ["research-instrumentation-20261007q"],
+      "dependencies": [
+        "research-instrumentation-20261007q"
+      ],
       "status": "done",
       "evidence": "37-row DEMO snapshot verified; SOFT-BE touch-repeg/flag semantics traced; prompt copied and CLAUDE.md pointer added; init.sh 1052 passed (86.99s), toolkit 15 passed/1 skipped; artifact and git diff checks passed. Trading fixes remain delegated by prompt to Claude."
+    },
+    {
+      "id": "exit-lifecycle-20261008r",
+      "name": "Soft-exit/stop lifecycle: honest protection state, stop-failure diagnostics, ADOPT fee reconciliation, idempotent KILL",
+      "description": "DOGE #37 reproduced; bounded chase implemented in shadow; RATCHET errors with code/context/naked window and bounded retries; ADOPT entry fills; KILL reconcile",
+      "dependencies": [
+        "research-instrumentation-20261007q"
+      ],
+      "status": "done",
+      "evidence": "pytest 1070 passed 0 skipped; #37 reproduced net -0.04524931; replay holdout 672 events: bounded chase -1.06 bps (cons) / -0.42 bps (opt) vs chase, so kept shadow"
     }
   ]
 }
