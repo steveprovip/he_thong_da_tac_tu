@@ -234,6 +234,20 @@ def bars_15m(bars, span: float = 900.0, min_fill: int = 12) -> list:
     return [tuple(x[:5]) for k, x in sorted(out.items()) if x[5] >= min_fill]
 
 
+def mr_flow_veto(side: str, f: dict, ofi_max: float = 0.30, cvd60_usd: float = 100_000.0) -> Optional[str]:
+    """Mean reversion must not fade the order flow (Cont-Kukanov-Stoikov OFI; #39 bought a dip at OFI -0.93):
+    BUY vetoed when OFI L10 < -ofi_max or CVD 60 s < -cvd60_usd; SELL mirrored. Missing OFI = veto (unknown flow)."""
+    ofi, cvd = f.get('ofi_10s'), f.get('cvd_60s') or 0.0
+    sgn = 1 if side == 'BUY' else -1
+    if ofi is None:
+        return f'MR FLOW {side}: OFI unknown (warming) - no fade without flow data'
+    if sgn * ofi < -ofi_max:
+        return f'MR FLOW {side} vs OFI {ofi:+.2f} (|limit| {ofi_max:.2f}) - fading aggressive flow'
+    if sgn * cvd < -cvd60_usd:
+        return f'MR FLOW {side} vs CVD 60s {cvd / 1e3:+.0f}k (limit {cvd60_usd / 1e3:.0f}k) - fading aggressive flow'
+    return None
+
+
 def vfr(atr_pct: Optional[float], fee_bps: float, spread_bps: float = 0.0) -> Optional[float]:
     """Volatility-to-Fee Ratio: ATR (bps) / (round-trip fee + spread, bps). < 3 -> the move cannot pay the toll."""
     if atr_pct is None or fee_bps + spread_bps <= 0:

@@ -37,3 +37,9 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Next demo run will record `stop_events` (code/meaning/trigger/bid/ask/mark/naked_ms) for any stop move failure and `shadow_escalate` for protective exits — check them before changing stop workingType (hypothesis: -2021 with CONTRACT_PRICE on the testnet book).
 - Possible next code step (needs demo test, docs do not confirm): reduceOnly+quantity STOP_MARKET placed before cancelling the old stop to remove the naked window; watch for -2022/-4045.
 - Rollback: soft_exit_escalate stays False; ratchet_max_fail large restores endless retries; all ledger fields additive.
+
+## Handoff — 2026-10-08 (s)
+- Decide: live TP/SL (rr 0.47) now fails the 1.30 gate — live will refuse every entry until TP/SL or the loss budget changes (or net_rr_min is lowered for live).
+- MR lane is effectively off (max rr 0.875); re-enable only with new MR brackets evaluated out of sample.
+- super_size is ON in demo (risk up to ~0.25 U/trade); evaluate rows with super_size=True before keeping it; rollback super_size=False.
+- Fill rate: GTX unfilled orders are queue-limited; next experiment is queue position (join vs improve 1 tick) using touch_qty_last, not faster re-peg.

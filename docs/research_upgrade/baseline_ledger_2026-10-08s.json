@@ -1,0 +1,1025 @@
+{
+ "rows": 40,
+ "modes": [
+  "demo|BINANCE DEMO"
+ ],
+ "tags": {
+  "AUTO": 38,
+  "ADOPTED": 1,
+  "TEST": 1
+ },
+ "unknown_fields": {
+  "gross": [
+   1
+  ],
+  "fee": [
+   1
+  ],
+  "entry_type": [
+   1
+  ],
+  "maker_fills": [
+   1
+  ],
+  "latency_ms": [],
+  "tag": [],
+  "path": []
+ },
+ "reconcile_gross_minus_fee_ne_net": [],
+ "all": {
+  "n": 40,
+  "wins": 13,
+  "net": -1.28227313,
+  "expectancy": -0.032057,
+  "expectancy_ci95_block": [
+   -0.076978,
+   0.014582
+  ],
+  "profit_factor": 0.5052,
+  "max_drawdown": -1.951928,
+  "gross_known": 0.96719999,
+  "fee_known": 2.17980226,
+  "rows_unknown_gross_fee": 1,
+  "fee_over_gross": 2.2537,
+  "gross_positive_net_negative": 8,
+  "maker_fills": 97,
+  "taker_fills": 20,
+  "taker_share": 0.1709,
+  "rows_with_taker_exit": 19,
+  "median_hold_s": 153.13378143310547
+ },
+ "auto_only": {
+  "n": 38,
+  "wins": 12,
+  "net": -1.23605657,
+  "expectancy": -0.032528,
+  "expectancy_ci95_block": [
+   -0.080462,
+   0.006311
+  ],
+  "profit_factor": 0.5098,
+  "max_drawdown": -1.951928,
+  "gross_known": 0.92959999,
+  "fee_known": 2.16565656,
+  "rows_unknown_gross_fee": 0,
+  "fee_over_gross": 2.3297,
+  "gross_positive_net_negative": 8,
+  "maker_fills": 89,
+  "taker_fills": 20,
+  "taker_share": 0.1835,
+  "rows_with_taker_exit": 19,
+  "median_hold_s": 177.2770471572876
+ },
+ "cost_incomplete_rows": [
+  35
+ ],
+ "known_cost_net": -1.23605657,
+ "adopted_entry_fee_estimate": 0.01415322,
+ "by_tag": {
+  "ADOPTED": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.0234543,
+   "expectancy": 0.023454,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0376,
+   "fee_known": 0.0141457,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.3762,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 8,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 22.39629101753235
+  },
+  "AUTO": {
+   "n": 38,
+   "wins": 12,
+   "net": -1.23605657,
+   "expectancy": -0.032528,
+   "expectancy_ci95_block": [
+    -0.080462,
+    0.006311
+   ],
+   "profit_factor": 0.5098,
+   "max_drawdown": -1.951928,
+   "gross_known": 0.92959999,
+   "fee_known": 2.16565656,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 2.3297,
+   "gross_positive_net_negative": 8,
+   "maker_fills": 89,
+   "taker_fills": 20,
+   "taker_share": 0.1835,
+   "rows_with_taker_exit": 19,
+   "median_hold_s": 177.2770471572876
+  },
+  "TEST": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.06967086,
+   "expectancy": -0.069671,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.069671,
+   "gross_known": 0,
+   "fee_known": 0,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 0,
+   "taker_fills": 0,
+   "taker_share": null,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 32.03399586677551
+  }
+ },
+ "by_policy": {
+  "20ea6a9676": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.00040824,
+   "expectancy": 0.000408,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.006,
+   "fee_known": 0.00559176,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.932,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 2,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 308.9744756221771
+  },
+  "UNKNOWN": {
+   "n": 34,
+   "wins": 9,
+   "net": -1.22563407,
+   "expectancy": -0.036048,
+   "expectancy_ci95_block": [
+    -0.08781,
+    0.016979
+   ],
+   "profit_factor": 0.511,
+   "max_drawdown": -1.951928,
+   "gross_known": 0.95817999,
+   "fee_known": 2.1141432,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": 2.2064,
+   "gross_positive_net_negative": 8,
+   "maker_fills": 77,
+   "taker_fills": 18,
+   "taker_share": 0.1895,
+   "rows_with_taker_exit": 17,
+   "median_hold_s": 177.2770471572876
+  },
+  "ad6d902372": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.04524931,
+   "expectancy": -0.045249,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.045249,
+   "gross_known": -0.03492,
+   "fee_known": 0.01032931,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 6,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 77.07536220550537
+  },
+  "e2fb1f68d5": {
+   "n": 2,
+   "wins": 1,
+   "net": -0.03608279,
+   "expectancy": -0.018041,
+   "expectancy_ci95_block": [
+    -0.040012,
+    0.003929
+   ],
+   "profit_factor": 0.0982,
+   "max_drawdown": -0.040012,
+   "gross_known": -0.01216,
+   "fee_known": 0.02392279,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 2,
+   "taker_fills": 2,
+   "taker_share": 0.5,
+   "rows_with_taker_exit": 2,
+   "median_hold_s": 68.17007327079773
+  },
+  "eafc049db2": {
+   "n": 2,
+   "wins": 2,
+   "net": 0.0242848,
+   "expectancy": 0.012142,
+   "expectancy_ci95_block": [
+    0.000831,
+    0.023454
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0501,
+   "fee_known": 0.0258152,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.5153,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 10,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 320.0829372406006
+  }
+ },
+ "by_symbol": {
+  "BTCUSDT": {
+   "n": 27,
+   "wins": 6,
+   "net": -1.45314225,
+   "expectancy": -0.05382,
+   "expectancy_ci95_block": [
+    -0.103932,
+    0.028658
+   ],
+   "profit_factor": 0.3955,
+   "max_drawdown": -1.980132,
+   "gross_known": 0.60027999,
+   "fee_known": 1.98375138,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": 3.3047,
+   "gross_positive_net_negative": 7,
+   "maker_fills": 62,
+   "taker_fills": 13,
+   "taker_share": 0.1733,
+   "rows_with_taker_exit": 12,
+   "median_hold_s": 153.13378143310547
+  },
+  "DOGEUSDT": {
+   "n": 3,
+   "wins": 1,
+   "net": -0.0813321,
+   "expectancy": -0.027111,
+   "expectancy_ci95_block": [
+    -0.043504,
+    -0.025365
+   ],
+   "profit_factor": 0.0461,
+   "max_drawdown": -0.085262,
+   "gross_known": -0.04708,
+   "fee_known": 0.0342521,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 8,
+   "taker_fills": 2,
+   "taker_share": 0.2,
+   "rows_with_taker_exit": 2,
+   "median_hold_s": 68.17007327079773
+  },
+  "SOLUSDT": {
+   "n": 10,
+   "wins": 6,
+   "net": 0.25220122,
+   "expectancy": 0.02522,
+   "expectancy_ci95_block": [
+    -0.007724,
+    0.081937
+   ],
+   "profit_factor": 3.4644,
+   "max_drawdown": -0.097027,
+   "gross_known": 0.414,
+   "fee_known": 0.16179878,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.3908,
+   "gross_positive_net_negative": 1,
+   "maker_fills": 27,
+   "taker_fills": 5,
+   "taker_share": 0.1562,
+   "rows_with_taker_exit": 5,
+   "median_hold_s": 258.5775992870331
+  }
+ },
+ "by_entry_type": {
+  "ADOPT": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.0234543,
+   "expectancy": 0.023454,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0376,
+   "fee_known": 0.0141457,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.3762,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 8,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 22.39629101753235
+  },
+  "GTX": {
+   "n": 26,
+   "wins": 6,
+   "net": -1.5059475,
+   "expectancy": -0.057921,
+   "expectancy_ci95_block": [
+    -0.104234,
+    -0.015617
+   ],
+   "profit_factor": 0.197,
+   "max_drawdown": -1.625158,
+   "gross_known": -0.40504002,
+   "fee_known": 1.10090748,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 6,
+   "maker_fills": 69,
+   "taker_fills": 7,
+   "taker_share": 0.0921,
+   "rows_with_taker_exit": 7,
+   "median_hold_s": 194.71770977973938
+  },
+  "IOC": {
+   "n": 12,
+   "wins": 6,
+   "net": 0.26989093,
+   "expectancy": 0.022491,
+   "expectancy_ci95_block": [
+    -0.091731,
+    0.113591
+   ],
+   "profit_factor": 1.4176,
+   "max_drawdown": -0.633461,
+   "gross_known": 1.33464001,
+   "fee_known": 1.06474908,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.7978,
+   "gross_positive_net_negative": 2,
+   "maker_fills": 20,
+   "taker_fills": 13,
+   "taker_share": 0.3939,
+   "rows_with_taker_exit": 12,
+   "median_hold_s": 177.2770471572876
+  },
+  "UNKNOWN": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.06967086,
+   "expectancy": -0.069671,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.069671,
+   "gross_known": 0,
+   "fee_known": 0,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 0,
+   "taker_fills": 0,
+   "taker_share": null,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 32.03399586677551
+  }
+ },
+ "by_path": {
+  "ADOPT": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.0234543,
+   "expectancy": 0.023454,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0376,
+   "fee_known": 0.0141457,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.3762,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 8,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 22.39629101753235
+  },
+  "JEV": {
+   "n": 6,
+   "wins": 0,
+   "net": -0.58383373,
+   "expectancy": -0.097306,
+   "expectancy_ci95_block": [
+    -0.136556,
+    -0.065225
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.583834,
+   "gross_known": -0.11120002,
+   "fee_known": 0.47263371,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 3,
+   "maker_fills": 11,
+   "taker_fills": 4,
+   "taker_share": 0.2667,
+   "rows_with_taker_exit": 4,
+   "median_hold_s": 44.261263847351074
+  },
+  "MR": {
+   "n": 2,
+   "wins": 0,
+   "net": -0.04532256,
+   "expectancy": -0.022661,
+   "expectancy_ci95_block": [
+    -0.040012,
+    -0.00531
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.045323,
+   "gross_known": 0.0084,
+   "fee_known": 0.05372256,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 6.3955,
+   "gross_positive_net_negative": 1,
+   "maker_fills": 4,
+   "taker_fills": 1,
+   "taker_share": 0.2,
+   "rows_with_taker_exit": 1,
+   "median_hold_s": 258.5775992870331
+  },
+  "OPERATOR": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.06967086,
+   "expectancy": -0.069671,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.069671,
+   "gross_known": 0,
+   "fee_known": 0,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 0,
+   "taker_fills": 0,
+   "taker_share": null,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 32.03399586677551
+  },
+  "SWARM": {
+   "n": 30,
+   "wins": 12,
+   "net": -0.60690028,
+   "expectancy": -0.02023,
+   "expectancy_ci95_block": [
+    -0.084513,
+    0.008304
+   ],
+   "profit_factor": 0.6793,
+   "max_drawdown": -1.56629,
+   "gross_known": 1.03240001,
+   "fee_known": 1.63930029,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 1.5879,
+   "gross_positive_net_negative": 4,
+   "maker_fills": 74,
+   "taker_fills": 15,
+   "taker_share": 0.1685,
+   "rows_with_taker_exit": 14,
+   "median_hold_s": 194.71770977973938
+  }
+ },
+ "by_reason": {
+  "EJECT-BE": {
+   "n": 2,
+   "wins": 2,
+   "net": 0.00123874,
+   "expectancy": 0.000619,
+   "expectancy_ci95_block": [
+    0.000408,
+    0.000831
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0185,
+   "fee_known": 0.01726126,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.933,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 4,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 320.0829372406006
+  },
+  "FLOW": {
+   "n": 16,
+   "wins": 4,
+   "net": -0.69628665,
+   "expectancy": -0.043518,
+   "expectancy_ci95_block": [
+    -0.098165,
+    -0.022889
+   ],
+   "profit_factor": 0.388,
+   "max_drawdown": -1.049473,
+   "gross_known": 0.51796999,
+   "fee_known": 1.21425664,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 2.3443,
+   "gross_positive_net_negative": 5,
+   "maker_fills": 43,
+   "taker_fills": 9,
+   "taker_share": 0.1731,
+   "rows_with_taker_exit": 8,
+   "median_hold_s": 45.12278175354004
+  },
+  "MANUAL": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.10996515,
+   "expectancy": -0.109965,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.109965,
+   "gross_known": -0.07579999,
+   "fee_known": 0.03416516,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 0,
+   "taker_fills": 1,
+   "taker_share": 1.0,
+   "rows_with_taker_exit": 1,
+   "median_hold_s": 355.31196999549866
+  },
+  "NO_STOP": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.0145327,
+   "expectancy": -0.014533,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.014533,
+   "gross_known": -0.011,
+   "fee_known": 0.0035327,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 1,
+   "taker_fills": 1,
+   "taker_share": 0.5,
+   "rows_with_taker_exit": 1,
+   "median_hold_s": 1.3239831924438477
+  },
+  "RATCHET": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.00392941,
+   "expectancy": 0.003929,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.01184,
+   "fee_known": 0.00791059,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.6681,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 1,
+   "taker_fills": 1,
+   "taker_share": 0.5,
+   "rows_with_taker_exit": 1,
+   "median_hold_s": 68.17007327079773
+  },
+  "REGIME": {
+   "n": 9,
+   "wins": 3,
+   "net": -0.8243545,
+   "expectancy": -0.091595,
+   "expectancy_ci95_block": [
+    -0.190866,
+    0.047141
+   ],
+   "profit_factor": 0.2385,
+   "max_drawdown": -0.824354,
+   "gross_known": -0.21584001,
+   "fee_known": 0.60851449,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 2,
+   "maker_fills": 22,
+   "taker_fills": 3,
+   "taker_share": 0.12,
+   "rows_with_taker_exit": 3,
+   "median_hold_s": 260.8835332393646
+  },
+  "SL": {
+   "n": 3,
+   "wins": 0,
+   "net": -0.12250628,
+   "expectancy": -0.040835,
+   "expectancy_ci95_block": [
+    -0.054967,
+    -0.034181
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.122506,
+   "gross_known": -0.0952,
+   "fee_known": 0.02730628,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 3,
+   "taker_fills": 3,
+   "taker_share": 0.5,
+   "rows_with_taker_exit": 3,
+   "median_hold_s": 50.17970061302185
+  },
+  "SOFT-BE": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.04524931,
+   "expectancy": -0.045249,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.045249,
+   "gross_known": -0.03492,
+   "fee_known": 0.01032931,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 6,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 77.07536220550537
+  },
+  "SOFT-LOCK": {
+   "n": 2,
+   "wins": 0,
+   "net": -0.00920151,
+   "expectancy": -0.004601,
+   "expectancy_ci95_block": [
+    -0.00531,
+    -0.003891
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.009202,
+   "gross_known": 0.03185,
+   "fee_known": 0.04105151,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 1.2889,
+   "gross_positive_net_negative": 1,
+   "maker_fills": 5,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 620.7717452049255
+  },
+  "SOFT-PROFIT": {
+   "n": 1,
+   "wins": 1,
+   "net": 0.0234543,
+   "expectancy": 0.023454,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.0376,
+   "fee_known": 0.0141457,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.3762,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 8,
+   "taker_fills": 0,
+   "taker_share": 0.0,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 22.39629101753235
+  },
+  "TIME": {
+   "n": 1,
+   "wins": 0,
+   "net": -0.06967086,
+   "expectancy": -0.069671,
+   "expectancy_ci95_block": [
+    null,
+    null
+   ],
+   "profit_factor": 0.0,
+   "max_drawdown": -0.069671,
+   "gross_known": 0,
+   "fee_known": 0,
+   "rows_unknown_gross_fee": 1,
+   "fee_over_gross": null,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 0,
+   "taker_fills": 0,
+   "taker_share": null,
+   "rows_with_taker_exit": 0,
+   "median_hold_s": 32.03399586677551
+  },
+  "TP1+FLOW": {
+   "n": 2,
+   "wins": 2,
+   "net": 0.58087138,
+   "expectancy": 0.290436,
+   "expectancy_ci95_block": [
+    0.182705,
+    0.398167
+   ],
+   "profit_factor": null,
+   "max_drawdown": 0.0,
+   "gross_known": 0.7822,
+   "fee_known": 0.20132862,
+   "rows_unknown_gross_fee": 0,
+   "fee_over_gross": 0.2574,
+   "gross_positive_net_negative": 0,
+   "maker_fills": 4,
+   "taker_fills": 2,
+   "taker_share": 0.3333,
+   "rows_with_taker_exit": 2,
+   "median_hold_s": 183.34132266044617
+  }
+ },
+ "sessions": [
+  {
+   "rows": "#1-#1",
+   "n": 1,
+   "net": -0.069671,
+   "utc": [
+    "2026-10-06 17:34",
+    "17:34"
+   ],
+   "saigon": [
+    "2026-10-07 00:34",
+    "00:34"
+   ],
+   "symbols": [
+    "BTCUSDT"
+   ],
+   "entry_types": [
+    "UNKNOWN"
+   ]
+  },
+  {
+   "rows": "#2-#3",
+   "n": 2,
+   "net": -0.185352,
+   "utc": [
+    "2026-10-07 01:03",
+    "01:25"
+   ],
+   "saigon": [
+    "2026-10-07 08:03",
+    "08:25"
+   ],
+   "symbols": [
+    "BTCUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  },
+  {
+   "rows": "#4-#17",
+   "n": 14,
+   "net": -0.211202,
+   "utc": [
+    "2026-10-07 02:49",
+    "03:38"
+   ],
+   "saigon": [
+    "2026-10-07 09:49",
+    "10:38"
+   ],
+   "symbols": [
+    "BTCUSDT"
+   ],
+   "entry_types": [
+    "GTX",
+    "IOC"
+   ]
+  },
+  {
+   "rows": "#18-#19",
+   "n": 2,
+   "net": -0.231386,
+   "utc": [
+    "2026-10-07 04:44",
+    "04:48"
+   ],
+   "saigon": [
+    "2026-10-07 11:44",
+    "11:48"
+   ],
+   "symbols": [
+    "BTCUSDT"
+   ],
+   "entry_types": [
+    "IOC"
+   ]
+  },
+  {
+   "rows": "#20-#22",
+   "n": 3,
+   "net": -0.020581,
+   "utc": [
+    "2026-10-07 05:40",
+    "06:02"
+   ],
+   "saigon": [
+    "2026-10-07 12:40",
+    "13:02"
+   ],
+   "symbols": [
+    "BTCUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  },
+  {
+   "rows": "#23-#26",
+   "n": 4,
+   "net": -0.036016,
+   "utc": [
+    "2026-10-07 10:37",
+    "11:39"
+   ],
+   "saigon": [
+    "2026-10-07 17:37",
+    "18:39"
+   ],
+   "symbols": [
+    "BTCUSDT",
+    "SOLUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  },
+  {
+   "rows": "#27-#34",
+   "n": 8,
+   "net": -0.471426,
+   "utc": [
+    "2026-10-07 12:20",
+    "12:57"
+   ],
+   "saigon": [
+    "2026-10-07 19:20",
+    "19:57"
+   ],
+   "symbols": [
+    "BTCUSDT",
+    "SOLUSDT"
+   ],
+   "entry_types": [
+    "GTX",
+    "IOC"
+   ]
+  },
+  {
+   "rows": "#35-#35",
+   "n": 1,
+   "net": 0.023454,
+   "utc": [
+    "2026-10-07 15:15",
+    "15:15"
+   ],
+   "saigon": [
+    "2026-10-07 22:15",
+    "22:15"
+   ],
+   "symbols": [
+    "SOLUSDT"
+   ],
+   "entry_types": [
+    "ADOPT"
+   ]
+  },
+  {
+   "rows": "#36-#37",
+   "n": 2,
+   "net": -0.044419,
+   "utc": [
+    "2026-10-07 16:01",
+    "16:02"
+   ],
+   "saigon": [
+    "2026-10-07 23:01",
+    "23:02"
+   ],
+   "symbols": [
+    "DOGEUSDT",
+    "SOLUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  },
+  {
+   "rows": "#38-#39",
+   "n": 2,
+   "net": -0.039604,
+   "utc": [
+    "2026-10-08 01:51",
+    "02:18"
+   ],
+   "saigon": [
+    "2026-10-08 08:51",
+    "09:18"
+   ],
+   "symbols": [
+    "DOGEUSDT",
+    "SOLUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  },
+  {
+   "rows": "#40-#40",
+   "n": 1,
+   "net": 0.003929,
+   "utc": [
+    "2026-10-08 03:01",
+    "03:01"
+   ],
+   "saigon": [
+    "2026-10-08 10:01",
+    "10:01"
+   ],
+   "symbols": [
+    "DOGEUSDT"
+   ],
+   "entry_types": [
+    "GTX"
+   ]
+  }
+ ],
+ "latency_ms_ledger": {
+  "n": 40,
+  "p50": 1565.1377999965916,
+  "p90": 5655.069000000367,
+  "note": "decision -> fill incl. the GTX queue wait; not network latency"
+ },
+ "missing_instrumentation": [
+  "policy/version per row",
+  "signal-feed mid vs venue mid at entry (basis)",
+  "send->ack and ack->fill timestamps",
+  "post-fill markouts",
+  "funding",
+  "cancelled / rejected / unfilled order outcomes (only fills are logged)"
+ ]
+}

@@ -57,3 +57,12 @@ In-sample (SOL/LINK/BNB 09–10/09/2026, 164 sự kiện): A chase mean −0.02 
 Holdout chưa dùng (SOL+LINK 08/09/2026, 672 sự kiện, cấu hình 0.03 %/5 s cố định trước): B − A = −1.06 bps [−1.41, −0.61] (bảo thủ), −0.42 [−0.58, −0.25] (lạc quan); worst −15.5 → −8.5; p5 bảo thủ −7.4 → −5.0 nhưng lạc quan −3.6 → −5.0. C stop: mean −1.50, p5 −2.65, worst −8.5.
 
 Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần thoát trung bình** ở cả in-sample và holdout; không cấu hình nào cải thiện net trung bình. Theo tiêu chí chấp nhận → giữ shadow. Quyết định đổi mean lấy tail là của người dùng (chi phí đã đo ở trên). Ca DOGE (−17.5 bps net) nằm ở đuôi, tệ hơn worst của A trong replay (DOGE tick = 1.1 bps, book demo).
+
+## Vòng (s) — 08/10/2026: MR anti-fade, net RR, re-peg, super-conviction size
+
+| ID | Loại | Thay đổi | Mặc định | Rollback | Bằng chứng / trạng thái |
+|---|---|---|---|---|---|
+| S1 | gate | MR không fade dòng tiền: cấm MR BUY khi OFI < −0.30 hoặc CVD60 < −$100k×scale (SELL đối xứng); OFI chưa có → cấm | bật | `mr_flow_gate=False` | Chặn #39 (OFI −0.93) và #34 (SELL, OFI +0.89). Chỉ 2 lệnh MR trong lịch sử (cả 2 lỗ, tổng −0.0453 U) → giảm rủi ro, không phải bằng chứng alpha. |
+| S2 | gate | Net RR (bracket_plan rr_net, phí thật) ≥ 1.30 ở churn gate; kiểm lại trên plan đã sizing trong execute (cả live) | bật | `net_rr_min=0` | Không chặn lệnh SWARM nào trong lịch sử (min 1.46). MR tối đa 0.875 → **làn MR tắt hẳn** với bracket hiện tại. **Live**: TP 0.50 % vs SL ~0.89 % từ ngân sách 0.05 U → rr 0.47 → mọi lệnh live bị từ chối. |
+| S3 | đo | Fast re-peg: đã có (0.5 s, trần 0.15 %); thêm `touch_last`, `touch_qty_last` vào order log | — | — | 25/32 UNFILLED không re-peg → timeout do hàng đợi, không do drift. Không đổi tham số. |
+| S4 | sizing | Vote ≥ 0.95 VÀ OFI ≥ 0.80 cùng chiều → SOL 0.50 / DOGE 450 (trần $140, risk/margin portfolio vẫn áp) | bật demo, tắt live | `super_size=False` | **Chưa có bằng chứng**: 4 lệnh alt lịch sử thoả quy tắc (#26, #27, #38, #40) net +0.0443 U; quy tắc được đặt sau khi thấy #40 → selection bias. Ghi `super_size` trong ledger để đánh giá ngoài mẫu. |

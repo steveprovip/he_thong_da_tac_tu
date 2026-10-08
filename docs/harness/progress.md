@@ -144,3 +144,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Patches: R1 stop_covers_entry/protection + honest MARIN label + desk "CHƯA BẢO VỆ"; R2 bounded chase (soft_exit_escalate) implemented but OFF = shadow_escalate recorded; R3 err_txt (code + canonical meaning, no raw exchange text — existing sanitisation test kept), stop_events with context + naked_ms, ratchet back-off x2 and give-up after 3; R4 ADOPT entry_start_ms reconciliation + cost_complete flag; R5 kill_switch idempotent + reconcile report.
 - Economics (tools/replay_soft_exit.py, mainnet bookTicker, no trades): bounded chase cost 0.4-1.1 bps/exit on holdout (SOL+LINK 2026-09-08, 672 events) and in-sample grid (164 events); tails improve (worst -15.5 -> -8.5 bps). Not enabled.
 - Checks: python -m pytest -q 1070 passed, 0 skipped. init.sh toolkit leg not runnable in the Cowork VM.
+
+## 2026-10-08 (s) MR anti-fade, net RR >= 1.30, re-peg evidence, super-conviction size
+- Data: engine_trades 40 rows (not written by this task), engine_orders 56 rows, telemetry 03:11 UTC. #39 MR BUY DOGE OFI -0.929 rr_net 0.634 SL in 50 s (-0.04001 U).
+- Patches: micro_signals.mr_flow_veto; engine churn_gate MR flow gate + net RR gate (bracket_plan rr_net), execute plan_rr check (covers live loss-budget SL); order log touch_last/touch_qty_last; super_conviction + SUPER_SIZE (SOL 0.50 / DOGE 450, demo only); ledger super_size. mock_engine/scanner isolate the new gates (default off in fixtures).
+- Findings: net RR 1.30 makes the MR lane unreachable (max 0.875) and blocks every live entry (live rr 0.47); 25/32 unfilled GTX had no re-peg (queue, not drift); super-size rule fits 4 historical trades (+0.0443 U), not out-of-sample.
+- Checks: python -m pytest -q 1102 passed, 0 skipped.

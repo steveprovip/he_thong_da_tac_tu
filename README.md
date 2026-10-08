@@ -177,6 +177,13 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.19 Cập nhật 08/10/2026 (s) — Chặn MR bắt dao rơi, lọc Net RR, tập trung size
+- MR không được mua khi OFI < −0.30 hoặc CVD 60 s < −$100k (×scale theo coin), bán đối xứng.
+- Mọi lệnh cần reward:risk sau phí ≥ 1.30 (kiểm ở gate và trên plan đã sizing). Với bracket MR hiện tại (TP ≤ 0.18 %, SL 0.08 %) làn MR không đạt → tắt thực tế. Profile live hiện tại (rr ≈ 0.47) bị từ chối.
+- Re-peg đã chạy mỗi 0.5 s; order log ghi thêm giá/khối lượng touch lúc hết hạn để phân biệt "giá chạy" và "xếp hàng".
+- Vote ≥ 95 % và OFI ≥ 0.80 cùng chiều: 0.50 SOL / 450 DOGE (demo, trần $140). Chưa kiểm chứng ngoài mẫu.
+- Test: 1102 passed.
+
 ### 8.18 Cập nhật 08/10/2026 (r) — Vòng đời lệnh thoát và stop
 - "BE LOCKED" chỉ hiện khi stop trên sàn đã qua giá vào; mục tiêu mềm hiện "BE TARGET soft · CHƯA BẢO VỆ".
 - Lỗi dời stop ghi mã Binance + nghĩa, giá venue, mark và thời gian không có stop; thử lại giãn dần, bỏ sau 3 lần.

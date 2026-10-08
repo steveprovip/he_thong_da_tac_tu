@@ -236,6 +236,13 @@ class Profile:
     soft_exit_max_slip_pct: float = 0.03  # ... or 0.03 % past it -> reduce-only MARKET exit. OFF = SHADOW: the
                                         # trigger is only recorded (replay 10-08: every bound cost 0.1-1.3 bps/exit)
     ratchet_max_fail: int = 3           # exchange-stop moves: back-off doubles per failure, stop after 3 per trade
+    mr_flow_gate: bool = True           # 10-08s (#39): no MR BUY while OFI L10 < -0.30 or CVD 60 s < -$100k x scale,
+    mr_ofi_max: float = 0.30            # no MR SELL while OFI > +0.30 or CVD 60 s > +$100k x scale (no fading flow)
+    mr_cvd60_usd: float = 100_000.0
+    net_rr_min: float = 1.30            # fee-true reward:risk of the bracket (bracket_plan rr_net) must be >= 1.30
+    super_size: bool = True             # score >= 0.95 AND OFI >= 0.80 with the trade -> SUPER_SIZE (SOL/DOGE, demo)
+    super_score: float = 0.95
+    super_ofi: float = 0.80
     alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
     alt_kelly_min_n: int = 20           # ... needs >= 20 of them (was 5: 7 SOL trades sized 0.45 -> 1.06 SOL)
@@ -309,6 +316,9 @@ class Profile:
 # lifts the size from base toward max by the coin's rolling quarter-Kelly; the notional cap binds first if smaller.
 ALT_SIZE = {'SOLUSDT': (0.70, 1.20, 140.0), 'DOGEUSDT': (300.0, 500.0, 140.0)}
 ALT_SIZE_CAP = ALT_SIZE                 # name kept for 2026-10-07o callers
+# 10-08s super-conviction size (vote >= 0.95 and OFI >= 0.80 with the trade): replaces the base cap for that trade,
+# still under the $140 notional cap of ALT_SIZE and the portfolio risk / margin checks.
+SUPER_SIZE = {'SOLUSDT': 0.50, 'DOGEUSDT': 450.0}
 # VFR horizon floor: BTC also needs ATR 15 m >= 0.10 % (VFR >= 3 already implies ~0.12 % at 4 bps of fees).
 ATR15_FLOOR = {'BTCUSDT': 0.10}
 
@@ -320,7 +330,7 @@ PROFILES = {
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
-                    asset_brackets=False, eject=False, alt_boost=False,
+                    asset_brackets=False, eject=False, alt_boost=False, super_size=False,
                     alt_risk_share=0.0),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
@@ -820,6 +830,20 @@ class Engine:
             out.update(frozen=True, why=f'VFR FROZEN {sym} ATR15m {a15:.3f}% < {floor}%')
         return out
 
+    def plan_rr(self, pl: dict, route: str = 'gtx') -> Optional[float]:
+        """Fee-true reward:risk of a sized plan: (TP - maker round trip) / (SL + in + taker out + slip)."""
+        e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
+        win, loss = pl['tp_pct'] - (e_in + self.p.maker_bps) / 100.0, pl['sl_pct'] + pl['fees_pct']
+        return win / loss if loss > 0 else None
+
+    def super_conviction(self, d: Decision, diag: dict, f: dict) -> bool:
+        """Raw swarm vote >= 0.95 (no JEV lift) AND OFI L10 >= 0.80 with the trade, SOL/DOGE only."""
+        if not self.p.super_size or self.p.symbol not in SUPER_SIZE or d is None or not d.side:
+            return False
+        vote = max(d.score, (diag or {}).get('consensus') or 0.0)
+        ofi = (f.get('ofi_10s') or 0.0) * (1 if d.side == 'BUY' else -1)
+        return vote >= self.p.super_score - 1e-9 and ofi >= self.p.super_ofi
+
     def alt_boosted(self, d: Decision, diag: dict) -> bool:
         """SOL/DOGE priority: raw swarm vote (not the JEV lift) >= 0.90."""
         if not (self.p.alt_boost and self.p.alt_size_boost) or not self.is_alt() or d is None or not d.side:
@@ -1269,6 +1293,18 @@ class Engine:
         if self.p.concordance_gate and (lane == 'TREND' or self.p.concordance_mr):
             if not self.flow.get('buy_ok' if d.side == 'BUY' else 'sell_ok'):
                 return False, f'FLOW CONFLICT {d.side} (LOCKED) · {self.flow.get("why", "")}'
+        if lane == 'MR' and self.p.mr_flow_gate:
+            why = msig.mr_flow_veto(d.side, self.features or {}, self.p.mr_ofi_max,
+                                    self.p.mr_cvd60_usd * self.feed.cfg.usd_scale)
+            if why:
+                return False, why
+        if self.p.net_rr_min and self.p.max_loss_usdt is None:      # live (loss-budget SL): checked in execute()
+            bp = self.bracket_plan('MR' if lane == 'MR' else 'SWARM', self.features)
+            rr = bp.get('rr_net')
+            if rr is None or rr < self.p.net_rr_min:
+                return False, (f'NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
+                               f'({lane} TP {bp["tp_pct"]:.3f}% / SL {bp["sl_pct"]:.3f}% after fees, '
+                               f'break-even win rate {(bp.get("be_wr") or 1) * 100:.0f}%)')
         if lane == 'MR':
             if score < self.p.mr_min_score:
                 return False, f'MR score {score * 100:.1f}% < {self.p.mr_min_score * 100:.1f}%'
@@ -1344,6 +1380,7 @@ class Engine:
                'side': xm.get('side'), 'path': xm.get('path'), 'tag': xm.get('tag'), 'route': xm.get('route'),
                'outcome': outcome, 'qty_req': xm.get('qty_req'), 'qty_filled': float(res.get('qty') or 0) or None,
                'px_first': xm.get('px_first'), 'px_last': xm.get('px_last'), 'reprices': xm.get('reprices'),
+               'touch_last': xm.get('touch_last'), 'touch_qty_last': xm.get('touch_qty_last'),
                'post_rejects': xm.get('post_rejects', 0), 'signal_mid': xm.get('signal_mid'),
                'venue_mid': xm.get('venue_mid'), 'basis_bps': basis_bps(xm.get('signal_mid'), xm.get('venue_mid')),
                'decide_to_send_ms': ms('t0', 't_send'), 'ack_ms': xm.get('ack_ms'),
@@ -1399,6 +1436,15 @@ class Engine:
                            f' (Kelly {kk["n"]} lệnh, f {0 if kk["f"] is None else kk["f"]:.3f}, '
                            f'scale {kk["scale"]:.2f})')
                 kq = cap
+            superc = tag == 'AUTO' and path != 'MR' and self.super_conviction(decision, self.diag, f)
+            if superc:
+                tgt = floor_step(min(SUPER_SIZE[sym], ALT_SIZE[sym][2] / ref), step)
+                if tgt > (kq or 0.0):
+                    self.event(f'ALPHA CONCENTRATION {sym.replace("USDT", "")} vote '
+                               f'{max(decision.score, (self.diag or {}).get("consensus") or 0.0) * 100:.1f}% · OFI '
+                               f'{(f.get("ofi_10s") or 0):+.2f} -> size {fmt(kq or 0.0, step)} -> {fmt(tgt, step)}')
+                    kq = tgt
+                cap = max(cap or 0.0, tgt)
             if cap and kq and kq > cap:
                 kq = cap                                    # every SOL/DOGE size path stops at the coin cap
             mkpl = lambda q: plan(side, px if route == 'gtx' else touch, self.spec,
@@ -1408,6 +1454,12 @@ class Engine:
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
+            rr = self.plan_rr(pl, route)
+            if tag == 'AUTO' and self.p.net_rr_min and (rr is None or rr < self.p.net_rr_min):
+                msg = (f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
+                       f'(TP {pl["tp_pct"]:.3f}% / SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}%)')
+                self.event(f'OKAPI refused {side}: {msg}')
+                return {'ok': False, 'error': msg}
             probe = None
             if tag == 'AUTO' and self.p.alt_boost and not self.is_alt() and self.p.btc_probe_qty:
                 vv = self.vfr_view(f)
@@ -1515,7 +1567,10 @@ class Engine:
                 self.event(f'PEG {side} repriced x{reprices} {fmt(px0, tick)} -> {fmt(px, tick)} '
                            f'({"filled" if filled > 0 else "unfilled"})')
             ms = (time.perf_counter() - t0) * 1000
-            xm.update(t_done=time.perf_counter(), reprices=reprices, px_last=px)
+            bb = self.book()
+            xm.update(t_done=time.perf_counter(), reprices=reprices, px_last=px,
+                      touch_last=bb.get('bid') if side == 'BUY' else bb.get('ask'),
+                      touch_qty_last=bb.get('bid_qty') if side == 'BUY' else bb.get('ask_qty'))
             if filled > 0 and not xm.get('t_fill'):
                 xm['t_fill'] = xm['t_done']                       # partial fill found at cancel time
             self.latency.append(ms)
@@ -1554,7 +1609,7 @@ class Engine:
                         'atr_pct': bp['atr_pct'], 'atr_trail_pct': bp['trail_pct'], 'bracket_src': bp['src'],
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
-                        'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe,
+                        'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
@@ -2189,7 +2244,7 @@ class Engine:
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
-               'probe': p.get('probe'), 'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
+               'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
                'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),
                'ack_ms': p.get('ack_ms'), 'fill_wait_ms': p.get('fill_wait_ms'), 'markout_bps': p.get('markout_bps'),

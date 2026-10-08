@@ -43,6 +43,16 @@
       ],
       "status": "done",
       "evidence": "pytest 1070 passed 0 skipped; #37 reproduced net -0.04524931; replay holdout 672 events: bounded chase -1.06 bps (cons) / -0.42 bps (opt) vs chase, so kept shadow"
+    },
+    {
+      "id": "mr-antifade-netrr-20261008s",
+      "name": "MR anti-fade gate, net RR >= 1.30, re-peg evidence, super-conviction size",
+      "description": "Blocks MR entries against OFI/CVD and any plan with fee-true RR < 1.30; logs touch at GTX expiry; SOL 0.50 / DOGE 450 on vote>=0.95 + OFI>=0.80 (demo)",
+      "dependencies": [
+        "exit-lifecycle-20261008r"
+      ],
+      "status": "done",
+      "evidence": "pytest 1102 passed 0 skipped; #39 blocked on mock by both gates; no historical SWARM trade below rr 1.30; super-size unvalidated (4 trades, in-sample)"
     }
   ]
 }
