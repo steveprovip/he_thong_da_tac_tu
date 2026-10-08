@@ -52,3 +52,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 ## Handoff — 2026-10-08 (u)
 - BTC is observe-only in demo (rollback observe_only=()). Larger SOL/DOGE sizes are unvalidated: review rows by policy id after the next runs; rollback alt_size_floor=False and SUPER_SIZE 0.50/450.
 - EJECT-FAST is mechanically neutral in replay; judge it on SOL/DOGE rows with reason EJECT-FAST vs EJECT-BE.
+
+## Handoff — 2026-10-08 (v), research brief for fills and lane feasibility
+- Read prompts/FORM_CLAUDE_KHOP_LENH_NET_EV_2026-10-08.md for the user's latest no-fill/loss request. Recompute the snapshot before drawing conclusions. BTC is deliberately observe-only; MR/live bracket feasibility and GTX expiry need separate investigation. SOL also logged an UNFILLED BUY 0.80 at 13:03:44; this is not solely a DOGE problem.
+- Next implementation: choose one reproducible funnel/feasibility/execution bottleneck; compare risk-matched alternatives offline. Keep negative-replay scalp in shadow, preserve auth/risk/stop protections, and do not raise size just to obtain fills. No trading process, live mode or runtime parameter was changed by the prompt task.
+- Completion: project 1158 passed (79.90 s), toolkit 15 passed/1 skipped; prompt-copy/structure and diff checks passed. Cowork app model/High and folder access still require selection in the app; writing CLAUDE.md does not apply them. Rollback for this documentation task is to remove the v brief/pointer/harness record only; preserve all r/u runtime changes.

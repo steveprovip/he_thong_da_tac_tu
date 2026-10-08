@@ -73,6 +73,16 @@
       ],
       "status": "done",
       "evidence": "pytest 1158 passed 0 skipped; replay eject B-A -0.05 bps [-1.20,+1.73] / +0.60 [-0.60,+2.36]; sizing unvalidated (SOL 10 trades)"
+    },
+    {
+      "id": "fill-starvation-research-brief-20261008v",
+      "name": "Claude continuation brief: lane feasibility and cost-aware fills",
+      "description": "Read-only audit and sourced prompt for BTC observer, unreachable MR/live gates, GTX expiry and shadow-vs-real funnel; no trading runtime change",
+      "dependencies": [
+        "btc-observer-alt-size-20261008u"
+      ],
+      "status": "done",
+      "evidence": "13:05:19 Asia/Saigon snapshot: 41 trades net -1.32906026; 6 real UNFILLED vs 178 SHADOW_SCALP after 12:27. Sourced brief and CLAUDE pointer added; init.sh 1158 passed (79.90s), toolkit 15 passed/1 skipped; artifact/copy and diff checks passed. No runtime or economic improvement claimed."
     }
   ]
 }
