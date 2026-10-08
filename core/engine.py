@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 
 from config.settings import Settings, read_env
 from core import micro_signals as msig
+from core import exec_funnel as xf
 from core import micro_swarm as swarm
 from core.consensus_engine import ConsensusEngine, Decision, TokenAuthority
 from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, round_tick
@@ -728,6 +729,8 @@ class Engine:
         self.candidate: Optional[tuple] = None        # (t, quality) of an entry this engine wants (slot routing)
         self.pending_risk = 0.0                       # loss at stop of an entry being worked (portfolio cap)
         self.drift_probe: Optional[str] = None        # set by churn_gate when a DRIFT lock is lifted (half size)
+        self.blockers: list = []                      # 10-08v: every churn gate that blocked the last candidate
+        self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
         self.scalp_next = 0.0
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
@@ -918,6 +921,8 @@ class Engine:
     def _shadow_row(self, extra: dict) -> None:
         row = {'t': self.clock(), 'schema': 1, 'mode': self.p.mode, 'venue': self.venue.label,
                'symbol': self.p.symbol, 'policy': policy_id(self.p), 'code': CODE_VERSION, **extra}
+        if extra.get('outcome'):
+            self.funnel.outcome(extra['outcome'])
         try:
             path = self.ledger.parent / 'engine_orders.jsonl'
             with open(path, 'a', encoding='utf-8') as fh:
@@ -1139,11 +1144,14 @@ class Engine:
         d, votes, diag = swarm.evaluate(self.sig, self.gates(f), self.consensus, self.p.jev_min,
                                         self.p.min_confluence, self.p.edge_ratio_min, allow=self.reg['allow'])
         self.drift_probe = None
+        self.blockers = []
+        swarm_ok = d.allowed
         if d.allowed and not self.busy and not self.pos:
             ok, why = self.churn_gate(d, diag)
             if not ok:
                 d = replace(d, allowed=False, reason=why)
         self.candidate = None
+        stage = None
         if d.allowed and not self.busy and not self.pos:
             q = self.quality(d, diag)
             self.candidate = (self.clock(), q)
@@ -1151,15 +1159,89 @@ class Engine:
             if rival is not None:
                 d = replace(d, allowed=False, reason=f'SCANNER YIELD -> {rival[0].p.symbol} '
                                                      f'({rival[1] * 100:.0f}% > {q * 100:.0f}%)')
+                stage = 'YIELD'
         if self.observer and d.allowed:
             d = replace(d, allowed=False, reason=f'OBSERVER (no entries) · would be {d.side} {d.score * 100:.0f}%')
             self.candidate = None
+            stage = 'OBSERVER'
+        if not self.busy and not self.pos and self.funnel.due():
+            self.funnel_sample(d, votes, diag, swarm_ok, stage)
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
             await self.execute(d.side, d, 'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
         elif not d.allowed and not self.busy and not self.pos and self.spec and not self.observer:
             await self.chop_scalp(d, f)
         return d
+
+    def funnel_sample(self, d: Decision, votes: list, diag: dict, swarm_ok: bool, stage: Optional[str]) -> None:
+        """1 Hz funnel row: hard vetoes, swarm statistical veto and EVERY churn blocker of the candidate side
+        (evaluated even when an earlier stage already said no), then yield / observer / submit."""
+        side = d.side or (diag or {}).get('side')
+        hard = [v.agent for v in votes if getattr(v, 'veto', False)]
+        if not side:
+            self.funnel.record('—', hard[0] if hard else 'NO_SIGNAL', hard)
+            return
+        cand = d if d.side == side else replace(d, side=side)
+        lane = self.lane(cand)
+        churn = self.blockers if swarm_ok else [k for k, _ in self.churn_checks(cand, diag or {})[0]]
+        bl = hard + ([] if swarm_ok or hard else [xf.swarm_key(d.reason)]) + churn
+        if stage:
+            bl.append(stage)
+        if hard:
+            st = 'HARD'
+        elif not swarm_ok:
+            st = 'SWARM'
+        elif churn:
+            st = 'CHURN'
+        else:
+            st = stage or ('SUBMIT' if d.allowed else 'OTHER')
+        self.funnel.record(lane, st, bl)
+
+    def lane_feasibility(self, price: Optional[float] = None) -> dict:
+        """Can any valid input pass every gate of a lane in this mode?  Fee-true RR range from the real config
+        (no market data needed for demo; live needs a price + filters).  10-08v form §A."""
+        p, gate = self.p, self.p.net_rr_min
+        out = {}
+
+        def row(state, rr_lo, rr_hi, why):
+            feas = xf.rr_feasible(rr_hi, gate) if state in ('ENABLED', 'SHADOW') else None
+            return {'state': state, 'rr_min': None if rr_lo is None else round(rr_lo, 3),
+                    'rr_max': None if rr_hi is None else round(rr_hi, 3), 'gate': gate, 'feasible': feas,
+                    'why': why}
+
+        if p.max_loss_usdt is not None:                        # live: SL from the loss budget at min size
+            px = price or self.feed.price() if self.feed is not None else price
+            for lane, path in (('TREND', 'SWARM'), ('MR', 'MR')):
+                if not px or not self.spec:
+                    out[lane] = row('ENABLED', None, None, 'UNKNOWN: needs price + exchange filters')
+                    continue
+                pl = plan('BUY', px, self.spec, self.bracket_plan(path, {})['profile'], None)
+                rr = self.plan_rr(pl) if pl['ok'] else None
+                out[lane] = row('ENABLED', rr, rr, (f'loss budget {p.max_loss_usdt} U at {pl.get("qty_str")} '
+                                                     f'-> SL {pl["sl_pct"]:.3f}%' if pl['ok'] else pl['why']))
+        else:
+            atr_lo = 0.01
+            sl_min = self.asset_floors()[0]
+            atr_hi = max(1.0, 4 * sl_min)
+            tr = [self.bracket_plan('SWARM', f).get('rr_net') for f in
+                  ({}, {'atr_pct': atr_lo}, {'atr_pct': atr_hi})]
+            tr = [x for x in tr if x is not None]
+            out['TREND'] = row('ENABLED', min(tr) if tr else None, max(tr) if tr else None,
+                               'ATR brackets: TP >= rr_min x SL, SL >= asset floor')
+            mr = [self.bracket_plan('MR', {'vwap_dev_pct': v}).get('rr_net') for v in (p.mr_tp_min, p.mr_tp_max, 5.0)]
+            mr = [x for x in mr if x is not None]
+            out['MR'] = row('ENABLED', min(mr) if mr else None, max(mr) if mr else None,
+                            f'TP clamped [{p.mr_tp_min}, {p.mr_tp_max}] %, SL {p.mr_sl_pct} % + fees')
+        sc = self.bracket_plan('SCALP', {}).get('rr_net')
+        st = {'on': 'ENABLED', 'shadow': 'SHADOW'}.get(p.chop_scalper, 'OFF')
+        out['SCALP'] = {**row(st, sc, sc, f'chop_scalper={p.chop_scalper}; exempt from net RR (break-even win rate '
+                                          f'{1 / (1 + sc) * 100 if sc else 100:.0f}%), replay holdout < 0 bps'),
+                        'gate': None, 'feasible': True if st == 'ENABLED' else None}
+        if self.observer:
+            for k in out:
+                out[k] = {**out[k], 'state': 'OBSERVER', 'feasible': None,
+                          'why': f'{p.symbol} observe_only (config) · ' + out[k]['why']}
+        return out
 
     def quality(self, d: Decision, diag: dict) -> float:
         """Slot priority: conviction, +0.05 when the regime trend agrees, +0.05 when all three flows agree."""
@@ -1350,7 +1432,8 @@ class Engine:
                 **{k: self.bracket_plan('SWARM', f).get(k) for k in ('sl_pct', 'tp_pct', 'src')},
                 'score': score, 'allowed': bool(d and d.allowed), 'reason': (d.reason if d else '')[:140],
                 'pos': bool(self.pos), 'price': f.get('price'), **self.coin_pnl(),
-                'vfr': vv['vfr'], 'atr15_pct': vv['atr15_pct'], 'frozen': bool(self.p.vfr_gate and vv['frozen'])}
+                'vfr': vv['vfr'], 'atr15_pct': vv['atr15_pct'], 'frozen': bool(self.p.vfr_gate and vv['frozen']),
+                'blockers': list(self.funnel.last_blockers), 'observer': self.observer, **self.funnel.counters()}
 
     def coin_pnl(self) -> dict:
         """Realised net PnL of this coin over the whole ledger (radar: BTC -0.79 U | SOL +0.33 U ...)."""
@@ -1376,59 +1459,72 @@ class Engine:
             return f'CHOP LOCKED KER {k:.2f} < {c.ker_lock:.2f}'
         return f'CHOP LOCKED KER {k:.2f} < {c.ker_unlock:.2f} (hysteresis)'
 
-    def churn_gate(self, d: Decision, diag: dict) -> tuple:
-        """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps."""
+    def churn_checks(self, d: Decision, diag: dict) -> tuple:
+        """Every evaluable churn gate for decision `d` (no early return) -> ([(gate, why), ...], drift_probe).
+        Order = the hot-path priority; the first entry is what churn_gate returns.  Read-only (10-08v funnel)."""
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
         lane = self.lane(d)
         reg = self.reg or {}
+        out, probe = [], None
         if self.toxic_blocks(d.side):
-            return False, (f'VPIN TOXIC {(self.toxic_vpin or 0):.2f} {self.toxic_side} flow · cấm {d.side} '
-                           f'{self.toxic_until - self.clock():.0f}s')
+            out.append(('VPIN', f'VPIN TOXIC {(self.toxic_vpin or 0):.2f} {self.toxic_side} flow · cấm {d.side} '
+                                f'{self.toxic_until - self.clock():.0f}s'))
         if self.p.vfr_gate:
             vv = self.vfr_view()
             if vv['frozen']:
-                return False, vv['why']
+                out.append(('VFR', vv['why']))
         if self.p.drift_lock and reg.get('name') == 'DRIFT':
             acc = self.drift_acceleration(d.side)
-            if not acc:
-                return False, f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'
-            self.drift_probe = acc
+            if acc:
+                probe = acc
+            else:
+                out.append(('DRIFT', f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'))
         if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
-            return False, self.chop_reason()
+            out.append(('KER', self.chop_reason()))
         if self.p.macro_gate and d.side not in self.macro.get('allow', ('BUY', 'SELL')):
-            return False, f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'
+            out.append(('MACRO', f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'))
         if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
-            return False, f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'
+            out.append(('ABSORB', f'ABSORPTION TRAP {d.side} · {self.absorb.get("why", "")}'))
         if self.p.concordance_gate and (lane == 'TREND' or self.p.concordance_mr):
             if not self.flow.get('buy_ok' if d.side == 'BUY' else 'sell_ok'):
-                return False, f'FLOW CONFLICT {d.side} (LOCKED) · {self.flow.get("why", "")}'
+                out.append(('FLOW', f'FLOW CONFLICT {d.side} (LOCKED) · {self.flow.get("why", "")}'))
         if lane == 'MR' and self.p.mr_flow_gate:
             why = msig.mr_flow_veto(d.side, self.features or {}, self.p.mr_ofi_max,
                                     self.p.mr_cvd60_usd * self.feed.cfg.usd_scale)
             if why:
-                return False, why
+                out.append(('MR_FLOW', why))
         if self.p.net_rr_min and self.p.max_loss_usdt is None:      # live (loss-budget SL): checked in execute()
             bp = self.bracket_plan('MR' if lane == 'MR' else 'SWARM', self.features)
             rr = bp.get('rr_net')
             if rr is None or rr < self.p.net_rr_min:
-                return False, (f'NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
-                               f'({lane} TP {bp["tp_pct"]:.3f}% / SL {bp["sl_pct"]:.3f}% after fees, '
-                               f'break-even win rate {(bp.get("be_wr") or 1) * 100:.0f}%)')
+                out.append(('NET_RR', f'NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
+                                      f'({lane} TP {bp["tp_pct"]:.3f}% / SL {bp["sl_pct"]:.3f}% after fees, '
+                                      f'break-even win rate {(bp.get("be_wr") or 1) * 100:.0f}%)'))
         if lane == 'MR':
             if score < self.p.mr_min_score:
-                return False, f'MR score {score * 100:.1f}% < {self.p.mr_min_score * 100:.1f}%'
-            return True, ''
+                out.append(('MR_SCORE', f'MR score {score * 100:.1f}% < {self.p.mr_min_score * 100:.1f}%'))
+            return out, probe
         if self.p.min_velocity_pct:
             vel = (self.features or {}).get('px_vel_15s')
             sv = None if vel is None else (vel if d.side == 'BUY' else -vel)
             if sv is None or sv < self.p.min_velocity_pct:
-                return False, (f'VELOCITY {d.side} 15s {"—" if vel is None else f"{vel:+.3f}%"} '
-                               f'< {self.p.min_velocity_pct}% cùng chiều')
+                out.append(('VELOCITY', f'VELOCITY {d.side} 15s {"—" if vel is None else f"{vel:+.3f}%"} '
+                                        f'< {self.p.min_velocity_pct}% cùng chiều'))
         if score < self.p.min_score:
-            return False, f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'
+            out.append(('SCORE', f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'))
         if edge < self.p.min_edge_bps:
-            return False, (f'CHURN edge {edge:.1f} bps < {self.p.min_edge_bps:g} bps '
-                           f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)')
+            out.append(('EDGE', f'CHURN edge {edge:.1f} bps < {self.p.min_edge_bps:g} bps '
+                                f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)'))
+        return out, probe
+
+    def churn_gate(self, d: Decision, diag: dict) -> tuple:
+        """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps.
+        10-08v: every blocker is evaluated (self.blockers); the first one is returned, as before."""
+        out, probe = self.churn_checks(d, diag)
+        self.blockers = [k for k, _ in out]
+        if out:
+            return False, out[0][1]
+        self.drift_probe = probe
         return True, ''
 
     # ------------------------------------------------------------------ VESKA (Post-Only GTX only)
@@ -1497,6 +1593,7 @@ class Engine:
                'score': decision.score, 'consensus': (self.diag or {}).get('consensus'),
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'error': err[:160] or None}
+        self.funnel.outcome(outcome)
         try:
             path = self.ledger.parent / 'engine_orders.jsonl'
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1629,6 +1726,7 @@ class Engine:
                 while True:
                     try:
                         tc = time.perf_counter()
+                        xm['cid_live'] = cid                 # 10-08v: known to the error path (orphan cancel)
                         await self.venue.limit_gtx(sym, side, pl['qty_str'], fmt(px, tick), cid)
                         xm['t_ack'] = time.perf_counter()
                         xm['ack_ms'] = round((xm['t_ack'] - tc) * 1000, 1)       # send -> REST ack (network)
@@ -1674,6 +1772,7 @@ class Engine:
                             if float(st.get('filled') or 0) > 0:      # partial/full fill raced the cancel: keep it
                                 break
                             cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
+                            xm['cid_live'] = cid
                             try:
                                 await self.venue.limit_gtx(sym, side, pl['qty_str'], fmt(new, tick), cid)
                             except PostOnlyReject:
@@ -1767,12 +1866,36 @@ class Engine:
         except Exception as exc:
             self.event(f'VESKA error {type(exc).__name__}: {exc}')
             self.cooldown_until = self.clock() + 10
+            await self.cancel_orphan_entry(xm)
             return {'ok': False, 'error': f'{type(exc).__name__}: {exc}'[:200]}
         finally:
             self.busy = False
             self.pending_risk = 0.0
             if not self.pos:
                 self.phase = 'SCANNING'
+
+    async def cancel_orphan_entry(self, xm: dict) -> None:
+        """10-08v: an exception between posting the GTX entry and settling it (uncertain POST, REST error while
+        polling) used to leave the maker order resting on the venue with no owner: a late fill then appeared as
+        an EXTERNAL position.  Cancel it (benign if unknown/filled) and read the cumulative fill; a filled
+        quantity is left to sync() -> ADOPT, which places the protective stop.  Never re-posts anything."""
+        cid = xm.get('cid_live')
+        if not cid or self.pos:
+            return
+        sym = self.p.symbol
+        try:
+            await self.venue.cancel(sym, cid)
+            st = await self.venue.order(sym, cid)
+        except Exception as exc:
+            xm['orphan'] = 'UNKNOWN'
+            self.event(f'VESKA orphan entry {cid[:10]}… cancel/query failed ({type(exc).__name__}) -> '
+                       f'reconcile on next sync')
+            return
+        filled = float(st.get('filled') or 0)
+        xm['orphan'] = filled
+        if filled > 0:
+            self.event(f'VESKA errored entry {cid[:10]}… had filled {filled:g} before cancel -> sync ADOPT '
+                       f'will protect it')
 
     # ------------------------------------------------------------------ MARIN
     def be_price(self, p: dict) -> float:
@@ -2781,14 +2904,31 @@ class Runner:
             await asyncio.sleep(0.2)
 
     def idle(self, e: Engine) -> bool:
-        """A flat, unfocused scanner engine polls REST slowly (rate-limit budget: 3 symbols on one key)."""
-        return len(self.engines) > 1 and not (e.pos or e.busy) and e is not self.engine
+        """A flat OBSERVER engine polls REST slowly (rate-limit budget: 3 symbols on one key).
+        10-08v: cadence follows trading permission, not which symbol the dashboard shows - before, a BTC
+        observer in focus left the tradable SOL/DOGE engines at book 3 s / sync 4 s."""
+        return len(self.engines) > 1 and not (e.pos or e.busy) and e.observer
+
+    def cadence(self, e: Engine, period: float = 1.2) -> tuple:
+        """(venue book s, REST sync s) for one engine.  Decisions never wait on these (decide_loop 0.2 s on the
+        WS feed; _execute re-reads the venue book before quoting).  Weight/sync ~12 (positionRisk 5 + account 5
+        + 2 order lists), bookTicker 2, ~0.6 s REST per sync: position/busy (0.3, 1.2) ~500/min, focused flat
+        (1.0, 1.2) ~500, other flat tradable (2.0, 3.0) ~260, flat observer (3.0, 4.0) ~190 -> <= ~960/min with
+        3 symbols flat.  While any engine holds a position / order, the other flat engines drop to (3.0, 4.0):
+        the protected position keeps the REST budget (same total as before 10-08v)."""
+        if e.pos or e.busy:
+            return 0.3, period
+        if self.idle(e) or any(x.pos or x.busy for x in self.engines.values() if x is not e):
+            return 3.0, 4.0
+        if len(self.engines) > 1 and e is not self.engine:
+            return 2.0, max(period, 3.0)
+        return 1.0, period
 
     async def vbook_loop(self, e: Engine) -> None:
         while True:
             if e.started and e.own_book:
                 await e.refresh_book(0.0)
-                await asyncio.sleep(0.3 if (e.pos or e.busy) else 3.0 if self.idle(e) else 1.0)
+                await asyncio.sleep(self.cadence(e)[0])
             else:
                 await asyncio.sleep(1.0)
 
@@ -2803,7 +2943,7 @@ class Runner:
                 e.last_error = f'{type(exc).__name__}: {exc}'[:160]
                 e.event(f'sync error {e.last_error}')
                 await asyncio.sleep(3)
-            await asyncio.sleep(4.0 if self.idle(e) else period)
+            await asyncio.sleep(self.cadence(e, period)[1])
 
     async def publish_loop(self) -> None:
         n = 0
@@ -2811,8 +2951,7 @@ class Runner:
             e = self.refocus()
             if e is not None and self.tel is not None:
                 snap = e.snapshot()
-                snap['scanner'] = {'on': len(self.engines) > 1, 'focus': e.p.symbol,
-                                   'rows': [x.radar() for x in self.engines.values()]}
+                snap['scanner'] = self.scanner_view(e)
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
                             demo_keys=all(credentials('demo', self.env)))
@@ -2827,6 +2966,19 @@ class Runner:
                     await asyncio.sleep(1.0)
                     raise SystemExit(0)
             await asyncio.sleep(0.5)
+
+    def scanner_view(self, e: Engine) -> dict:
+        """Scanner block of the SSE snapshot.  intents / fills / cancels are session counters summed over the
+        engines (10-08v: app.js read them, the engine never published them -> 'undefined')."""
+        es = list(self.engines.values())
+        return {'on': len(es) > 1, 'focus': e.p.symbol, 'rows': [x.radar() for x in es],
+                **xf.merge_counters(x.funnel.counters() for x in es), 'counters_scope': 'session',
+                'funnel': {x.p.symbol: x.funnel.view() for x in es},
+                'feasibility': {x.p.symbol: x.lane_feasibility() for x in es}}
+
+    def default_focus(self) -> str:
+        """First engine allowed to trade (BTC observer only when nothing else exists)."""
+        return next((s for s, x in self.engines.items() if not x.observer), next(iter(self.engines)))
 
     async def activate(self, mode: str) -> Engine:
         for t in self.tasks:
@@ -2844,7 +2996,7 @@ class Runner:
         self.mode = mode
         if self.focus_sym not in self.engines:
             sym = self.symbols.get(mode)
-            self.focus_sym = sym if sym in self.engines else next(iter(self.engines))
+            self.focus_sym = sym if sym in self.engines else self.default_focus()
         e = self.refocus()
         feeds = {s: x.feed for s, x in self.engines.items()}
         self.tasks = [asyncio.create_task(self.pump_multi(feeds, 'public')),

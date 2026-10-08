@@ -237,10 +237,13 @@ function render(s) {
   const lab = s.lab;
   if (s.scanner) {
     const sc = s.scanner;
-    set('lab-tag', `SCAN intents ${sc.intents} · GTX fills ${sc.fills}`
+    // 10-08v: unknown is '—', never 'undefined' and never a silent 0 (counters are per session).
+    const n = v => (finite(v) ? String(Number(v)) : '—');
+    set('lab-tag', `SCAN intents ${n(sc.intents)} · GTX fills ${n(sc.fills)}`
       + (finite(sc.fill_rate) ? ` (${number(sc.fill_rate * 100, 0)}%)` : '')
-      + ` · cancels ${sc.cancels}` + (finite(sc.trades_per_hour) ? ` · ${number(sc.trades_per_hour, 1)} lệnh/giờ` : ''));
-    byId('lab-tag').className = 'tag' + (sc.fills ? ' buy' : '');
+      + ` · cancels ${n(sc.cancels)}` + (finite(sc.shadow) && sc.shadow ? ` · shadow ${n(sc.shadow)}` : '')
+      + (finite(sc.trades_per_hour) ? ` · ${number(sc.trades_per_hour, 1)} lệnh/giờ` : ''));
+    byId('lab-tag').className = 'tag' + (finite(sc.fills) && sc.fills > 0 ? ' buy' : '');
   } else if (!lab || !lab.probes) {
     set('lab-tag', lab ? `LAB ${lab.open ?? 0} OPEN · 0 RESOLVED` : 'LAB OFF');
     byId('lab-tag').className = 'tag';

@@ -83,3 +83,17 @@ Kết luận: chặn chase **giảm đuôi lỗ nhưng tốn 0.4–1.1 bps/lần
 | U1 | phạm vi | BTC observe-only: feed, swarm, telemetry chạy; không vào lệnh (kể cả MANUAL), không shadow scalper; vị thế có sẵn vẫn được quản lý/đóng | bật (demo) | `observe_only=()` | Giảm rủi ro, không cần bằng chứng lợi nhuận. BTC AUTO −1.43 U / 27 lệnh qua nhiều phiên bản. |
 | U2 | sizing | SOL ≥ 0.40 / DOGE ≥ 300 cho lệnh trend thường; super size 0.80 SOL / 500 DOGE (từ 0.50 / 450) | bật demo, tắt live | `alt_size_floor=False`, SUPER_SIZE cũ | **Chưa có bằng chứng**: SOL 10 lệnh, CI chứa 0. Rủi ro tối đa ~0.40 U (SOL) + ~0.26 U (DOGE) < 1.0 U. |
 | U3 | thoát lệnh | ≥ 120 s, MFE < 0.08 %, \|vận tốc 15 s\| < 0.025 % → maker exit tại touch (EJECT-FAST); không áp cho SCALP/TP1 đã khớp | bật demo, tắt live | `eject_fast=False` | Replay (tools/replay_eject.py, vào lệnh ngẫu nhiên, mainnet 09–10/09, 611 vị thế): B − A = −0.05 bps [−1.20, +1.73] (bảo thủ), +0.60 [−0.60, +2.36] (lạc quan) → **không khác biệt đo được** về cơ học thoát. Giá trị thật phụ thuộc lệnh chậm có kỳ vọng âm hay không — chưa đủ dữ liệu (1 lệnh alt thoả điều kiện: #36). |
+
+## Vòng (v) — 08/10/2026: funnel, khả thi lane, GTX, net/cơ hội
+
+| ID | Loại | Giả thuyết / thay đổi | Dữ liệu · split | Tiêu chí | Kết quả | Trạng thái / rollback |
+|---|---|---|---|---|---|---|
+| V1 | đo | Đếm mọi blocker (không chỉ blocker đầu) 1 Hz/engine, theo lane; phân loại hard/cost/statistical/config | runtime (chưa có) | — | Code + test; chưa có số liệu runtime | bật (chỉ đo); revert `exec_funnel` |
+| V2 | khả thi | Lane có đầu vào hợp lệ qua hết gate? | config thật | rr_net max ≥ 1.30 | TREND demo SOL 1.94–2.34, DOGE 2.09–2.39 ✓; MR max 0.875 ✗; live 0.474 ✗; SCALP shadow (gate không áp, rr 0.20) | báo cáo, không đổi gate |
+| V3 | bug | Dashboard `undefined`: producer (engine) ≠ schema UI (micro_scanner) | code | test schema | VALIDATED (test) | revert app.js |
+| V4 | lịch | UI focus làm chậm REST của SOL/DOGE khi BTC observer được xem | code | weight ≤ lịch cũ; quyết định không phụ thuộc focus | Quyết định không phụ thuộc focus (decide 0.2 s, WS). REST: SOL/DOGE 3/4 s → 2/3 s khi BTC focus; ước tính weight ≤ lịch cũ ở mọi trạng thái | bật; revert idle() |
+| V5 | bug lifecycle | Exception sau POST GTX để lệnh mồ côi | test tái hiện | lệnh không còn NEW; fill muộn được ADOPT + stop | 2 test fail trên code cũ, pass sau vá | bật; revert lời gọi |
+| V6 | replay | Cách đặt lệnh nào tốt nhất theo net/cơ hội (không theo fill-rate)? 8 policy × 3 fill model × 2 bộ cơ hội | mainnet bookTicker SOL/LINK/BNB; dev 09–10/09, **holdout 08/09 đặt trước**; 1 lần chạy, không tune | Δ net30/cơ hội vs PEG_T3, CI95 block bootstrap ghép cặp loại 0 trên clear+prop | Mọi policy < 0; SKIP > mọi policy (+1.87 [1.52, 2.18]); TTL 5/10 s, IOC tệ hơn; JOIN_T3 > PEG_T3 +0.23 [0.11, 0.37] (clear), front không phân biệt | **WAIT**. Ứng viên `peg=False` chưa áp dụng (book mainnet ≠ demo, lợi ích ≪ phí) |
+| V7 | sizing | Floor/super size SOL/DOGE (vòng u) có cải thiện không? | ledger | — | Không đánh giá được: 0 lệnh SOL/DOGE khớp dưới policy u/v (11 attempt 0 khớp) | giữ nguyên, không tăng thêm |
+
+Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội, một lần chạy; không có tham số nào được chọn trên holdout.

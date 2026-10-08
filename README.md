@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.22 Cập nhật 08/10/2026 (v) — Funnel "vì sao không vào lệnh", khả thi lane, GTX không khớp, net/cơ hội
+- **Vì sao ít lệnh (snapshot 13:25)**: phiên hiện tại có 11 attempt GTX tới sàn trong 0.91 h nhưng 0 khớp; toàn log 6/54 (11 %). Có 4 lần lệnh một mình tại touch demo vẫn không khớp trong 3 s → thiếu taker trên book testnet. BTC observe-only theo thiết kế; MR (rr tối đa 0.875) và live (rr 0.474) bất khả thi với gate 1.30.
+- **Bản vá**: `churn_checks()` + `core/exec_funnel.py` đếm mọi blocker (1 Hz, theo lane, hard/cost/statistical/config); `lane_feasibility()`; dashboard hết `undefined` (UI hiện "—" khi chưa biết); nhịp REST theo quyền giao dịch thay vì symbol đang xem, focus mặc định = SOL; huỷ lệnh entry mồ côi khi có lỗi sau POST (bug tái hiện bằng test).
+- **Replay offline** (`tools/replay_gtx_placement.py`, mainnet SOL/LINK/BNB, holdout 08/09): mọi cách đặt lệnh (join, peg, TTL 3/5/10 s, cải thiện 1 tick, IOC) đều âm sau phí tính trên **mọi** cơ hội; WAIT trội; TTL dài/IOC tệ hơn. Không đổi TTL/peg/size; IOC vẫn tắt.
+- Kiểm thử: `python -m pytest -q` 1188 passed. Chi tiết: `docs/research_upgrade/report_before_after_2026-10-08v.md`.
+
 ### 8.21 Cập nhật 08/10/2026 (u) — Cách ly BTC, dồn size sang SOL/DOGE, eject 120 s
 - BTC chỉ quan sát (feed, swarm, telemetry), không vào lệnh; vị thế BTC còn sót vẫn được quản lý.
 - SOL tối thiểu 0.40, DOGE tối thiểu 300 cho lệnh trend thường; super-conviction 0.80 SOL / 500 DOGE.
