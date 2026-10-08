@@ -114,3 +114,12 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | X1 | gate | Adaptive KER (công thức form) mở TREND trong chop có lời | funnel runtime 23 phút; replay aggTrades SOL+DOGE 01–05/10 dev, 06–07/10 holdout, 1 lần chạy | net/lệnh CI95 > 0 trên holdout | KER là blocker duy nhất 3/1 379 mẫu SOL; công thức hạ ngưỡng ≤ 0.02; proxy dải 0.362–0.42: −8.01 bps [−9.42, −6.63], mọi dải KER âm như nhau | **shadow** (`SHADOW_KER`); `adaptive_ker='on'` |
 | X2 | bracket | MR TP 0.22–0.26 / SL 0.10–0.12 đạt RR ≥ 1.35 và có lời | như X1 | như X1 | RR thật 1.00–1.10 (form tính sai phí stop); 0.29/0.10 (RR 1.39): −7.03 bps [−10.76, −3.42], thắng 27 % < 42 % hoà vốn; mọi biến thể âm | code `mr_bracket='fixed'`, mặc định `vwap` |
 | X3 | đo | Tên blocker & tổ hợp sau swarm | runtime | — | `NO_TRIGGER` là blocker đầu lớn nhất | bật |
+
+## Vòng (y) — 08/10/2026: định cỡ vị thế 10 %
+
+| ID | Loại | Giả thuyết / thay đổi | Dữ liệu | Kết quả | Trạng thái / rollback |
+|---|---|---|---|---|---|
+| Y1 | sizing | 10 % notional tăng lợi nhuận mà không cháy | ledger 46 lệnh (SOL 15), Monte Carlo 10 000 × 200 lệnh | Không cháy (DD p99 1.2 %) nhưng PnL trung vị −19 U; SOL −1.98 bps/lệnh [−14.6, +9.1]; Kelly f* < 0 | **không áp dụng** |
+| Y2 | sizing | 10 % vốn rủi ro tại stop | như Y1 | Cần 23x; P(DD ≥ 50 %) 95 % (null 75 %) | **REJECTED** |
+| Y3 | thanh khoản | 4.35 SOL / 5 500 DOGE trượt giá | depth20 + aggTrades 30 phút demo/mainnet | Trượt 0 bps theo độ sâu hiển thị; khớp maker demo 3 s ≤ 10 % (cận trên) | ràng buộc là khớp, không phải impact |
+| Y4 | sizing | Dynamic Conviction Sizing 3/5/10 % | code + test | score chưa hiệu chuẩn (≥ 0.95: −1.0 bps) | **shadow** (`cs_*` trên order row); `conviction_sizing='on'` |

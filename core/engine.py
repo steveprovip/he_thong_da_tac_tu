@@ -383,6 +383,15 @@ class Profile:
     mr_bracket: str = 'vwap'
     mr_tp_fixed: float = 0.29
     mr_sl_fixed: float = 0.10
+    # 10-08y Dynamic Conviction Sizing (form POSITION_SIZING_10PCT): notional = fraction x wallet, SOL/DOGE TREND
+    # entries only: score in [0.80, 0.90) -> 3 %, [0.90, 0.95) -> 5 %, >= 0.95 with OFI >= 0.85 -> 10 %.  Never above
+    # the free portfolio risk budget (portfolio_risk_usdt at the stop, fees included) or the margin cap: the size is
+    # CLIPPED to them, the caps are not raised.  'off' | 'shadow' (cs_* fields on the order row, size unchanged) |
+    # 'on'.  Shadow: ledger SOL mean -2.0 bps per trade [CI -14.6, +9.1] - no evidence that a larger size or the
+    # score adds edge (Monte Carlo: tools/simulate_position_sizing.py).
+    conviction_sizing: str = 'shadow'
+    cs_tiers: tuple = ((0.95, 0.10), (0.90, 0.05), (0.80, 0.03))
+    cs_super_ofi: float = 0.85
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -409,7 +418,8 @@ PROFILES = {
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
-                    alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
+                    alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off',
+                    conviction_sizing='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -1075,6 +1085,36 @@ class Engine:
         vote = max(d.score, (diag or {}).get('consensus') or 0.0)
         ofi = (f.get('ofi_10s') or 0.0) * (1 if d.side == 'BUY' else -1)
         return vote >= self.p.super_score - 1e-9 and ofi >= self.p.super_ofi
+
+    def conviction_size(self, d: Decision, f: dict, price: float, base: Profile) -> dict:
+        """10-08y Dynamic Conviction Sizing -> {'tier', 'frac', 'qty', 'notional', 'clip'} (qty None = no tier).
+        Notional = tier fraction x wallet; clipped to the free portfolio risk at the stop and the margin cap."""
+        p, sym = self.p, self.p.symbol
+        out = {'tier': None, 'frac': None, 'qty': None, 'notional': None, 'clip': None}
+        if not self.is_alt() or not price or not self.spec:
+            return out
+        score = max(d.score, (self.diag or {}).get('consensus') or 0.0)
+        ofi = (f.get('ofi_10s') or 0.0) * (1 if d.side == 'BUY' else -1)
+        for thr, frac in p.cs_tiers:
+            if score >= thr - 1e-9 and (frac < max(x[1] for x in p.cs_tiers) or ofi >= p.cs_super_ofi):
+                out.update(tier=f'score>={thr:g}' + (f' & OFI>={p.cs_super_ofi:g}'
+                                                    if frac == max(x[1] for x in p.cs_tiers) else ''), frac=frac)
+                break
+        if out['frac'] is None:
+            return out
+        wallet = self.account.get('wallet') or self.account.get('available') or 0.0
+        notional = out['frac'] * wallet
+        risk_pct = (base.sl_pct + (p.maker_bps + p.taker_bps + p.slip_bps) / 100.0) / 100.0
+        free_risk = max(0.0, self.risk_cap() - sum(o.risk_at_stop() for o in self.open_peers()))
+        free_margin = max(0.0, p.portfolio_margin_frac * wallet - sum(o.margin_used() for o in self.open_peers()))
+        lims = {'risk cap': free_risk / risk_pct if risk_pct > 0 else notional,
+                'margin cap': free_margin * p.leverage}
+        for why, lim in lims.items():
+            if lim < notional - 1e-9:
+                notional, out['clip'] = lim, why
+        q = floor_step(notional / price, self.spec['step'])
+        out.update(notional=round(q * price, 4), qty=q if q >= self.min_qty(price) - 1e-12 else None)
+        return out
 
     def alt_boosted(self, d: Decision, diag: dict) -> bool:
         """SOL/DOGE priority: raw swarm vote (not the JEV lift) >= 0.90."""
@@ -1765,7 +1805,8 @@ class Engine:
                'score': decision.score, 'consensus': (self.diag or {}).get('consensus'),
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
-               'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'error': err[:160] or None}
+               'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'),
+               **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
         try:
             path = self.ledger.parent / 'engine_orders.jsonl'
@@ -1832,6 +1873,15 @@ class Engine:
                 cap = max(cap or 0.0, tgt)
             if cap and kq and kq > cap:
                 kq = cap                                    # every SOL/DOGE size path stops at the coin cap
+            if tag == 'AUTO' and path not in ('MR', 'SCALP') and self.p.conviction_sizing in ('shadow', 'on'):
+                cs = self.conviction_size(decision, f, ref, base)
+                xm.update({f'cs_{k}': v for k, v in cs.items()})
+                if self.p.conviction_sizing == 'on' and cs.get('qty'):
+                    if cs['qty'] != kq:
+                        self.event(f'CONVICTION SIZE {sym.replace("USDT", "")} {cs["tier"]} -> '
+                                   f'{fmt(cs["qty"], step)} (${cs["qty"] * ref:,.0f}'
+                                   + (f', clipped by {cs["clip"]}' if cs.get('clip') else '') + ')')
+                    kq = cs['qty']
             probe_mult = (self.p.scalp_size_mult if path == 'SCALP' else
                           self.p.drift_probe_mult if (tag == 'AUTO' and self.drift_probe) else 1.0)
             if probe_mult < 1.0:
@@ -2046,6 +2096,7 @@ class Engine:
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
                         'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
+                        'conviction': {k[3:]: v for k, v in xm.items() if k.startswith('cs_')} or None,
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
                         **({'eject_s': self.p.scalp_be_s, 'eject_mfe': 1e9} if path == 'SCALP' else {}),
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
@@ -2839,6 +2890,7 @@ class Engine:
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
+               'conviction': p.get('conviction'),
                'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
                'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),

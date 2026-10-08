@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.25 Cập nhật 08/10/2026 (y) — Định cỡ vị thế 10 % ngân sách
+- **Tính lại**: ledger 46 lệnh; SOL 15 lệnh lãi +0.266 U nhưng −1.98 bps/lệnh trên notional (CI [−14.6, +9.1]); thắng TB +11.4 bps vs thua TB −22.0 bps (RR thực 0.52; 1.94 là RR kế hoạch).
+- **Monte Carlo** (`tools/simulate_position_sizing.py`, 10 000 × 200 lệnh): 10 % notional không cháy (DD p99 ~1.2 %) nhưng PnL trung vị −19 U; Kelly f* < 0. 10 % rủi ro tại stop: cần 23x, P(DD ≥ 50 %) ≈ 95 %.
+- **Thanh khoản**: 4.35 SOL / 5 500 DOGE trượt 0 bps theo độ sâu; khớp maker demo ≤ 10 % trong 3 s.
+- **Dynamic Conviction Sizing** (3/5/10 % theo score/OFI, cắt theo trần rủi ro/margin hiện có) — mặc định **shadow** (`cs_*` trên order row); live off. Test: 1272 passed. Chi tiết: `docs/research_upgrade/report_position_sizing_10pct_budget_2026-10-08y.md`.
+
 ### 8.24 Cập nhật 08/10/2026 (x) — "Chop deadlock": adaptive KER, bracket MR cố định
 - **Kiểm tra**: KER < 0.38 chiếm 81 % thời gian, nhưng funnel runtime cho thấy KER là blocker DUY NHẤT chỉ 3/1 379 giây (SOL); làn MR không xuất hiện, NET RR chưa từng chặn. Công thức adaptive của form chỉ hạ ngưỡng ≤ 0.02. Phí stop là taker → bracket MR 0.24/0.11 có RR thật 1.05, không phải 1.33.
 - **Replay 7 ngày aggTrades** (`tools/replay_chop_lanes.py`, holdout 06–07/10): mọi bracket MR (kể cả 0.29/0.10, RR 1.39) và proxy TREND ở mọi dải KER đều ≈ −7 đến −8 bps/lệnh, CI < 0.

@@ -186,3 +186,10 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Replay tools/replay_chop_lanes.py on data.binance.vision aggTrades SOL/DOGE 2026-10-01..07 (holdout 06-07): KER<0.38 81 % of time; every MR bracket negative (0.29/0.10 RR 1.389: -7.03 bps/fill [-10.76,-3.42], win 27 % vs 42 % break-even); TREND flow-surge proxy -7.9 to -8.2 bps/fill in every KER band.
 - Patches: Profile adaptive_ker (+score/cvd/confluence/floor/slope), Engine.adaptive_ker + SHADOW_KER rows with other_blockers; mr_bracket/mr_tp_fixed/mr_sl_fixed in bracket_plan + lane_feasibility; exec_funnel NO_TRIGGER + combos_after_swarm.
 - Checks: python -m pytest -q 1249 passed; git diff --check clean. No restart, no order, no live change.
+
+## 2026-10-08 (y) Position sizing 10 % budget study
+- Snapshot docs/research_upgrade/snapshot_2026-10-08y; ledger 46 rows (form said 47); today 9 trades 5W/4L net -0.0684; SOL 15 trades +0.266 U but -1.98 bps/trade on notional, realized RR 0.52.
+- tools/simulate_position_sizing.py: 10 % notional median -19.4 U per 200 trades (boot), DD p99 1.24 %, null +0.3 U, stress -39.3 U; Option B 23x leverage, ruin 94.6 %. Kelly f* < 0.
+- Liquidity (public depth20 + aggTrades, demo and mainnet): 0 bps taker slippage at 4.35 SOL / 5 500 DOGE; demo maker fill upper bound 10 % per 3 s at 4.35 SOL.
+- Patches: Profile conviction_sizing/cs_tiers/cs_super_ofi; Engine.conviction_size (clip to free risk/margin caps), cs_* on order rows, 'conviction' on ledger rows. Demo shadow, live off. No cap or size raised.
+- Checks: python -m pytest -q 1272 passed; git diff --check clean.

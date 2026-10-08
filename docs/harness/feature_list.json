@@ -113,6 +113,16 @@
       ],
       "status": "done",
       "evidence": "Runtime funnel: KER sole blocker 3/1379 s (SOL), 0 MR samples, NET RR never blocked. aggTrades replay 2026-10-01..07 (holdout 06-07): MR 0.29/0.10 -7.03 bps/fill [-10.76,-3.42]; TREND proxy KER 0.362-0.42 -8.01 [-9.42,-6.63], every KER band negative. pytest 1249 passed; git diff --check clean; ledger untouched (44 rows)."
+    },
+    {
+      "id": "position-sizing-10pct-20261008y",
+      "name": "Position sizing study (10 % budget), Monte Carlo tool, liquidity check, Dynamic Conviction Sizing (shadow)",
+      "description": "tools/simulate_position_sizing.py (10 000 paths x 200 trades, boot/block/null/stress, Option A notional fractions and Option B risk-at-stop), depth and taker-flow liquidity check, Engine.conviction_size 3/5/10 % clipped to existing risk/margin caps, 'off'|'shadow'|'on' (demo shadow, live off)",
+      "dependencies": [
+        "chop-deadlock-resolution-20261008x"
+      ],
+      "status": "done",
+      "evidence": "Ledger 46 rows: SOL -1.98 bps/trade [-14.6,+9.1], Kelly f* < 0; 10 % notional median -19.4 U / 200 trades, DD p99 1.2 %; Option B P(DD>=50 %) 94.6 %; 4.35 SOL slippage 0 bps, demo maker fill <= 10 %/3 s. pytest 1272 passed; git diff --check clean; ledger untouched. Sizing not raised."
     }
   ]
 }

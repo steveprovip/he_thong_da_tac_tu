@@ -1,0 +1,44 @@
+{
+ "t": 1791451967.4149373,
+ "window_min": 30,
+ "res": {
+  "demo|SOLUSDT": {
+   "trades": 2693,
+   "minutes": 30,
+   "trades_per_min": 89.8,
+   "median_trade_qty": 0.1,
+   "P(3s taker vol>=0.4)": 0.332,
+   "P(3s taker vol>=1.5)": 0.144,
+   "P(3s taker vol>=2.0)": 0.127,
+   "P(3s taker vol>=4.35)": 0.103
+  },
+  "demo|DOGEUSDT": {
+   "trades": 3038,
+   "minutes": 30,
+   "trades_per_min": 101.3,
+   "median_trade_qty": 123.0,
+   "P(3s taker vol>=300)": 0.288,
+   "P(3s taker vol>=2000)": 0.157,
+   "P(3s taker vol>=5500)": 0.145
+  },
+  "main|SOLUSDT": {
+   "trades": 4561,
+   "minutes": 30,
+   "trades_per_min": 152.0,
+   "median_trade_qty": 1.47,
+   "P(3s taker vol>=0.4)": 0.867,
+   "P(3s taker vol>=1.5)": 0.775,
+   "P(3s taker vol>=2.0)": 0.747,
+   "P(3s taker vol>=4.35)": 0.659
+  },
+  "main|DOGEUSDT": {
+   "trades": 2648,
+   "minutes": 30,
+   "trades_per_min": 88.3,
+   "median_trade_qty": 818.5,
+   "P(3s taker vol>=300)": 0.711,
+   "P(3s taker vol>=2000)": 0.478,
+   "P(3s taker vol>=5500)": 0.376
+  }
+ }
+}

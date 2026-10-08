@@ -73,3 +73,7 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After the user restarts demo: read scanner.funnel.combos_after_swarm and SHADOW_KER rows (other_blockers empty = adaptive KER would have submitted). Propose adaptive_ker='on' only if those rows' after-fee markouts have CI95 > 0.
 - MR stays closed by net RR with the default 'vwap' bracket; mr_bracket='fixed' opens it (RR 1.389) but the 7-day replay is negative for every MR bracket — user decision.
 - The binding constraint is signal edge (EDGE/SCORE gates block > 95 % of seconds; flow proxies negative after fees), not a logic lock.
+
+## Handoff — 2026-10-08 (y)
+- Sizing was NOT raised. If the user wants larger demo sizes: conviction_sizing='on' plus an explicit portfolio_risk_usdt (e.g. 2.5 U for a 10 % SOL tier), pre-registered stop rule: after >= 50 trades under one policy, revert unless the bps/trade CI95 is > 0. Never risk-at-stop 10 %.
+- Re-run tools/simulate_position_sizing.py after each ~50 new trades; cs_* fields on order rows show what the conviction tiers would have sized.

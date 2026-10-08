@@ -236,6 +236,7 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('dyn_ttl', 'off')
     prof.setdefault('ratchet2', False)
     prof.setdefault('adaptive_ker', 'off')       # 10-08x adaptive KER: test_chop_deadlock_resolution.py
+    prof.setdefault('conviction_sizing', 'off')  # 10-08y conviction sizing: test_position_sizing_10pct.py
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')

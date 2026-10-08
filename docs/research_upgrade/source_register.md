@@ -43,3 +43,11 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 |---|---|---|---|
 | 20 | Binance public data, USD-M daily aggTrades https://data.binance.vision/data/futures/um/daily/aggTrades/ (SOLUSDT, DOGEUSDT 2026-10-01..07, checksum khớp) | Mọi print có giá/khối lượng/phía taker → tính KER, VWAP 60 s, CVD giống engine; không có book/queue. | Replay X1/X2 |
 | 21 | Kaufman, Efficiency Ratio (Smarter Trading, 1995; định nghĩa đã dùng trong `msig.ker`) | ER = \|ΔP\| / Σ\|Δp\|; chỉ đo độ thẳng của đường giá, không dự báo hướng. | Ngưỡng KER là gate thống kê, cần holdout |
+
+## Bổ sung 08/10/2026 (y)
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 22 | Thorp (2007), Kelly criterion (Handbook of Asset and Liability Management) | f* = μ/σ²; μ ước lượng sai → cược quá mức; phân số Kelly giảm rủi ro | Y1: f* < 0 trên ledger |
+| 23 | Vince (1992), The Mathematics of Money Management | Optimal f, chuỗi thua và rủi ro cháy | Y2 |
+| 24 | Almgren & Chriss (2000), Optimal Execution of Portfolio Transactions, J. Risk | Tác động tạm thời/vĩnh viễn theo size/độ sâu | Y3 |
+| 25 | Binance USD-M public `/fapi/v1/depth`, `/fapi/v1/aggTrades` (demo-fapi + fapi, 08/10 ~16:5x) | Độ sâu hiển thị & dòng taker 30 phút | Y3 |
