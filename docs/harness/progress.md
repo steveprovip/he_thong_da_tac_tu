@@ -180,3 +180,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Evidence (tools/counterfactual_super_alpha.py, public aggTrades demo + mainnet): crossing after 2 s -7.08 bps/opportunity on demo [-12.87,-1.71], -9.64 on mainnet [-15.69,-3.73]; immediate IOC worse; 10/15/20 s TTL worse than 3 s; 5-min MFE median 8.8 bps, max 28.3, 0/54 >= 50 bps.
 - Patches: Profile super_cross/dyn_ttl ('off'|'shadow'|'on', demo shadow, live off), Engine.cross_check / cross_remaining (IOC remainder only, 3 bps cap, no MARKET) / dyn_keep, SHADOW_CROSS / SHADOW_DYN rows; fee-true ratchet tier 1 + ratchet2 (MFE 0.25 % -> fees + 0.05 %); BinanceVenue._post/_query_raw/cancel/order retries (-1008 resend same id; unknown -> query first; IOC never resent on unknown); Engine.orphans retried in sync().
 - Checks: python -m pytest -q 1222 passed; git diff --check clean. No engine restart, no order, no live change.
+
+## 2026-10-08 (x) Chop deadlock: adaptive KER + fixed MR bracket
+- Snapshot docs/research_upgrade/snapshot_2026-10-08x (08:44 UTC); runtime funnel (code 4bf6fbb): KER sole blocker 3/1379 s SOL, 1/1424 DOGE; EDGE blocks 1373/1379; MR lane 0 samples; NET_RR never.
+- Replay tools/replay_chop_lanes.py on data.binance.vision aggTrades SOL/DOGE 2026-10-01..07 (holdout 06-07): KER<0.38 81 % of time; every MR bracket negative (0.29/0.10 RR 1.389: -7.03 bps/fill [-10.76,-3.42], win 27 % vs 42 % break-even); TREND flow-surge proxy -7.9 to -8.2 bps/fill in every KER band.
+- Patches: Profile adaptive_ker (+score/cvd/confluence/floor/slope), Engine.adaptive_ker + SHADOW_KER rows with other_blockers; mr_bracket/mr_tp_fixed/mr_sl_fixed in bracket_plan + lane_feasibility; exec_funnel NO_TRIGGER + combos_after_swarm.
+- Checks: python -m pytest -q 1249 passed; git diff --check clean. No restart, no order, no live change.

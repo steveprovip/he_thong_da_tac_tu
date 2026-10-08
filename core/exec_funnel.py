@@ -27,7 +27,7 @@ GATE_CLASS = {
     'MR_FLOW': STAT, 'NET_RR': COST, 'MR_SCORE': STAT, 'VELOCITY': STAT, 'SCORE': STAT, 'EDGE': STAT,
     # swarm stage
     'ZEPHR': HARD, 'RUNE': HARD, 'OKAPI': HARD, 'MARIN': HARD, 'VESKA': HARD,
-    'WEAK': STAT, 'CONFLUENCE': STAT, 'WALL': STAT, 'REGIME': STAT,
+    'WEAK': STAT, 'CONFLUENCE': STAT, 'WALL': STAT, 'REGIME': STAT, 'NO_TRIGGER': STAT,
     # after the gates
     'OBSERVER': CONFIG, 'YIELD': CONFIG, 'NO_SIGNAL': 'none',
 }
@@ -44,6 +44,8 @@ def swarm_key(reason: str) -> str:
     for k in ('CONFLUENCE', 'WALL', 'REGIME', 'WEAK'):
         if r.startswith(k):
             return k
+    if r.startswith('SCANNING'):                 # 10-08x: alpha agents lean one way but no aggregate trigger
+        return 'NO_TRIGGER'
     return 'OTHER'
 
 
@@ -59,6 +61,7 @@ class Funnel:
         self.all: Counter = Counter()             # (lane, gate) -> samples where gate blocked (any position)
         self.only: Counter = Counter()            # (lane, gate) -> samples where gate was the ONLY blocker
         self.outcomes: Counter = Counter()        # engine_orders outcome -> rows (session)
+        self.combos: Counter = Counter()          # 10-08x (lane, stage, blockers) combinations past the swarm
         self.last_blockers: list = []
 
     def due(self) -> bool:
@@ -71,6 +74,8 @@ class Funnel:
     def record(self, lane: str, stage: str, blockers: Iterable[str] = ()) -> None:
         bl = list(dict.fromkeys(blockers))
         self.stages[(lane, stage)] += 1
+        if stage in ('CHURN', 'SUBMIT', 'YIELD', 'OBSERVER'):
+            self.combos[(lane, stage, '+'.join(bl) or '-')] += 1
         if bl:
             self.first[(lane, bl[0])] += 1
             for b in bl:
@@ -103,6 +108,8 @@ class Funnel:
             return out
         return {'samples_every_s': self.every_s, 'stages': tab(self.stages), 'first': tab(self.first),
                 'all': tab(self.all), 'only': tab(self.only), 'outcomes': dict(self.outcomes),
+                'combos_after_swarm': [{'lane': a, 'stage': b, 'blockers': c, 'n': n}
+                                       for (a, b, c), n in self.combos.most_common(15)],
                 'last_blockers': self.last_blockers, 'class': {k: GATE_CLASS.get(k, STAT) for k in
                                                                 {k for (_, k) in self.all} | set(self.last_blockers)},
                 **self.counters()}

@@ -37,3 +37,9 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 |---|---|---|---|
 | 18 | Binance USD-M General Info, mục HTTP 503 (sửa 07/10/2026) https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info | 503 "Unknown error" = trạng thái không rõ, kiểm tra trước khi gửi lại; 503 "Service Unavailable" và −1008 = thất bại, retry backoff 200/400/800 ms (3–5 lần); cancel / reduce-only miễn −1008. | W4 |
 | 19 | Biais, Foucault & Moinas, Equilibrium Fast Trading (SSRN 2024360; JFE) | Đầu tư công nghệ nhanh tạo chọn ngược và dư thừa đầu tư; không phải quy tắc khớp taker theo alpha/phí. Form ghi nhầm "Salanié". | Chỉ bối cảnh |
+
+## Bổ sung 08/10/2026 (x)
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 20 | Binance public data, USD-M daily aggTrades https://data.binance.vision/data/futures/um/daily/aggTrades/ (SOLUSDT, DOGEUSDT 2026-10-01..07, checksum khớp) | Mọi print có giá/khối lượng/phía taker → tính KER, VWAP 60 s, CVD giống engine; không có book/queue. | Replay X1/X2 |
+| 21 | Kaufman, Efficiency Ratio (Smarter Trading, 1995; định nghĩa đã dùng trong `msig.ker`) | ER = \|ΔP\| / Σ\|Δp\|; chỉ đo độ thẳng của đường giá, không dự báo hướng. | Ngưỡng KER là gate thống kê, cần holdout |

@@ -365,6 +365,24 @@ class Profile:
     # re-send with the SAME clientOrderId only if the order does not exist.
     net_retries: int = 3
     net_retry_base_s: float = 0.2
+    # 10-08x adaptive KER for super-conviction TREND entries (form RESOLVE_CHOP_DEADLOCK, formula as given):
+    # ker_lock_effective = max(0.15, ker_lock - 0.20 x (score - 0.90)) when score >= 0.95, CVD velocity 10 s
+    # >= 3 000 USD/s with the trade and swarm confluence 3/3.  At score 0.99 this lowers 0.38 to 0.362 (the
+    # hysteresis band up to ker_unlock is also passed while locked).  'off' | 'shadow' (SHADOW_KER rows) | 'on'.
+    # Shadow: replay 10/01-10/07 SOL+DOGE: flow-surge entries lose 7-8 bps per fill in EVERY KER band.
+    adaptive_ker: str = 'shadow'
+    adaptive_ker_score: float = 0.95
+    adaptive_ker_cvd_vel_usd: float = 3_000.0
+    adaptive_ker_confluence: int = 3
+    adaptive_ker_floor: float = 0.15
+    adaptive_ker_slope: float = 0.20
+    # 10-08x MR bracket: 'vwap' = TP |VWAP dev| clamped [mr_tp_min, mr_tp_max], SL mr_sl_pct (net RR <= 0.875,
+    # blocked by net_rr_min) | 'fixed' = TP mr_tp_fixed / SL mr_sl_fixed.  0.29 / 0.10 is the smallest TP that
+    # reaches net RR >= 1.35 with real fees (maker in, taker stop): the form's 0.22-0.26 / 0.10-0.12 gives 1.00-1.10.
+    # Default 'vwap': replay of every MR variant -7 bps per fill (CI < 0) on dev and holdout.
+    mr_bracket: str = 'vwap'
+    mr_tp_fixed: float = 0.29
+    mr_sl_fixed: float = 0.10
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -391,7 +409,7 @@ PROFILES = {
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
-                    alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
+                    alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
 }
 
 
@@ -842,6 +860,7 @@ class Engine:
         self.pending_risk = 0.0                       # loss at stop of an entry being worked (portfolio cap)
         self.drift_probe: Optional[str] = None        # set by churn_gate when a DRIFT lock is lifted (half size)
         self.blockers: list = []                      # 10-08v: every churn gate that blocked the last candidate
+        self.ker_adapt: Optional[dict] = None         # 10-08x adaptive KER result of the last churn check
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
@@ -1344,7 +1363,8 @@ class Engine:
             mr = [self.bracket_plan('MR', {'vwap_dev_pct': v}).get('rr_net') for v in (p.mr_tp_min, p.mr_tp_max, 5.0)]
             mr = [x for x in mr if x is not None]
             out['MR'] = row('ENABLED', min(mr) if mr else None, max(mr) if mr else None,
-                            f'TP clamped [{p.mr_tp_min}, {p.mr_tp_max}] %, SL {p.mr_sl_pct} % + fees')
+                            f'TP {p.mr_tp_fixed} % / SL {p.mr_sl_fixed} % (fixed) + fees' if p.mr_bracket == 'fixed'
+                            else f'TP clamped [{p.mr_tp_min}, {p.mr_tp_max}] %, SL {p.mr_sl_pct} % + fees')
         sc = self.bracket_plan('SCALP', {}).get('rr_net')
         st = {'on': 'ENABLED', 'shadow': 'SHADOW'}.get(p.chop_scalper, 'OFF')
         out['SCALP'] = {**row(st, sc, sc, f'chop_scalper={p.chop_scalper}; exempt from net RR (break-even win rate '
@@ -1402,7 +1422,10 @@ class Engine:
             prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
         elif path == 'MR':
             dev = abs(f.get('vwap_dev_pct') or 0.0) or p.mr_tp_pct
-            tp, sl, src = min(p.mr_tp_max, max(p.mr_tp_min, dev)), p.mr_sl_pct, 'MR'
+            if p.mr_bracket == 'fixed':                         # 10-08x: fee-true RR >= 1.35 bracket
+                tp, sl, src = p.mr_tp_fixed, p.mr_sl_fixed, 'MR-FIXED'
+            else:
+                tp, sl, src = min(p.mr_tp_max, max(p.mr_tp_min, dev)), p.mr_sl_pct, 'MR'
             prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
         elif p.atr_scaler and p.max_loss_usdt is None and atr_pct:
             sl_min, tp_min = self.asset_floors()
@@ -1592,8 +1615,16 @@ class Engine:
                 probe = acc
             else:
                 out.append(('DRIFT', f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'))
+        self.ker_adapt = None
         if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
-            out.append(('KER', self.chop_reason()))
+            ad = self.adaptive_ker(d, diag)
+            if ad['unlock'] and self.p.adaptive_ker == 'on':
+                self.ker_adapt = ad                               # 10-08x: lock lowered for super-conviction
+            else:
+                out.append(('KER', self.chop_reason() + (f' · adaptive KER {ad["ker_eff"]:.3f} ({self.p.adaptive_ker})'
+                                                         if ad['unlock'] else '')))
+                if ad['unlock'] and self.p.adaptive_ker == 'shadow':
+                    self.ker_adapt = ad
         if self.p.macro_gate and d.side not in self.macro.get('allow', ('BUY', 'SELL')):
             out.append(('MACRO', f'MACRO 5m {self.macro["name"]}: cấm {d.side} · {self.macro.get("why", "")}'))
         if self.p.absorb_gate and self.absorb.get('blocks') == d.side:
@@ -1630,11 +1661,39 @@ class Engine:
                                 f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)'))
         return out, probe
 
+    def adaptive_ker(self, d: Decision, diag: dict) -> dict:
+        """10-08x form formula: ker_eff = max(floor, ker_lock - slope x (score - 0.90)) for score >= 0.95, CVD
+        velocity 10 s >= 3 000 USD/s with the trade and confluence >= 3/3.  -> {'unlock', 'ker_eff', 'why', ...}."""
+        p, f, c = self.p, self.features or {}, self.sig_cfg
+        score = self.conviction(d, diag)
+        k = f.get('ker')
+        vel = (f.get('cvd_vel_10s') or 0.0) * (1 if d.side == 'BUY' else -1)
+        conf = ((diag or {}).get('confluence') or {}).get('count') or 0
+        ker_eff = max(p.adaptive_ker_floor, c.ker_lock - p.adaptive_ker_slope * (score - 0.90))
+        out = {'unlock': False, 'ker_eff': ker_eff, 'ker': k, 'score': score, 'cvd_vel': vel, 'confluence': conf}
+        if p.adaptive_ker not in ('shadow', 'on') or k is None:
+            return out
+        if score >= p.adaptive_ker_score - 1e-9 and vel >= p.adaptive_ker_cvd_vel_usd and \
+                conf >= p.adaptive_ker_confluence and k >= ker_eff:
+            out.update(unlock=True, why=f'ADAPTIVE KER {k:.2f} >= {ker_eff:.3f} (score {score * 100:.1f}% · CVD '
+                                         f'{vel / 1e3:+.1f}k/s · confluence {conf}/3)')
+        return out
+
     def churn_gate(self, d: Decision, diag: dict) -> tuple:
         """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps.
         10-08v: every blocker is evaluated (self.blockers); the first one is returned, as before."""
         out, probe = self.churn_checks(d, diag)
         self.blockers = [k for k, _ in out]
+        ad = self.ker_adapt
+        if ad and self.p.adaptive_ker == 'shadow' and self.clock() >= getattr(self, 'ker_shadow_next', 0.0):
+            self.ker_shadow_next = self.clock() + 20.0         # one row per 20 s per symbol
+            self._shadow_row({'outcome': 'SHADOW_KER', 'side': d.side, 'path': 'TREND', 'why': ad.get('why'),
+                              'ker': ad['ker'], 'ker_eff': round(ad['ker_eff'], 4), 'score': ad['score'],
+                              'cvd_vel': ad['cvd_vel'], 'confluence': ad['confluence'],
+                              'other_blockers': [k for k in self.blockers if k != 'KER'],
+                              'px': (self.features or {}).get('price')})
+        if ad and self.p.adaptive_ker == 'on' and not out:
+            self.event(ad['why'])
         if out:
             return False, out[0][1]
         self.drift_probe = probe

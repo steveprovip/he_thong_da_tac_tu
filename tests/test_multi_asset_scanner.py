@@ -66,6 +66,7 @@ async def scanner(tmp_path, feeds=None, **prof):
     prof.setdefault('super_cross', 'off')        # 10-08w crossing / dynamic TTL / ratchet 2: test_breakthrough_alpha_execution.py
     prof.setdefault('dyn_ttl', 'off')
     prof.setdefault('ratchet2', False)
+    prof.setdefault('adaptive_ker', 'off')       # 10-08x adaptive KER: test_chop_deadlock_resolution.py
     profiles = {s: replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), cooldown_s=0.0, **prof)
                 for s in feeds}
     venue = eng.MockVenue(profiles['BTCUSDT'], quote=lambda s: eng._touch(feeds.get(s)))

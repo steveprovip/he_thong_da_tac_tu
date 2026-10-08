@@ -106,3 +106,11 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | W2 | thực thi | TTL động (≤ 15 s) tăng net | như W1 | như W1 | Demo −1.43 [−4.10, 0.35] vs GTX 3 s +0.12; mainnet −5.73 vs −3.99 | shadow (`SHADOW_DYN`) |
 | W3 | thoát | Ratchet 2 ở MFE 0.25 % → stop fee-true + 0.05 %; tầng 1 fee-true theo phí vào | test | stop-out tại giá stop ≥ +5 bps net | VALIDATED (test, cơ học); kinh tế chưa đo (4/54 đạt MFE 25 bps) | bật demo; `ratchet2=False` |
 | W4 | hạ tầng | −1008/503 không làm mất lệnh hay tạo lệnh trùng | fake client | gửi lại có giới hạn, IOC không gửi lại khi không rõ | VALIDATED (test) | bật |
+
+## Vòng (x) — 08/10/2026: chop deadlock
+
+| ID | Loại | Giả thuyết / thay đổi | Dữ liệu | Tiêu chí | Kết quả | Trạng thái / rollback |
+|---|---|---|---|---|---|---|
+| X1 | gate | Adaptive KER (công thức form) mở TREND trong chop có lời | funnel runtime 23 phút; replay aggTrades SOL+DOGE 01–05/10 dev, 06–07/10 holdout, 1 lần chạy | net/lệnh CI95 > 0 trên holdout | KER là blocker duy nhất 3/1 379 mẫu SOL; công thức hạ ngưỡng ≤ 0.02; proxy dải 0.362–0.42: −8.01 bps [−9.42, −6.63], mọi dải KER âm như nhau | **shadow** (`SHADOW_KER`); `adaptive_ker='on'` |
+| X2 | bracket | MR TP 0.22–0.26 / SL 0.10–0.12 đạt RR ≥ 1.35 và có lời | như X1 | như X1 | RR thật 1.00–1.10 (form tính sai phí stop); 0.29/0.10 (RR 1.39): −7.03 bps [−10.76, −3.42], thắng 27 % < 42 % hoà vốn; mọi biến thể âm | code `mr_bracket='fixed'`, mặc định `vwap` |
+| X3 | đo | Tên blocker & tổ hợp sau swarm | runtime | — | `NO_TRIGGER` là blocker đầu lớn nhất | bật |

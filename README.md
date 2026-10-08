@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.24 Cập nhật 08/10/2026 (x) — "Chop deadlock": adaptive KER, bracket MR cố định
+- **Kiểm tra**: KER < 0.38 chiếm 81 % thời gian, nhưng funnel runtime cho thấy KER là blocker DUY NHẤT chỉ 3/1 379 giây (SOL); làn MR không xuất hiện, NET RR chưa từng chặn. Công thức adaptive của form chỉ hạ ngưỡng ≤ 0.02. Phí stop là taker → bracket MR 0.24/0.11 có RR thật 1.05, không phải 1.33.
+- **Replay 7 ngày aggTrades** (`tools/replay_chop_lanes.py`, holdout 06–07/10): mọi bracket MR (kể cả 0.29/0.10, RR 1.39) và proxy TREND ở mọi dải KER đều ≈ −7 đến −8 bps/lệnh, CI < 0.
+- **Đã triển khai**: `adaptive_ker` ('off'|'shadow'|'on', demo shadow → `SHADOW_KER` kèm các blocker khác), `mr_bracket='fixed'` (TP 0.29 / SL 0.10, RR 1.389; mặc định 'vwap'), funnel `NO_TRIGGER` + tổ hợp blocker sau swarm. Test: 1249 passed. Chi tiết: `docs/research_upgrade/report_chop_deadlock_resolution_2026-10-08x.md`.
+
 ### 8.23 Cập nhật 08/10/2026 (w) — Super-Alpha crossing, TTL động, ratchet 2, chịu lỗi mạng
 - **Bằng chứng trước**: 54 attempt SOL/DOGE thật có vote ≥ 0.95 → sau 5 phút giá biến động tối đa 28 bps (không lần nào 50 bps), 52 % cùng chiều. Crossing taker sau 2 s: −7.1 bps/cơ hội trên demo, −9.6 bps trên mainnet (CI95 < 0). TTL dài/động cũng làm net xấu hơn (`tools/counterfactual_super_alpha.py`).
 - **Đã triển khai**: crossing fallback (cổng SOL/DOGE, vote ≥ 0.95, OFI ≥ 0.85, edge ≥ 30, trần trượt 3 bps, RR sau phí taker ≥ 1.50, chỉ IOC phần còn lại, không MARKET) và TTL động ≤ 15 s (huỷ khi đi ngược) — **mặc định shadow** (`SHADOW_CROSS` / `SHADOW_DYN`), bật bằng `super_cross='on'` / `dyn_ttl='on'`; live tắt. Ratchet tầng 2 (MFE 0.25 % → stop phí thật + 0.05 %), tầng 1 fee-true theo phí vào. Retry −1008/503 an toàn (tra clientOrderId trước khi gửi lại; IOC không gửi lại khi không rõ), orphan được thử lại mỗi sync.

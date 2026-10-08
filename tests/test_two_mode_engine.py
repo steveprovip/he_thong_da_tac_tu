@@ -235,6 +235,7 @@ def mock_engine(tmp_path, feed=None, mode='demo', **prof):
     prof.setdefault('super_cross', 'off')        # 10-08w crossing / dynamic TTL / ratchet 2: test_breakthrough_alpha_execution.py
     prof.setdefault('dyn_ttl', 'off')
     prof.setdefault('ratchet2', False)
+    prof.setdefault('adaptive_ker', 'off')       # 10-08x adaptive KER: test_chop_deadlock_resolution.py
     p = replace(eng.PROFILES[mode], symbol=SYM, cooldown_s=0.0, **prof)
     venue = eng.MockVenue(p, quote=lambda s: (feed.bid or feed.price(), feed.ask or feed.price()))
     e = eng.Engine(p, venue, feed, ledger=tmp_path / 'trades.jsonl')

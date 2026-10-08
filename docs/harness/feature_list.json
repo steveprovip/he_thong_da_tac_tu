@@ -103,6 +103,16 @@
       ],
       "status": "done",
       "evidence": "Counterfactual on 54 real vote>=0.95 attempts (aggTrades demo+mainnet): GTX 2 s -> cross -7.08 bps/opp demo [-12.87,-1.71], -9.64 mainnet [-15.69,-3.73]; 5-min MFE max 28 bps. pytest 1222 passed; git diff --check clean; ledger untouched (44 rows). Not enabled: negative expected value."
+    },
+    {
+      "id": "chop-deadlock-resolution-20261008x",
+      "name": "Adaptive KER (shadow), fixed MR bracket RR 1.389 (opt-in), funnel combos",
+      "description": "Form formula ker_eff = max(0.15, ker_lock - 0.20 (score - 0.90)) with score/CVD velocity/confluence conditions as 'off'|'shadow'|'on' (demo shadow, live off); mr_bracket 'vwap'|'fixed' (0.29/0.10); NO_TRIGGER blocker name and post-swarm blocker combinations",
+      "dependencies": [
+        "breakthrough-alpha-execution-20261008w"
+      ],
+      "status": "done",
+      "evidence": "Runtime funnel: KER sole blocker 3/1379 s (SOL), 0 MR samples, NET RR never blocked. aggTrades replay 2026-10-01..07 (holdout 06-07): MR 0.29/0.10 -7.03 bps/fill [-10.76,-3.42]; TREND proxy KER 0.362-0.42 -8.01 [-9.42,-6.63], every KER band negative. pytest 1249 passed; git diff --check clean; ledger untouched (44 rows)."
     }
   ]
 }

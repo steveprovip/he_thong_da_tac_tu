@@ -68,3 +68,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - New code needs a user restart of demo. Then SHADOW_CROSS / SHADOW_DYN rows appear in data/engine_orders.jsonl (would-be taker price, OFI, taker RR). After >= 30 rows re-run tools/counterfactual_super_alpha.py; propose super_cross='on' only if net per opportunity has CI95 > 0 on demo AND mainnet.
 - Decision for the user: super_cross / dyn_ttl stay shadow (evidence negative) unless the user explicitly wants to test them on demo money (`super_cross='on'`, `dyn_ttl='on'` in PROFILES['demo']); live is always off.
 - Ratchet tier 2 and venue retries are active in demo.
+
+## Handoff — 2026-10-08 (x)
+- After the user restarts demo: read scanner.funnel.combos_after_swarm and SHADOW_KER rows (other_blockers empty = adaptive KER would have submitted). Propose adaptive_ker='on' only if those rows' after-fee markouts have CI95 > 0.
+- MR stays closed by net RR with the default 'vwap' bracket; mr_bracket='fixed' opens it (RR 1.389) but the 7-day replay is negative for every MR bracket — user decision.
+- The binding constraint is signal edge (EDGE/SCORE gates block > 95 % of seconds; flow proxies negative after fees), not a logic lock.
