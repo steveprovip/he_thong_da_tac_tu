@@ -21,6 +21,13 @@ Profile.trend_lane == 'active' (demo only; a live venue or a non-demo profile is
     the 10 % ceiling, high ATR shrinks it so the loss at the disaster stop stays <= trend_risk_pct of the wallet;
   * soft profit lock trend_lock_pct: armed at a best close >= +2 %, then a close beyond best -/+ 3.5 ATR (or the
     Donchian mid) exits at once (the exchange disaster stop stays where it is).
+10-09 (ff) (tools/trend_regime_replay.py --stage ff):
+  * trend_btc_align 'off' | 'shadow' | 'sign' | 'trend': BTC macro shield on SOL / DOGE entries against the BTC 4H
+    trend (exception: own volume > 3x and CVD share >= 10 %); 'shadow' only logs (replay: every enforced variant
+    lowered OOS Sharpe); trend_btc_eject closes an alt when BTC is TREND against it;
+  * trend_be_pct: once a close is >= trend_pyr_arm_pct % in favour, the exchange stop moves from 8 ATR to entry
+    +/- trend_be_pct % (break-even after fees).  The 0.5x add of the request lost DEV Sharpe -> not in the executor;
+  * trend_conv_alloc_pct: 1H + 4H + 1D trend signs agree -> Sizing(conv alloc, trend_conv_risk_pct) instead.
 State: data/trend_active.json (positions, cids, last bar); trades: data/trend_trades.jsonl (never the micro
 ledger).  The micro engine of a symbol the trend lane holds does not adopt that position (Engine.trend_owned).
 """
@@ -111,22 +118,51 @@ class TrendExecutor:
         tw, comp = tl.weights_series(closed, cfg, data.get('funding'))
         g = self.gate_of(p) or tl.RegimeGate(mode='off', confirm=False)
         dn = 20 * (24 // tl.BAR_HOURS[ACTIVE_BAR])
-        out = {}
+        conv = self.conviction(data, now, tw) if p.trend_conv_alloc_pct else {}
+        out, infos = {}, {}
         for s, b in closed.items():
             atr = tl.atr_series(b['h'], b['l'], b['c'])[-1]
-            info = tl.regime_info(b, g)
+            info = infos[s] = tl.regime_info(b, g)
             side = tl.sign(tw[s][-1])
             ok, why = tl.gate_entry(info, len(b['c']) - 1, side, self.gate_of(p)) if side else (False, 'flat signal')
             out[s] = {'w': tw[s][-1], 'side': side, 'bar_t': b['t'][-1], 'close': b['c'][-1],
                       'atr': atr, 'comp': comp[s][-1], 'regime': info['regime'][-1], 'ker': info['ker'][-1],
                       'adx': info['adx'][-1], 'vol_ratio': info['vol_ratio'][-1], 'cvd': info['cvd'][-1],
-                      'gate_ok': ok, 'gate_why': why,
+                      'gate_ok': ok, 'gate_why': why, 'conv': conv.get(s, False),
                       'dmid': (max(b['h'][-dn:]) + min(b['l'][-dn:])) / 2 if len(b['c']) >= dn else None}
+        lead = tl.BtcAlign().leader
+        btc = (out[lead]['side'], out[lead]['regime']) if lead in out else None
+        for s, t in out.items():                              # 10-09 (ff) BTC context of the same close
+            t['btc'] = btc
+            if s != lead and t['side']:
+                t['align_ok'], t['align_why'] = tl.align_entry(
+                    btc, t['side'], infos[s], len(closed[s]['c']) - 1,
+                    tl.BtcAlign(mode=p.trend_btc_align if p.trend_btc_align in ('sign', 'trend') else 'sign'))
         return out
 
-    def size(self, e, w: float, price: float, atr: Optional[float] = None) -> float:
+    @staticmethod
+    def conviction(data: dict, now: float, tw4: dict) -> dict:
+        """{sym: 1H TSMOM sign == 4H target sign == 1D spec target sign != 0}; missing 1H / 1D bars -> False."""
+        tf = data.get('tf') or {}
+        out = {}
+        for s, w4 in tw4.items():
+            b1 = tl.closed_only(tf.get('1h', {}).get(s) or {'t': [], 'c': []}, now, 1)
+            bd = {k: v for k, v in (tf.get('1d') or {}).items() if k == s}
+            bd = {k: tl.closed_only(v, now, 24) for k, v in bd.items()}
+            if len(b1['c']) <= max(tl.H1_LOOKBACKS) or not bd or len(bd[s]['c']) <= 61:
+                out[s] = False
+                continue
+            wd, _ = tl.weights_series(bd, tl.TrendConfig(bar='1d'), (data.get('funding') or {}))
+            s4 = tl.sign(w4[-1])
+            out[s] = bool(s4) and tl.h1_sign(b1['c']) == s4 and tl.sign(wd[s][-1]) == s4
+        return out
+
+    def size(self, e, w: float, price: float, atr: Optional[float] = None, conv: bool = False) -> float:
         wallet = float((e.account or {}).get('wallet') or e.p.mock_balance or 0.0)
-        if e.p.capital_allocation_pct:                # 10-09 (ee): 10 % ceiling, <= 1 % wallet lost at the disaster stop
+        if conv and e.p.trend_conv_alloc_pct:         # 10-09 (ff): 1H + 4H + 1D agree -> conviction ceiling / risk
+            frac = tl.Sizing(e.p.trend_conv_alloc_pct, e.p.trend_conv_risk_pct, e.p.trend_disaster_atr).fraction(atr, price)
+            notional = min(frac * wallet, e.p.trend_notional_max)
+        elif e.p.capital_allocation_pct:              # 10-09 (ee): 10 % ceiling, <= 1 % wallet lost at the disaster stop
             frac = tl.Sizing(e.p.capital_allocation_pct, e.p.trend_risk_pct, e.p.trend_disaster_atr).fraction(atr, price)
             notional = min(frac * wallet, e.p.trend_notional_max)
         else:
@@ -215,7 +251,7 @@ class TrendExecutor:
     async def open(self, e, tgt: dict) -> None:
         sym, side = e.p.symbol, 'BUY' if tgt['side'] > 0 else 'SELL'
         px = e.book().get('price') or e.feed.price() or tgt['close']        # size on the venue price, not the bar
-        qty = self.size(e, tgt['w'], px, tgt.get('atr'))
+        qty = self.size(e, tgt['w'], px, tgt.get('atr'), bool(tgt.get('conv')))
         if qty <= 0 or qty * px < (e.spec or {}).get('min_notional', 5.0):
             return
         opened = self.clock()
@@ -234,11 +270,12 @@ class TrendExecutor:
             return
         self.state[sym] = {'side': side, 'qty': got, 'entry': avg, 'opened': opened, 'opened_ms': int(opened * 1000) - 1000,
                            'bar_t': tgt['bar_t'], 'sl_cid': sl_cid, 'stop': stop_px, 'how': how, 'w': tgt['w'],
-                           'best': avg, 'regime': tgt.get('regime')}
+                           'best': avg, 'regime': tgt.get('regime'), 'conv': bool(tgt.get('conv'))}
         e.trend_owned = True
         self._save()
         self.say(e, f'OPEN {side} {got:g} {sym} @ {avg:g} ({how}) · weight {tgt["w"]:+.3f} · disaster stop '
-                    f'{stop_px:.6g} ({e.p.trend_disaster_atr:g} ATR) · {got * avg:.0f} USDT · regime {tgt.get("regime")}')
+                    f'{stop_px:.6g} ({e.p.trend_disaster_atr:g} ATR) · {got * avg:.0f} USDT · regime {tgt.get("regime")}'
+                    + (' · CONVICTION 1H+4H+1D' if tgt.get('conv') else ''))
 
     async def close(self, e, why: str) -> None:
         sym = e.p.symbol
@@ -274,7 +311,8 @@ class TrendExecutor:
                'exit_how': how, 'gross': parts.get('gross'), 'fee': parts.get('fee'), 'pnl': parts.get('net'),
                'net_bps': (parts['net'] / notional * 1e4) if parts.get('net') is not None and notional else None,
                'hold_h': (self.clock() - st['opened']) / 3600, 'weight': st.get('w'), 'mode': e.p.mode,
-               'regime_entry': st.get('regime'), 'best': st.get('best')}
+               'regime_entry': st.get('regime'), 'best': st.get('best'), 'conv': st.get('conv'),
+               'be': st.get('be', False)}
         self._log_trade(row)
         e.trend_owned = False
         self._save()
@@ -289,7 +327,7 @@ class TrendExecutor:
                 continue
             t = tg[sym]
             self.last[sym] = {k: t.get(k) for k in ('w', 'side', 'bar_t', 'regime', 'ker', 'adx', 'vol_ratio',
-                                                    'gate_ok', 'gate_why')}
+                                                    'gate_ok', 'gate_why', 'conv', 'btc', 'align_ok', 'align_why')}
             st = self.state.get(sym)
             if st:                                            # the exchange stop may have closed it meanwhile
                 view = await e.venue.position_view(sym)
@@ -320,13 +358,18 @@ class TrendExecutor:
                         st = None
                     else:
                         st['bar_t'] = t['bar_t']
+                        await self.break_even(e, st, t)
                 elif want and self.state.get(f'_blocked_{sym}') != want:
                     view = await e.venue.position_view(sym)
                     if float(view.get('amt') or 0.0):
                         self.say(e, f'{sym} venue position not ours - no trend entry')
                     elif not t.get('gate_ok', True):
                         self.say(e, f'{sym} {want} signal held back: {t.get("gate_why")} -> observer')
+                    elif t.get('align_ok') is False and e.p.trend_btc_align in ('sign', 'trend'):
+                        self.say(e, f'{sym} {want} signal held back: BTC shield, {t.get("align_why")} -> observer')
                     else:
+                        if t.get('align_ok') is False and e.p.trend_btc_align == 'shadow':
+                            self.say(e, f'{sym} BTC shield (shadow) would hold back {want}: {t.get("align_why")}')
                         await self.open(e, t)
             finally:
                 e.busy = False
@@ -342,6 +385,8 @@ class TrendExecutor:
         st['best'] = max(st.get('best') or st['entry'], close) if d > 0 else min(st.get('best') or st['entry'], close)
         if p.trend_chop_exit and t.get('regime') == 'CHOP':
             return 'CHOP'
+        if p.trend_btc_eject and t.get('btc') == (-d, 'TREND') and p.symbol != tl.BtcAlign().leader:
+            return 'BTC-EJECT'
         if p.trend_lock_pct is None or d * (st['best'] / st['entry'] - 1) * 100 < p.trend_lock_pct:
             return None
         if p.trend_lock_trail == 'donchian_mid':
@@ -351,6 +396,38 @@ class TrendExecutor:
         if lvl is not None and d * (close - lvl) < 0:
             return 'PROFIT-LOCK'
         return None
+
+    async def break_even(self, e, st: dict, t: dict) -> None:
+        """10-09 (ff): a close >= trend_pyr_arm_pct % in favour -> the exchange closePosition stop moves to entry
+        +/- trend_be_pct % (one closePosition stop per direction: cancel, then place; on failure the old level is
+        restored, and if that fails too the position is closed - never left without an exchange stop)."""
+        p, sym = e.p, e.p.symbol
+        d = 1 if st['side'] == 'BUY' else -1
+        if p.trend_be_pct is None or st.get('be') or d * (t['close'] / st['entry'] - 1) * 100 < p.trend_pyr_arm_pct:
+            return
+        be = st['entry'] * (1 + d * p.trend_be_pct / 100)
+        if d * (be - st['stop']) <= 0:
+            st['be'] = True
+            return
+        side, tick = ('SELL' if d > 0 else 'BUY'), e.spec['tick']
+        try:
+            await e.venue.cancel_stop(st['sl_cid'])
+        except Exception:
+            pass
+        cid = 'gS-' + uuid.uuid4().hex[:28]
+        try:
+            await e.venue.stop(sym, side, _fmt(be, tick), cid)
+            st.update(sl_cid=cid, stop=be, be=True)
+            self.say(e, f'{sym} BREAK-EVEN: exchange stop {be:.6g} (entry {st["entry"]:.6g} {d * p.trend_be_pct:+g} %)')
+        except Exception as exc:
+            try:
+                await e.venue.stop(sym, side, _fmt(st['stop'], tick), cid)
+                st['sl_cid'] = cid
+                self.say(e, f'{sym} break-even stop rejected ({type(exc).__name__}) -> kept {st["stop"]:.6g}')
+            except Exception:
+                self.say(e, f'{sym} stop could not be restored -> closing')
+                await self.close(e, 'STOP-LOST')
+        self._save()
 
     def view(self) -> dict:
         return {'mode': 'ACTIVE (demo)', 'targets': self.last,

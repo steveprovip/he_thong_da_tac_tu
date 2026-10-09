@@ -109,3 +109,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After restart the demo 4H lane enters only in TREND with volume/CVD confirmation, goes flat on CHOP closes, soft-locks profits after +2 % (chandelier 3.5 ATR), sizes min(10 % wallet, 1 % wallet at the 8 ATR stop) <= $600. Watch 'held back', 'CHOP', 'PROFIT-LOCK' events and regime_entry in data/trend_trades.jsonl.
 - Revert: demo trend_regime='off', trend_confirm=False, trend_chop_exit=False, trend_lock_pct=None, capital_allocation_pct=None, trend_notional_max=300.
 - Evidence still a hypothesis (OOS DSR 0.30, ~3.4 trades/month): do not route to live; evaluate after ~100 trades.
+
+## Handoff — 2026-10-09 (ff)
+- Demo after restart: break-even stop at +2 % (event 'BREAK-EVEN'), conviction size up to min(30 %, 2 % risk) <= $1 500 when 1H+4H+1D agree ('CONVICTION'), BTC shield logs only ('(shadow) would hold back'). trend_trades rows carry conv / be.
+- Revert: demo trend_be_pct=None, trend_conv_alloc_pct=None, trend_btc_align='off', trend_notional_max=600.
+- Do not raise leverage for the 25-40 %/yr target without demo evidence (x3 = DD ~22 %). Re-check the shield on shadow logs after ~30 alt entries.

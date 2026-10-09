@@ -135,7 +135,8 @@ def setup(tmp_path, **kw):
     p = replace(eng.PROFILES['demo'], symbol='SOLUSDT', qty=eng.SYMBOL_QTY.get('SOLUSDT', 0.0), trend_lane='active',
                 micro_standalone=False, trend_exec='taker', trend_exec_window_s=20.0, mode='demo',
                 trend_regime='trend_only', trend_confirm=True, trend_chop_exit=True, trend_lock_pct=2.0,
-                capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600.0)
+                capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600.0,
+                trend_be_pct=None, trend_conv_alloc_pct=None, trend_btc_align='off')   # 10-09 ff tested apart
     p = replace(p, **kw)
     feed = msig.MicroFeed('SOLUSDT', msig.config_for('SOLUSDT'))
     feed.on_message({'stream': 'solusdt@depth10@100ms', 'data': {'b': [['100.0', '50']], 'a': [['100.01', '50']]}})
@@ -242,6 +243,6 @@ def test_demo_profile_runs_the_gate_and_ten_pct_sizing_live_untouched():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
     assert d.trend_lane == 'active' and d.trend_regime == 'trend_only' and d.trend_confirm and d.trend_chop_exit
     assert d.capital_allocation_pct == pytest.approx(0.10) and d.trend_risk_pct == pytest.approx(0.01)
-    assert d.trend_disaster_atr == 8.0 and d.trend_notional_max <= 600
+    assert d.trend_disaster_atr == 8.0 and d.trend_notional_max <= 1500          # 10-09 ff: conviction size
     assert d.trend_lock_pct == 2.0 and d.trend_lock_trail == 'chandelier' and d.trend_lock_atr == 3.5
     assert l.trend_lane == 'off' and l.capital_allocation_pct is None

@@ -457,6 +457,16 @@ class Profile:
     # x wallet, <= trend_notional_max.  None = legacy |weight| x wallet clipped to [min, max].
     capital_allocation_pct: Optional[float] = None
     trend_risk_pct: float = 0.01
+    # 10-09 (ff) BTC macro shield for alt entries: 'off' | 'shadow' (log only) | 'sign' | 'trend'; eject = flat on
+    # a close where BTC is TREND against the alt.  Replay: every enforced variant lowered OOS Sharpe -> shadow.
+    trend_btc_align: str = 'off'
+    trend_btc_eject: bool = False
+    # 10-09 (ff) break-even: a close >= trend_pyr_arm_pct % in favour moves the exchange stop to entry +/- be %.
+    trend_be_pct: Optional[float] = None
+    trend_pyr_arm_pct: float = 2.0
+    # 10-09 (ff) conviction: 1H + 4H + 1D agree -> min(conv alloc, conv risk / 8 ATR stop) x wallet.
+    trend_conv_alloc_pct: Optional[float] = None
+    trend_conv_risk_pct: float = 0.02
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True
@@ -493,7 +503,11 @@ PROFILES = {
                     # 10-09 (ee) trend lane: DEV-selected gate G6 + soft lock L1 (chandelier 3.5 ATR armed at +2 %),
                     # 10 % of wallet / <= 1 % lost at the 8 ATR disaster stop, <= $600
                     trend_regime='trend_only', trend_confirm=True, trend_chop_exit=True, trend_lock_pct=2.0,
-                    capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600.0),
+                    capital_allocation_pct=0.10, trend_risk_pct=0.01,
+                    # 10-09 (ff) replay-adopted: break-even stop at +2 % (P1) and 1H+4H+1D conviction size C3 (<= 30 %
+                    # of wallet, <= 2 % at the 8 ATR stop, <= $1 500); BTC shield logged only (enforced variants lost)
+                    trend_be_pct=0.3, trend_conv_alloc_pct=0.30, trend_conv_risk_pct=0.02, trend_btc_align='shadow',
+                    trend_notional_max=1500.0),
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -3352,27 +3366,75 @@ class Engine:
 
 
 # ============================================================================ runner (one process: WS + engine + UI)
-def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: float = 5.0) -> list:
-    """Closed candles [(open_s, o, h, l, c, close_s)] from Binance USD-M mainnet public REST (no key)."""
+# 10-09 (ff) network resilience for the public REST market data (log: "_ssl.c:990: The handshake operation timed
+# out" on the 4H fetch).  Each host gets REST_TRIES attempts (timeout 12 s, back-off 0.5 / 1 / 2 s); a definitive
+# HTTP 4xx (451 geo-block, 400) is not retried.  Hosts: the official USD-M REST only - fapi.binance.vision does not
+# resolve and fapi1/2/3.binance.com answer 302 -> www.binance.com (checked 10-09), so they are not API mirrors.
+# When every attempt fails: the last good rows of the same (symbol, interval, limit) from KLINE_CACHE (a stale bar_t
+# just means no new action), else a cold-start SPOT proxy (data-api.binance.vision /api/v3/klines, same row format):
+# perp-like prices but SPOT volume, so its rows carry no volume / CVD (UNKNOWN -> the trend gate opens nothing).
+REST_TIMEOUT_S = 12.0
+REST_BACKOFF_S = (0.5, 1.0, 2.0)
+REST_HOSTS = ('https://fapi.binance.com',)
+SPOT_PROXY = 'https://data-api.binance.vision/api/v3/klines'
+KLINE_CACHE: dict = {}                    # (symbol, interval, limit) -> rows
+KLINE_SOURCE: dict = {}                   # (symbol, interval) -> 'fapi' | 'cache' | 'spot-proxy'
+
+
+def rest_json(urls, timeout: float = REST_TIMEOUT_S, backoff=REST_BACKOFF_S, sleep=time.sleep, opener=None):
+    """GET the first URL that answers; retries with back-off on network errors / 429 / 5xx."""
+    import urllib.error
     import urllib.request
-    url = f'https://fapi.binance.com/fapi/v1/klines?symbol={symbol.upper()}&interval={interval}&limit={int(limit)}'
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        rows = json.loads(r.read().decode())
+    opener = opener or urllib.request.urlopen
+    last = None
+    for url in urls:
+        for k in range(len(backoff)):
+            try:
+                with opener(url, timeout=timeout) as r:
+                    return json.loads(r.read().decode())
+            except urllib.error.HTTPError as exc:
+                last = exc
+                if exc.code < 500 and exc.code not in (418, 429):
+                    break                                       # definitive answer: next host
+            except (urllib.error.URLError, OSError, ValueError) as exc:     # SSL handshake / DNS / timeout / reset
+                last = exc
+            if k < len(backoff) - 1:
+                sleep(backoff[k])
+    raise last if last else RuntimeError('no URL')
+
+
+def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: float = REST_TIMEOUT_S,
+                 get=rest_json) -> list:
+    """Closed candles [(open_s, o, h, l, c, close_s, quote_vol, taker_buy_quote)] from Binance USD-M mainnet public
+    REST (no key).  Network failure -> cached rows, else spot-proxy rows WITHOUT the two volume fields."""
+    q = f'symbol={symbol.upper()}&interval={interval}&limit={int(limit)}'
+    key = (symbol.upper(), interval, int(limit))
     now_ms = time.time() * 1000
-    return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0,
-             float(k[7]), float(k[10])) for k in rows if k[6] < now_ms]     # + quote volume, taker-buy quote
+    try:
+        rows = get([f'{h}/fapi/v1/klines?{q}' for h in REST_HOSTS], timeout)
+        out = [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0,
+                float(k[7]), float(k[10])) for k in rows if k[6] < now_ms]   # + quote volume, taker-buy quote
+        KLINE_CACHE[key] = out
+        KLINE_SOURCE[key[:2]] = 'fapi'
+        return out
+    except Exception:
+        if KLINE_CACHE.get(key):
+            KLINE_SOURCE[key[:2]] = 'cache'
+            return KLINE_CACHE[key]
+        rows = get([f'{SPOT_PROXY}?{q}'], timeout)                          # raises if this fails too
+        KLINE_SOURCE[key[:2]] = 'spot-proxy'
+        return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0)
+                for k in rows if k[6] < now_ms]
 
 
-def fetch_funding(symbol: str, limit: int = 30, timeout: float = 5.0) -> list:
+def fetch_funding(symbol: str, limit: int = 30, timeout: float = REST_TIMEOUT_S, get=rest_json) -> list:
     """Last funding prints [(t_s, rate)] from Binance USD-M mainnet public REST (no key)."""
-    import urllib.request
-    url = f'https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol.upper()}&limit={int(limit)}'
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        rows = json.loads(r.read().decode())
+    q = f'symbol={symbol.upper()}&limit={int(limit)}'
+    rows = get([f'{h}/fapi/v1/fundingRate?{q}' for h in REST_HOSTS], timeout)
     return sorted((int(x['fundingTime']) / 1000.0, float(x['fundingRate'])) for x in rows)
 
 
-TREND_BAR_LIMIT = {'1d': 150, '4h': 500}
+TREND_BAR_LIMIT = {'1d': 150, '4h': 500, '1h': 200}
 TREND_DIR = ROOT / 'data'
 
 
@@ -3395,7 +3457,7 @@ def trend_fetch(symbols, bar: str, klines=None, funding=None) -> dict:
     return {'bars': bars, 'funding': fund}
 
 
-def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
+def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = REST_TIMEOUT_S) -> list:
     """Closed 5 m candles [(close_time_s, close)]."""
     return [(r[5], r[4]) for r in fetch_klines(symbol, '5m', limit, timeout)]
 
@@ -3695,6 +3757,13 @@ class Runner:
         while True:
             try:
                 data = await asyncio.to_thread(fetch or trend_fetch, syms, ACTIVE_BAR)
+                if e0.p.trend_conv_alloc_pct:                 # 10-09 (ff) conviction needs closed 1H + 1D bars
+                    data['tf'] = {}
+                    for b in ('1h', '1d'):
+                        try:
+                            data['tf'][b] = (await asyncio.to_thread(fetch or trend_fetch, syms, b))['bars']
+                        except Exception as exc:              # UNKNOWN -> base size, never a bigger one
+                            e0.event(f'TREND {b} fetch failed ({type(exc).__name__}) -> no conviction size')
                 await ex.step(data)
                 self.trend_state['4h_active'] = ex.view()
             except Exception as exc:

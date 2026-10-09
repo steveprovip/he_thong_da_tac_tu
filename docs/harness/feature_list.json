@@ -193,6 +193,16 @@
       ],
       "status": "done",
       "evidence": "DEV-selected G6+L1, size 10 %: OOS SR 0.83 (base 0.43) DD 5.9 % (9.6 %), DSR 0.30; paired diff CI includes 0; pytest 1437 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "trend-btc-align-pyramid-conviction-resilience-20261009ff",
+      "name": "4H trend lane: BTC macro shield (shadow), break-even stop at +2 %, 1H+4H+1D conviction sizing, REST retry/cache/spot-proxy",
+      "description": "core/trend_lane BtcAlign/align_entry/btc_context/Pyramid/conviction_series, backtest_brackets(align, pyramid, conv, conv_sizing); core/trend_executor conviction/break_even/BTC-EJECT/align; core/engine rest_json, fetch_klines cache + spot proxy, Profile trend_btc_align/trend_be_pct/trend_conv_*; tools/trend_regime_replay.py --stage ff; tests/test_trend_btc_alignment_pyramid.py (17)",
+      "dependencies": [
+        "trend-regime-gate-10pct-20261009ee"
+      ],
+      "status": "done",
+      "evidence": "Shield A1/A2/A1E/A2E all lower OOS SR (0.59-0.78 vs 0.83) -> shadow; P2 add rejected (DEV); FINAL P1+C3 OOS SR 1.06, +8.9 %/yr, DD 7.5 %, DSR 0.41; pytest 1454 passed (2 pre-existing env failures)"
     }
   ]
 }

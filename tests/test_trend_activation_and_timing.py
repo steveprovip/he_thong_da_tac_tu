@@ -50,7 +50,8 @@ def setup(tmp_path, policy='taker', mode='demo'):
                 micro_standalone=False, trend_exec=policy, trend_exec_window_s=20.0, mode=mode,
                 # the (dd) lane: no regime gate / lock, legacy clipped sizing (10-09 ee tested separately)
                 trend_regime='off', trend_confirm=False, trend_chop_exit=False, trend_lock_pct=None,
-                capital_allocation_pct=None, trend_notional_min=150.0, trend_notional_max=300.0)
+                capital_allocation_pct=None, trend_notional_min=150.0, trend_notional_max=300.0,
+                trend_be_pct=None, trend_conv_alloc_pct=None, trend_btc_align='off')
     feed = msig.MicroFeed('SOLUSDT', msig.config_for('SOLUSDT'))
     venue = eng.MockVenue(p, quote=lambda s: eng._touch(feed))
     e = eng.Engine(p, venue, feed, None, ledger=tmp_path / 'micro.jsonl')

@@ -358,19 +358,25 @@ class Brackets:
 
 def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                       funding: Optional[Dict[str, list]] = None, taker_bps: float = 6.0, maker_bps: float = 2.0,
-                      gate: Optional['RegimeGate'] = None, sizing: Optional['Sizing'] = None):
+                      gate: Optional['RegimeGate'] = None, sizing: Optional['Sizing'] = None,
+                      align: Optional['BtcAlign'] = None, pyramid: Optional['Pyramid'] = None,
+                      conv: Optional[Dict[str, List[bool]]] = None, conv_sizing: Optional['Sizing'] = None):
     """Event-based: size fixed at entry (|target weight|, or sizing.fraction), exits by brackets or signal.  -> same
     shape as backtest(): {'bar_returns', 'turnover', 'trades'}.  Conservative intrabar order: stop before TP1.
-    gate (10-09 ee): entries only where gate_entry() passes on the entry bar; chop_exit closes on a CHOP close."""
+    gate (10-09 ee): entries only where gate_entry() passes on the entry bar; chop_exit closes on a CHOP close.
+    10-09 (ff): align = BTC shield for alt entries (+ ejection); pyramid = break-even stop + one soft-stopped add at
+    +arm_pct; conv[sym][i] True -> conv_sizing instead of sizing (1H + 4H + 1D agree)."""
     tw, _ = weights_series(bars, cfg, funding)
     hours = BAR_HOURS[cfg.bar]
     dn = br.donchian_n * (24 // hours if cfg.bar == '4h' else 1)
     rets, turn, trades = {}, {}, []
     tk, mk = taker_bps / 1e4, maker_bps / 1e4
+    ctx = btc_context(bars, tw, align.leader, gate or RegimeGate()) if align and align.leader in bars else None
     for s, b in bars.items():
         o, h, l, cl, ts = b['o'], b['h'], b['l'], b['c'], b['t']
         atr = atr_series(h, l, cl)
-        info = regime_info(b, gate) if gate else None
+        info = regime_info(b, gate or RegimeGate()) if (gate or align) else None
+        alt = align is not None and s != align.leader
         fr = funding.get(s, []) if funding else []
         fi = 0
         pos = None                      # {'side','w','entry','sl','tp','tp_done','best','frac'}
@@ -394,15 +400,24 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                         pos['frac'] *= (1 - br.tp1_frac)
                         pos['tp_done'] = True
                         w = pos['w'] * pos['frac']
+                ad = pos.get('add')
                 if exit_px is not None:
+                    if ad:                                             # the closePosition stop takes the add too
+                        pnl += ad['w'] * d * (exit_px / prev - 1) - ad['w'] * tk
+                        pos['tr']['pnl'] += ad['w'] * d * (exit_px / ad['entry'] - 1) - ad['w'] * tk
+                        dturn += ad['w']
                     pnl += w * d * (exit_px / prev - 1) - w * tk
                     pos['tr']['pnl'] += w * d * (exit_px / pos['entry'] - 1) - w * tk
                     dturn += w
-                    pos['tr'].update(exit_t=ts[i], why=why, bars=i - pos['i0'])
+                    pos['tr'].update(exit_t=ts[i], why='BE' if pos.get('be') and why == 'SL' else why,
+                                     bars=i - pos['i0'])
                     trades.append(pos['tr'])
                     blocked, pos = d, None
                 else:
                     pnl += w * d * (cl[i] / prev - 1)
+                    if ad:
+                        pnl += ad['w'] * d * (cl[i] / prev - 1)
+                        w += ad['w']                                   # funding on the add as well
                 # funding on the held weight
                 t_lo, t_hi = ts[i], ts[i] + hours * 3600
                 while fi < len(fr) and fr[fi][0] < t_lo:
@@ -422,6 +437,8 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                     why = 'SIGNAL'
                 elif gate and gate.chop_exit and info['regime'][i] == 'CHOP':
                     why = 'CHOP'
+                elif alt and align.eject and ctx.get(ts[i], (0.0, None)) == (-d, 'TREND'):
+                    why = 'BTC-EJECT'
                 elif atr[i]:
                     if br.trail == 'chandelier':
                         ts_px = pos['best'] - d * br.trail_atr * atr[i]
@@ -437,6 +454,12 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                     elif ts_px is not None and (pos['sl'] is None or (d > 0 and ts_px > pos['sl']) or
                                                 (d < 0 and ts_px < pos['sl'])):
                         pos['sl'], pos['trailed'] = ts_px, True
+                ad = pos.get('add')
+                if ad and (why or (d > 0 and cl[i] < ad['sl']) or (d < 0 and cl[i] > ad['sl'])):
+                    pnl -= ad['w'] * tk                                # soft add stop / exit with the base
+                    pos['tr']['pnl'] += ad['w'] * d * (cl[i] / ad['entry'] - 1) - ad['w'] * tk
+                    dturn += ad['w']
+                    pos['add'] = None
                 if why:                                                # exit at the close, taker
                     w = pos['w'] * pos['frac']
                     pnl -= w * tk
@@ -447,14 +470,28 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                     if why == 'LOCK':
                         blocked = d
                     pos = None
-            if pos is None and sig != 0 and sig != blocked and atr[i] and (gate is None or gate_entry(info, i, sig, gate)[0]):
-                w = sizing.fraction(atr[i], cl[i]) if sizing else abs(tw[s][i])
+                elif pyramid and not pos.get('be') and d * (cl[i] / pos['entry'] - 1) * 100 >= pyramid.arm_pct:
+                    be = pos['entry'] * (1 + d * pyramid.be_pct / 100)
+                    if pos['sl'] is None or d * (be - pos['sl']) > 0:
+                        pos['sl'] = be                                 # base stop -> break-even + fees
+                    pos['be'] = True
+                    if pyramid.add_frac > 0:
+                        aw = pos['w'] * pyramid.add_frac
+                        pos['add'] = {'w': aw, 'entry': cl[i], 'sl': l[i] if d > 0 else h[i]}
+                        pnl -= aw * tk
+                        pos['tr']['pnl'] -= aw * tk
+                        dturn += aw
+                        pos['tr']['added'] = True
+            if pos is None and sig != 0 and sig != blocked and atr[i] and (gate is None or gate_entry(info, i, sig, gate)[0]) \
+                    and (not alt or align_entry(ctx.get(ts[i]), sig, info, i, align)[0]):
+                sz = conv_sizing if conv_sizing and conv and conv.get(s) and conv[s][i] else sizing
+                w = sz.fraction(atr[i], cl[i]) if sz else abs(tw[s][i])
                 if w > 0:
                     sl = cl[i] - sig * br.sl_atr * atr[i] if br.sl_atr else None
                     pos = {'side': sig, 'w': w, 'entry': cl[i], 'sl': sl, 'tp_done': False, 'best': cl[i],
                            'frac': 1.0, 'i0': i,
                            'tr': {'symbol': s, 'side': 'LONG' if sig > 0 else 'SHORT', 'entry_t': ts[i],
-                                  'w': w, 'pnl': -w * tk}}
+                                  'w': w, 'pnl': -w * tk, 'conv': sz is conv_sizing and sz is not None}}
                     pnl -= w * tk
                     dturn += w
             rets[ts[i]] = rets.get(ts[i], 0.0) + pnl
@@ -554,7 +591,8 @@ def regime_info(bars: dict, g: RegimeGate) -> dict:
             base = sum(v[i - g.vol_n:i]) / g.vol_n
             vr[i] = v[i] / base if base > 0 else None
             cvd[i] = 2.0 * tb[i] - v[i]
-    return {'regime': reg, 'ker': ker, 'adx': adx, 'vol_ratio': vr, 'cvd': cvd}
+    share = [x / v[i] if x is not None and v[i] else None for i, x in enumerate(cvd)]
+    return {'regime': reg, 'ker': ker, 'adx': adx, 'vol_ratio': vr, 'cvd': cvd, 'cvd_share': share}
 
 
 def gate_entry(info: dict, i: int, side: float, g: Optional[RegimeGate]) -> Tuple[bool, str]:
@@ -590,3 +628,77 @@ class Sizing:
         if not atr or not price or atr <= 0:
             return 0.0
         return min(self.alloc_pct, self.risk_pct / (self.stop_atr * atr / price))
+
+
+# ------------------------------------------------------------------ 10-09 (ff) BTC alignment, pyramiding, conviction
+@dataclass(frozen=True)
+class BtcAlign:
+    """BTC macro shield for alt entries (request 10-09 ff).
+      mode   'sign'  an alt may not open against the sign of the BTC 4H trend signal
+             'trend' ... only while BTC's regime is also TREND (KER > 0.40 and ADX > 25)
+      exception: the alt's own bar volume > rvol_exc x SMA20 AND its CVD share (CVD / volume) >= cvd_exc with the
+             alt side (fixed a priori: 3.0x, 10 %, i.e. >= 55 % of the volume taker-aggressed on the alt side)
+      eject  close an open alt position on a close where BTC is TREND with its signal against the position.
+    BTC data missing = UNKNOWN -> no alt entry."""
+    mode: str = 'sign'
+    eject: bool = False
+    rvol_exc: float = 3.0
+    cvd_exc: float = 0.10
+    leader: str = 'BTCUSDT'
+
+
+def btc_context(bars: Dict[str, dict], tw: Dict[str, list], leader: str, g: 'RegimeGate') -> dict:
+    """{bar open t: (sign of the BTC 4H trend target, BTC regime)}."""
+    b = bars[leader]
+    reg = regime_info(b, g)['regime']
+    return {t: (sign(tw[leader][i]), reg[i]) for i, t in enumerate(b['t'])}
+
+
+def align_entry(ctx_t, side: float, info: dict, i: int, al: BtcAlign) -> Tuple[bool, str]:
+    """May an alt open `side` given the BTC context (dir, regime) of the same bar?  -> (ok, reason)."""
+    if ctx_t is None:
+        return False, 'BTC context UNKNOWN'
+    bdir, breg = ctx_t
+    if not bdir or side != -bdir or (al.mode == 'trend' and breg != 'TREND'):
+        return True, 'with BTC'
+    vr, cs = info['vol_ratio'][i], info['cvd_share'][i]
+    if vr is not None and cs is not None and vr > al.rvol_exc and side * cs >= al.cvd_exc:
+        return True, f'against BTC on its own flow (vol {vr:.1f}x, CVD {cs:+.0%})'
+    return False, f'against BTC {"BUY" if bdir > 0 else "SELL"} ({breg})'
+
+
+@dataclass(frozen=True)
+class Pyramid:
+    """Once a close is >= arm_pct % in favour: the base's exchange stop moves to entry +/- be_pct % (break-even
+    after fees) and ONE add of add_frac x the base size is bought at that close; the add carries a SOFT stop at the
+    low (long) / high (short) of that 4H bar, checked on the closes; the base's closePosition stop also takes it."""
+    arm_pct: float = 2.0
+    be_pct: float = 0.3
+    add_frac: float = 0.5
+
+
+H1_LOOKBACKS = (24, 72, 168)      # 1H trend = TSMOM sign over 1 / 3 / 7 days of 1h closes (fixed a priori)
+
+
+def h1_sign(closes_1h: Sequence[float]) -> float:
+    x = tsmom(closes_1h, len(closes_1h) - 1, H1_LOOKBACKS) if closes_1h else None
+    return sign(x) if x is not None else 0.0
+
+
+def conviction_series(b4: dict, ts_1h: Sequence[float], c_1h: Sequence[float], ts_1d: Sequence[float],
+                      w_1d: Sequence[float], w_4h: Sequence[float]) -> List[bool]:
+    """Per 4H bar i: 1H (TSMOM 24/72/168 h), 4H and 1D (SPEC_1D_LS target) signs all equal and non-zero, using only
+    bars CLOSED by the 4H close (1h bar open + 1 h <= close, 1d bar open + 24 h <= close)."""
+    import bisect
+    out = []
+    for i, t in enumerate(b4['t']):
+        close_t = t + 4 * 3600
+        k1 = bisect.bisect_right(ts_1h, close_t - 3600)        # 1h bars with open <= close - 1 h
+        kd = bisect.bisect_right(ts_1d, close_t - 86400)
+        s4 = sign(w_4h[i])
+        if not s4 or k1 < max(H1_LOOKBACKS) + 1 or kd < 1:
+            out.append(False)
+            continue
+        x = tsmom(c_1h, k1 - 1, H1_LOOKBACKS)
+        out.append(x is not None and sign(x) == s4 and sign(w_1d[kd - 1]) == s4)
+    return out

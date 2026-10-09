@@ -98,13 +98,164 @@ def regime_census(bars, lo, hi):
     return out
 
 
+FF_DOC = """Stage ff (request 10-09 ff), PRE-REGISTERED before its first run, on top of the deployed B0 = G6 + L1 + S10:
+  A1  BTC shield 'sign'   no alt (SOL, DOGE) entry against the sign of the BTC 4H trend target
+  A2  BTC shield 'trend'  ... only while BTC is also TREND (KER > 0.40, ADX > 25)
+  A1E / A2E               + eject: close an alt at a close where BTC is TREND with its signal against it
+      exception for A*: alt volume > 3.0 x SMA20 and alt CVD share >= 10 % with its side
+  P1  break-even stop (entry +/- 0.3 %) once a close is >= +2 %
+  P2  P1 + one add of 0.5 x size at that close, soft stop at that 4H bar's low / high
+  C2  1H (TSMOM 24/72/168 h) + 4H + 1D (SPEC_1D_LS) agree -> Sizing(0.20, 0.02) instead of Sizing(0.10, 0.01)
+  C3  ... -> Sizing(0.30, 0.02)
+  FULL = DEV-best A + P2 + C2;  FULL3 = DEV-best A + P2 + C3
+  FINAL = the components the rules adopt (added after the first run: FULL/FULL3 hold rejected parts; 1 more trial)
+Rules: A = best DEV Sharpe among A1-A2E, adopted if OOS Sharpe >= B0 and the paired daily difference is not
+significantly negative.  P / C adopted only if DEV AND OOS Sharpe >= B0 (more size must not lower risk-adjusted
+return).  Leverage frontier: daily returns of the final config x k, k = 1..8 (no compounding, no margin model).
+DSR: sr_var of the 148 earlier trials (snapshot 2026-10-09ee) and n_trials = 148 + these."""
+
+
+def conviction_map(data: Path, syms, bars4, fund):
+    """{sym: [bool per 4H bar]} from 1h closes + the 1D spec target + the 4H spec target."""
+    cfg4 = tl.TrendConfig(bar='4h')
+    tw4, _ = tl.weights_series(bars4, cfg4, fund)
+    bars1d, fund1d = tb.load_bars(data, syms, '1d')
+    tw1d, _ = tl.weights_series(bars1d, tl.TrendConfig(bar='1d'), fund1d)
+    out = {}
+    for s in syms:
+        ts, arr = fs.load_klines(data, s)
+        out[s] = tl.conviction_series(bars4[s], (ts / 1000.0).tolist(), arr[:, 3].tolist(), bars1d[s]['t'], tw1d[s],
+                                      tw4[s])
+    return out
+
+
+def main_ff(a, syms):
+    t0 = time.perf_counter()
+    bars, fund = tb.load_bars(a.data, syms, '4h')
+    sp = split_days()
+    sp['2025'], sp['2026'] = sp['VAL'], sp['HOLDOUT']
+    conv = conviction_map(a.data, syms, bars, fund)
+    g6, l1, s10 = GATES['G6_G4+chop_exit'], LOCKS['L1_chand3.5@2%'], SIZING['S10']
+    c2, c3 = tl.Sizing(0.20, 0.02, 8.0), tl.Sizing(0.30, 0.02, 8.0)
+    al = {'A1': tl.BtcAlign(mode='sign'), 'A2': tl.BtcAlign(mode='trend'),
+          'A1E': tl.BtcAlign(mode='sign', eject=True), 'A2E': tl.BtcAlign(mode='trend', eject=True)}
+    p1, p2 = tl.Pyramid(add_frac=0.0), tl.Pyramid(add_frac=0.5)
+
+    def run(**kw):
+        return tl.backtest_brackets(bars, tl.TrendConfig(bar='4h'), l1, fund, gate=g6, sizing=s10, **kw)
+    runs = {'B0': run()}
+    for k, v in al.items():
+        runs[k] = run(align=v)
+    runs['P1'], runs['P2'] = run(pyramid=p1), run(pyramid=p2)
+    runs['C2'], runs['C3'] = run(conv=conv, conv_sizing=c2), run(conv=conv, conv_sizing=c3)
+    daily = {k: tl.to_daily(v['bar_returns']) for k, v in runs.items()}
+    dev_sr = lambda k: fs.stats(daily[k], {}, *sp['DEV'])['sharpe']
+    best_a = max(al, key=dev_sr)
+    runs['FULL'] = run(align=al[best_a], pyramid=p2, conv=conv, conv_sizing=c2)
+    runs['FULL3'] = run(align=al[best_a], pyramid=p2, conv=conv, conv_sizing=c3)
+    for k in ('FULL', 'FULL3'):
+        daily[k] = tl.to_daily(runs[k]['bar_returns'])
+    turn = {k: tl.to_daily(v['turnover']) for k, v in runs.items()}
+    prev = json.loads((ROOT / 'docs/research_upgrade/snapshot_2026-10-09ee/trend_regime_replay.json').read_text())
+    sr_var, n_trials = prev['sr_var_dev'], prev['n_trials_total'] + len(runs) - 1
+    out = {'doc': FF_DOC, 'symbols': syms, 'n_trials_total': n_trials, 'sr_var_dev': sr_var, 'best_align_by_dev': best_a,
+           'conviction_share_oos': {s: float(np.mean([c for t, c in zip(bars[s]['t'], conv[s])
+                                                     if sp['OOS'][0] <= int(t // 86400) <= sp['OOS'][1]]))
+                                    for s in syms},
+           'variants': {}}
+    for k, res in runs.items():
+        row = {}
+        for split in ('DEV', 'OOS', '2025', '2026'):
+            st = fs.stats(daily[k], turn[k], *sp[split])
+            if st:
+                st['dsr'] = fe.dsr(st['sr_daily'], st['days'], st['skew'], st['kurt'], sr_var, n_trials)
+            row[split] = st
+        row['trades_OOS'] = trade_stats(res['trades'], *sp['OOS'])
+        alt = [t for t in res['trades'] if t['symbol'] != 'BTCUSDT' and sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1]]
+        row['alt_trades_OOS'] = {'n': len(alt), 'pnl_sum_pct_equity': 100 * sum(t['pnl'] for t in alt)}
+        row['adds_OOS'] = sum(1 for t in res['trades'] if t.get('added') and sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1])
+        row['conv_trades_OOS'] = sum(1 for t in res['trades'] if t.get('conv') and sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1])
+        if k != 'B0':
+            for split in ('DEV', 'OOS'):
+                ds = list(range(sp[split][0], sp[split][1] + 1))
+                pd_ = fe.paired_diff([daily['B0'].get(d, 0.0) for d in ds], [daily[k].get(d, 0.0) for d in ds],
+                                     n_boot=2000, block=5)
+                row[f'vs_B0_{split}'] = {'mean_bps_day': pd_['mean'] * 1e4,
+                                         'ci95_bps_day': [pd_['ci95'][0] * 1e4, pd_['ci95'][1] * 1e4]}
+        out['variants'][k] = row
+    V = out['variants']
+    ok = lambda k: V[k]['DEV']['sharpe'] >= V['B0']['DEV']['sharpe'] and V[k]['OOS']['sharpe'] >= V['B0']['OOS']['sharpe']
+    out['decision'] = {
+        'align': best_a if (V[best_a]['OOS']['sharpe'] >= V['B0']['OOS']['sharpe'] and
+                            V[best_a]['vs_B0_OOS']['ci95_bps_day'][1] > 0) else None,
+        'pyramid': 'P2' if ok('P2') else ('P1' if ok('P1') else None),
+        'conviction': 'C3' if ok('C3') else ('C2' if ok('C2') else None)}
+    dec = out['decision']
+    runs['FINAL'] = run(align=al[dec['align']] if dec['align'] else None,
+                        pyramid={'P1': p1, 'P2': p2}.get(dec['pyramid']),
+                        conv=conv if dec['conviction'] else None,
+                        conv_sizing={'C2': c2, 'C3': c3}.get(dec['conviction']))
+    daily['FINAL'] = tl.to_daily(runs['FINAL']['bar_returns'])
+    turn['FINAL'] = tl.to_daily(runs['FINAL']['turnover'])
+    out['n_trials_total'] = n_trials = n_trials + 1
+    row = {}
+    for split in ('DEV', 'OOS', '2025', '2026'):
+        st = fs.stats(daily['FINAL'], turn['FINAL'], *sp[split])
+        st['dsr'] = fe.dsr(st['sr_daily'], st['days'], st['skew'], st['kurt'], sr_var, n_trials)
+        row[split] = st
+    row['trades_OOS'] = trade_stats(runs['FINAL']['trades'], *sp['OOS'])
+    alt = [t for t in runs['FINAL']['trades'] if t['symbol'] != 'BTCUSDT' and sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1]]
+    row['alt_trades_OOS'] = {'n': len(alt), 'pnl_sum_pct_equity': 100 * sum(t['pnl'] for t in alt)}
+    row['adds_OOS'] = 0
+    row['conv_trades_OOS'] = sum(1 for t in runs['FINAL']['trades'] if t.get('conv') and sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1])
+    for split in ('DEV', 'OOS'):
+        ds = list(range(sp[split][0], sp[split][1] + 1))
+        pd_ = fe.paired_diff([daily['B0'].get(d, 0.0) for d in ds], [daily['FINAL'].get(d, 0.0) for d in ds],
+                             n_boot=2000, block=5)
+        row[f'vs_B0_{split}'] = {'mean_bps_day': pd_['mean'] * 1e4, 'ci95_bps_day': [pd_['ci95'][0] * 1e4, pd_['ci95'][1] * 1e4]}
+    V['FINAL'] = row
+    w_fin = [t['w'] for t in runs['FINAL']['trades'] if sp['OOS'][0] <= int(t['entry_t'] // 86400) <= sp['OOS'][1]]
+    out['final_weight_OOS'] = {'mean': float(np.mean(w_fin)), 'max': float(np.max(w_fin))}
+    fin = 'FINAL'
+    lo, hi = sp['OOS']
+    out['frontier_OOS'] = {}
+    for kx in (1, 2, 3, 5, 8):
+        st = fs.stats({d: v * kx for d, v in daily['B0'].items()}, {}, lo, hi)
+        st2 = fs.stats({d: v * kx for d, v in daily[fin].items()}, {}, lo, hi)
+        out['frontier_OOS'][kx] = {'B0': {'ann': st['ann_ret_pct'], 'dd': st['max_dd_pct']},
+                                   fin: {'ann': st2['ann_ret_pct'], 'dd': st2['max_dd_pct']}}
+    out['seconds'] = time.perf_counter() - t0
+
+    def f(x):
+        return (f"SR {x['sharpe']:+5.2f} ann {x['ann_ret_pct']:+6.1f}% DD {x['max_dd_pct']:5.1f}% DSR {x['dsr']:.2f}") if x else 'n/a'
+    print(f'stage ff | {out["seconds"]:.0f}s | trials {n_trials} | DEV-best align {best_a} | decision {out["decision"]}')
+    print('conviction share of 4H bars OOS', {s: round(v, 2) for s, v in out['conviction_share_oos'].items()})
+    for k, r in V.items():
+        t = r['trades_OOS']
+        vs = r.get('vs_B0_OOS')
+        print(f'{k:<6} DEV {f(r["DEV"])} | OOS {f(r["OOS"])} | 2025 SR {r["2025"]["sharpe"]:+.2f} 2026 SR {r["2026"]["sharpe"]:+.2f}')
+        print(f'       n {t.get("n", 0)} win {t.get("win_rate", 0):.0%} med {t.get("median_bps", 0):+.0f} mean {t.get("mean_bps", 0):+.0f} '
+              f'| alt n {r["alt_trades_OOS"]["n"]} pnl {r["alt_trades_OOS"]["pnl_sum_pct_equity"]:+.2f}% eq | adds {r["adds_OOS"]} '
+              f'conv {r["conv_trades_OOS"]}' + (f' | vs B0 {vs["mean_bps_day"]:+.2f} bps/d CI [{vs["ci95_bps_day"][0]:+.2f}, '
+                                               f'{vs["ci95_bps_day"][1]:+.2f}]' if vs else ''))
+    print('frontier OOS (x k):', {k: v for k, v in out['frontier_OOS'].items()})
+    if a.json:
+        a.json.parent.mkdir(parents=True, exist_ok=True)
+        a.json.write_text(json.dumps(out, indent=1, default=float))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--data', required=True, type=Path)
     ap.add_argument('--symbols', default='BTCUSDT,SOLUSDT,DOGEUSDT')
     ap.add_argument('--json', type=Path)
     ap.add_argument('--register', action='store_true', help='append the A/B rows to docs/research_upgrade/trial_log.jsonl')
+    ap.add_argument('--stage', default='ee', choices=('ee', 'ff'), help='ee: regime/lock/sizing grid; ff: BTC '
+                    'alignment / pyramiding / conviction on top of the deployed G6 + L1 + S10')
     a = ap.parse_args(argv)
+    if a.stage == 'ff':
+        return main_ff(a, a.symbols.split(','))
     syms = a.symbols.split(',')
     t0 = time.perf_counter()
     bars, fund = tb.load_bars(a.data, syms, '4h')

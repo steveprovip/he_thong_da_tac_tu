@@ -239,3 +239,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - tools/trend_regime_replay.py (pre-registered 8 gates x 3 locks x 2 sizings, 2022-01..2026-09, 148 trials): DEV-selected G6 (G4 + chop exit) + L1 chandelier 3.5 ATR armed at +2 %. Size 10 %: OOS SR 0.83 vs 0.43, DD 5.9 vs 9.6 %, DSR 0.30; 2025 SR +0.23 vs -0.32; paired daily diff CI [-3.0, +3.3] bps. Targets SR>1 / DSR>0.8 NOT met.
 - Demo Profile: trend_regime='trend_only', trend_confirm, trend_chop_exit, trend_lock_pct=2.0, capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600. Live unchanged.
 - Checks: python -m pytest -q 1437 passed, 2 failed (pre-existing: missing local data/testnet signal lab + tools/check_models_live.py; same on stashed baseline). No restart, no order, ledgers untouched.
+
+## 2026-10-09 (ff) BTC alignment, pyramiding, conviction, REST resilience (trend 4H, demo)
+- Premise check: live "+2.68 % / -3.20 %" are 5x ROE (price +0.54 % / -0.64 %); position sizes match the (dd) $150-300 clip.
+- tools/trend_regime_replay.py --stage ff (pre-registered, 159 trials): BTC shield A1/A2/A1E/A2E all lower OOS SR (0.59-0.78 vs B0 0.83; blocked alt trades were +2.3 % equity) -> trend_btc_align='shadow'; P1 break-even adopted (win 64 %, median +18 bps); P2 0.5x add rejected (DEV SR 1.25 < 1.27); C3 conviction adopted. FINAL P1+C3: OOS SR 1.06, +8.9 %/yr, DD 7.5 %, DSR 0.41; 25-40 %/yr needs x3-x5 leverage (DD 22-37 %) - not done.
+- core/engine: rest_json (12 s, retry 0.5/1/2 s, no retry on 4xx), KLINE_CACHE, spot proxy without volume; fapi.binance.vision not resolvable / fapi1-3 redirect to the website -> REST_HOSTS = fapi.binance.com only.
+- Checks: python -m pytest -q 1454 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
