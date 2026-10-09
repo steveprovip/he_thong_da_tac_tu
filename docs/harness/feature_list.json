@@ -153,6 +153,16 @@
       ],
       "status": "done",
       "evidence": "Ledger 55 rows, 9 code hashes, -3.48 bps/trade, SPRT(-3 vs +2) BAD; factor scan OOS 2025-01..2026-09: 1h/4h negative after taker costs, ENS 1d LS +24.6 bps/RT net PSR 0.61; pytest 1360 passed; recorder smoke OK"
+    },
+    {
+      "id": "replay-ab-trend-20261009bb",
+      "name": "Virtual-time replay of the real engine, paired A/B bench with trial register, PBO, 1D/4H trend lane (paper), daily-loss roll-over fix",
+      "description": "tools/engine_replay.py, tools/ab_bench.py, tools/trend_backtest.py, core/trend_lane.py, core/fast_eval.pbo_cscv, Runner.trend_loop, Profile.trend_lane; tests/test_replay_harness_and_trend_lane.py (36)",
+      "dependencies": [
+        "fast-research-loop-20261008aa"
+      ],
+      "status": "done",
+      "evidence": "Replay Oct 1-7 108 positions -5.41 bps; AB-4 cvd_shield identical; AB-5 early_invalidation +1.15 bps CI incl 0; trend 4H LS OOS PSR 0.82 DSR 0.19, PBO 0.35; pytest 1396 passed"
     }
   ]
 }

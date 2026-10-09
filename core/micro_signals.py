@@ -110,18 +110,23 @@ class SignalConfig:
 USD_SCALE = {'BTCUSDT': 1.0, 'ETHUSDT': 0.5, 'SOLUSDT': 0.1, 'XRPUSDT': 0.1, 'DOGEUSDT': 0.1}
 
 
-def ker(points, now: float, window_s: float = 120.0, bucket_s: float = 5.0, min_span_s: float = 60.0):
+def ker(points, now: float, window_s: float = 120.0, bucket_s: float = 5.0, min_span_s: float = 60.0,
+        newest_first: bool = False):
     """Kaufman Efficiency Ratio = |P_t - P_{t-window}| / sum |P_i - P_{i-1}| on bucket-sampled prints.
-    points: iterable of (t, px). -> (ker 0..1 or None, span_s). Flat tape (no path) -> 0.0 (no trend)."""
+    points: iterable of (t, px). -> (ker 0..1 or None, span_s). Flat tape (no path) -> 0.0 (no trend).
+    newest_first=True (10-09): points are time-ordered newest -> oldest; the scan stops at the window edge
+    (same result, O(window) instead of O(buffer); the replay harness spends most of its CPU here)."""
     last = {}
     first_t = None
     for t, px in points:
         age = now - t
+        if newest_first and age > window_s:
+            break
         if age < 0 or age > window_s or not px:
             continue
         first_t = t if first_t is None else min(first_t, t)
         k = int(age // bucket_s)
-        if k not in last or t >= last[k][0]:
+        if k not in last or (not newest_first and t >= last[k][0]):
             last[k] = (t, px)
     span = now - first_t if first_t is not None else 0.0
     if span < min_span_s or len(last) < 3:
@@ -278,12 +283,18 @@ def yang_zhang(bars) -> Optional[float]:
     return math.sqrt(max(var(o_r) + k * var(c_r) + (1 - k) * sum(rs) / n, 0.0))
 
 
-def realized_sigma_bps(points, now: float, window_s: float = 60.0) -> Optional[float]:
-    """Rolling realised volatility, bps per sqrt(second), from the last print of each second."""
+def realized_sigma_bps(points, now: float, window_s: float = 60.0, newest_first: bool = False) -> Optional[float]:
+    """Rolling realised volatility, bps per sqrt(second), from the last print of each second.
+    newest_first=True: points newest -> oldest, early exit at the window edge (same result)."""
     last = {}
     for t, px in points:
+        if newest_first and now - t > window_s:
+            break
         if 0 <= now - t <= window_s and px:
-            last[int(t)] = px
+            if newest_first:
+                last.setdefault(int(t), px)
+            else:
+                last[int(t)] = px
     secs = sorted(last)
     if len(secs) < 10:
         return None
@@ -561,7 +572,8 @@ class MicroFeed:
                 'atr_1m': a, 'atr_pct': a / px * 100 if (a and px) else None,
                 'yz_pct': yz * 100 if yz is not None else None, 'bars_n': len(bars),
                 'atr15_pct': a15, 'atr15_src': src15, 'bars15_n': len(b15),
-                'sigma_bps': realized_sigma_bps(((t, x) for t, _, x in self.cvd_long), now, self.cfg.sigma_window_s)}
+                'sigma_bps': realized_sigma_bps(((t, x) for t, _, x in reversed(self.cvd_long)), now,
+                                                self.cfg.sigma_window_s, newest_first=True)}
 
     def _concordance(self, now: float) -> dict:
         """CVD and price change over the last absorb_window_s (price = last print at/before t-15 s)."""
@@ -627,9 +639,9 @@ class MicroFeed:
                 'ema5_20': self.ema5, 'ema5_n': self.ema5_n,
                 'ema5_slope': (self.ema5 - self.ema5_prev) if self.ema5_prev is not None else None,
                 **self._quant(now),
-                **dict(zip(('ker', 'ker_span_s'), ker(((t, x) for t, _, x in self.cvd_long), now,
+                **dict(zip(('ker', 'ker_span_s'), ker(((t, x) for t, _, x in reversed(self.cvd_long)), now,
                                                        self.cfg.ker_window_s, self.cfg.ker_bucket_s,
-                                                       self.cfg.ker_min_span_s)))}
+                                                       self.cfg.ker_min_span_s, newest_first=True)))}
 
 
 def strength(x: float) -> float:

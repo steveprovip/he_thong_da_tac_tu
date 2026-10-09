@@ -212,3 +212,12 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - New: core/fast_eval.py (required_n, SPRT, mSPRT, paired_diff, PSR/DSR, ledger_bps, verdict), tools/edge_check.py (ledger verdict by code/symbol, --paired), tools/factor_scan.py (96 configs, 1h/4h/1d, DEV 2022-24 / VAL 2025 / HOLDOUT 2026-01..09, walk-forward, DSR), tools/record_market.py (/public depth@100ms+bookTicker, /market aggTrade+forceOrder, REST snapshots, hourly gz; --light).
 - Results: ledger 9 code hashes in 55 trades, -3.48 bps/trade, SPRT BAD; 1h/4h trend negative OOS after taker costs; ENS 1d LS (pre-registered) OOS SR +0.21, +24.6 bps/RT net, PSR 0.61 (not significant).
 - Checks: python -m pytest -q 1360 passed; recorder 20 s mainnet smoke OK. No restart, no order, engine/Profile unchanged; .gitignore += data/recordings/.
+
+## 2026-10-09 (bb) High-speed replay, paired A/B, 1D/4H trend lane (paper)
+- tools/engine_replay.py: real Engine + MicroFeed + MockVenue + Runner decide/sync loops on a virtual-time asyncio loop (time.time/monotonic/datetime patched, restored after); sources agg (synthetic book), l2 (data/l2 + aggTrades), rec (record_market). ~0.08-0.12 symbol-h per s per core (cloud); 1 year x 2 symbols ~60 h/core -> not 15-30 s.
+- tools/ab_bench.py: micro (chunked engine replay, --a-set/--b-set, --a-code/--b-code worktrees, parallel) and trend (daily); paired CI, DSR vs logged trials, --register -> docs/research_upgrade/trial_log.jsonl + experiment_register AB rows. core/fast_eval.pbo_cscv.
+- core/trend_lane.py + tools/trend_backtest.py: spec TSMOM 5/20/60 + Donchian 20, vol 20 %, funding overlay, band 5 %. 4H LS OOS SR +0.69 PSR 0.82 DSR 0.19; 1D LS +0.03; PBO 0.35. Profile.trend_lane 'paper' (demo) / 'off' (live); Runner.trend_loop paper only (data/trend_paper_<bar>.json/.jsonl, telemetry trend_lane), never calls the venue.
+- Fix: RiskBook.roll() resets day_pnl at the local date change (was carried over midnight).
+- micro_signals ker/realized_sigma newest_first fast path (identical output, test).
+- Results: baseline replay Oct 1-7 108 positions -5.41 bps; AB-4 cvd_shield never binds (identical); AB-5 early_invalidation on +1.15 bps/trade, CI includes 0.
+- Checks: python -m pytest -q 1396 passed. No restart, no order, ledger untouched.

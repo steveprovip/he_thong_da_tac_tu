@@ -62,3 +62,11 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 | 30 | Wald (1945) SPRT; Johari et al. (2017) mixture SPRT | Dừng sớm có kiểm soát sai lầm | `core/fast_eval.py`, `tools/edge_check.py` |
 | 31 | BIS WP "Crypto carry" (2023); He, Manela, Ross & von Wachter "Fundamentals of Perpetual Futures" | Carry/funding dự báo rủi ro 1–3 tháng, không dự báo hướng ngắn hạn | AA4 |
 | 32 | data.binance.vision USD-M monthly klines 1h + fundingRate (BTC/SOL/DOGE 2022-01..2026-09) | OHLCV + taker buy volume; bookTicker USD-M dừng sau 2024-03-30 | AA2–AA4 |
+
+## Bổ sung 09/10/2026 (bb)
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 33 | Bailey, Borwein, López de Prado & Zhu (2014/2017), "The Probability of Backtest Overfitting", J. Computational Finance | CSCV: PBO = tỉ lệ split mà cấu hình tốt nhất IS rơi nửa dưới OOS | `core/fast_eval.pbo_cscv` |
+| 34 | Moskowitz, Ooi & Pedersen (2012), "Time Series Momentum", JFE | TSMOM đa lookback + vol scaling | `core/trend_lane.py` |
+| 35 | Python asyncio event loop (CPython `BaseEventLoop._run_once`, `_clock_resolution`) | Loop thời gian ảo: thời gian tương đối, bỏ timer huỷ ở đầu heap | `tools/engine_replay.py` |
+| 36 | data.binance.vision USD-M daily aggTrades SOLUSDT 2026-09-08 + `data/l2` (bookTicker + depth diff đã ghi) | Nguồn `l2` sổ lệnh thật cho replay | BB2 |

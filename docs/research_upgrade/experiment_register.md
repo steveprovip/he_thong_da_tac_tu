@@ -152,3 +152,17 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | AA3 | horizon | Trend 1d vượt phí | như AA2; ENS 1d LS đăng ký trước | OOS SR +0.21, +24.6 bps/RT net, PSR 0.61; ENS_VT 1d LO SR +0.42 PSR 0.72; B&H SR −0.19; DSR(DEV, 96 cấu hình) ≤ 0.47 | giả thuyết có triển vọng, chưa xác nhận |
 | AA4 | lọc | Funding 3 ngày > 0.03 %/8h chặn long | như AA2 | Không kích hoạt lần nào trong OOS | vô hiệu ở 2025–26 |
 | AA5 | dữ liệu | Recorder L2 + aggTrades + forceOrder | smoke 20 s mainnet | Đủ stream sau khi tách route /public & /market; ~20 MB/h SOL (đầy đủ) | công cụ sẵn sàng, không chạy nền |
+
+## Vòng (bb) — 09/10/2026: replay engine thật, A/B ghép cặp, làn trend 1D/4H
+
+| ID | Loại | Giả thuyết | Dữ liệu | Kết quả | Trạng thái |
+|---|---|---|---|---|---|
+| BB1 | đánh giá | Bản `3ee16f29d2` đã cải thiện edge | ledger 23 lệnh của hash này | Hash chỉ thêm công cụ (engine không đổi); −2.29 bps se 3.3, net −1.58 U, SPRT UNDECIDED | bác bỏ diễn giải |
+| BB2 | baseline | Engine hiện tại trên băng mainnet 01–07/10 | `tools/engine_replay.py` agg (sổ lệnh tổng hợp), 28 khúc 6 h | 108 vị thế, −5.41 bps/lệnh, WR 20 %, −8.74 U / 5 000 U | quan sát (công cụ ghép cặp) |
+| BB3 | trend | Spec form 1D/4H (TSMOM 5/20/60 + Donchian 20, vol 20 %, funding overlay) | klines 1h + funding 2022-01..2026-09, `tools/trend_backtest.py` | 4H LS OOS SR +0.69, PSR 0.82, DSR 0.19; 1D LS OOS +0.03; PBO(100 cấu hình) 0.35 | giả thuyết → PAPER |
+| BB4 | lỗi | `day_pnl` không reset qua nửa đêm | code + test | `RiskBook.roll()` trong gates() | sửa |
+| AB-1 | trend | trend 4H vs 1D spec (TAKER, OOS 2025-01..2026-09): B={"bar": "4h"} vs A={} | 638 day net return | Δ +0.000283 CI95 [+4.678e-05, +0.0005208], DSR 0.33 | B better, NOT significant after deflation |
+| AB-2 | trend | funding overlay on vs off (4H, TAKER, OOS): B={"bar": "4h"} vs A={"bar": "4h", "funding_hot": 1.0} | 638 day net return | Δ -9.524e-06 CI95 [-3.007e-05, +4.204e-06], DSR 0.00 | NO DIFFERENCE DETECTED |
+| AB-3 | trend | vol target 25 vs 20 % (4H, TAKER, OOS): B={"bar": "4h", "vol_target": 0.25} vs A={"bar": "4h"} | 638 day net return | Δ +4.014e-05 CI95 [-0.0001286, +0.0002097], DSR 0.01 | NO DIFFERENCE DETECTED |
+| AB-4 | micro | cvd_shield off vs on (agg Oct 1-7, 28 chunks): B=cvd_shield=off vs A= | 168 hour net PnL (U) | Δ +0 CI95 [+0, +0], DSR 0.01 | NO DIFFERENCE DETECTED |
+| AB-5 | micro | early_invalidation on vs shadow (agg Oct 6-7): B=early_invalidation=on vs A= | 48 hour net PnL (U) | Δ +0.01471 CI95 [-0.001413, +0.03304], DSR 0.08 | NO DIFFERENCE DETECTED |

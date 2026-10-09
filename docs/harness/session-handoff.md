@@ -89,3 +89,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Judge every change with tools/edge_check.py --by code; freeze code until SPRT decides (~45 trades at sigma 15 bps). Do not interpret < 30 trades.
 - Next: make replay tools emit per-position bps lists for edge_check --paired; optional paper/shadow daily trend sleeve (ENS 1d LS + ENS_VT 1d LO) monitored with mSPRT; run tools/record_market.py --light continuously for maker-fill replay.
 - Live cap 3.85 U is below Binance min notional (5 U; BTC 100 U): any trend sleeve is demo/paper only.
+
+## Handoff — 2026-10-09 (bb)
+- Every micro change: `python tools/ab_bench.py micro --days <range> --b-set field=value --register` before demo; a code change: `git worktree add ../gt_old <commit>` + `--a-code ../gt_old`. Agg source = synthetic book (book gates approximate); prefer `--source rec` once tools/record_market.py --light has run.
+- Trend lane is PAPER (demo profile trend_lane='paper'): starts only when the user restarts the engine; outputs data/trend_paper_1d|4h.json(l). Do not route it to orders unless OOS DSR > 0.95 (currently 0.19 for 4H LS).
+- Open questions: CVD shield never binds on mainnet tape (thresholds in raw USD); early_invalidation needs ~262 paired hours.

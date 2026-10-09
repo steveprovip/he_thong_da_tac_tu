@@ -201,6 +201,43 @@ def dsr(sr: float, n: int, skew: float, kurt: float, sr_var: float, n_trials: in
     return psr(sr, n, skew, kurt, expected_max_sr(sr_var, n_trials))
 
 
+def pbo_cscv(matrix, n_blocks: int = 10, metric: str = 'sharpe'):
+    """Probability of Backtest Overfitting by combinatorially symmetric cross-validation (Bailey, Borwein,
+    Lopez de Prado & Zhu 2014).  matrix: T rows (periods) x N columns (configs) of returns.
+    Rows are cut into n_blocks contiguous blocks; for every half/half split the in-sample best config is
+    ranked out of sample.  PBO = share of splits where that config lands in the bottom half (logit <= 0).
+    -> {'pbo', 'n_splits', 'median_logit', 'oos_rank_of_is_best' (mean relative rank)}."""
+    import itertools
+    import numpy as np
+    m = np.asarray(matrix, dtype=float)
+    t, n = m.shape
+    if n < 2 or t < n_blocks * 2:
+        raise ValueError('need >= 2 configs and >= 2 rows per block')
+    if n_blocks % 2:
+        raise ValueError('n_blocks must be even')
+    blocks = np.array_split(np.arange(t), n_blocks)
+
+    def score(x):
+        mu = x.mean(axis=0)
+        if metric == 'mean':
+            return mu
+        sd = x.std(axis=0, ddof=1)
+        return np.where(sd > 0, mu / np.where(sd > 0, sd, 1), 0.0)
+
+    logits, ranks = [], []
+    for comb in itertools.combinations(range(n_blocks), n_blocks // 2):
+        is_idx = np.concatenate([blocks[i] for i in comb])
+        oos_idx = np.concatenate([blocks[i] for i in range(n_blocks) if i not in comb])
+        s_is, s_oos = score(m[is_idx]), score(m[oos_idx])
+        best = int(np.argmax(s_is))
+        r = (np.sum(s_oos < s_oos[best]) + 0.5 * (np.sum(s_oos == s_oos[best]) - 1) + 1) / (n + 1)
+        ranks.append(float(r))
+        logits.append(math.log(r / (1 - r)))
+    logits_sorted = sorted(logits)
+    return {'pbo': sum(1 for x in logits if x <= 0) / len(logits), 'n_splits': len(logits),
+            'median_logit': logits_sorted[len(logits) // 2], 'oos_rank_of_is_best': sum(ranks) / len(ranks)}
+
+
 # ------------------------------------------------------------------ ledger
 def ledger_bps(rows, symbol: str | None = None, mode: str | None = None):
     """Net bps per closed trade (pnl / entry notional).  Skips rows without the needed fields."""

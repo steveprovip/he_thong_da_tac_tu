@@ -1,0 +1,5 @@
+| AB-1 | trend | trend 4H vs 1D spec (TAKER, OOS 2025-01..2026-09): B={"bar": "4h"} vs A={} | 638 day net return | Δ +0.000283 CI95 [+4.678e-05, +0.0005208], DSR 0.33 | B better, NOT significant after deflation |
+| AB-2 | trend | funding overlay on vs off (4H, TAKER, OOS): B={"bar": "4h"} vs A={"bar": "4h", "funding_hot": 1.0} | 638 day net return | Δ -9.524e-06 CI95 [-3.007e-05, +4.204e-06], DSR 0.00 | NO DIFFERENCE DETECTED |
+| AB-3 | trend | vol target 25 vs 20 % (4H, TAKER, OOS): B={"bar": "4h", "vol_target": 0.25} vs A={"bar": "4h"} | 638 day net return | Δ +4.014e-05 CI95 [-0.0001286, +0.0002097], DSR 0.01 | NO DIFFERENCE DETECTED |
+| AB-4 | micro | cvd_shield off vs on (agg Oct 1-7, 28 chunks): B=cvd_shield=off vs A= | 168 hour net PnL (U) | Δ +0 CI95 [+0, +0], DSR 0.01 | NO DIFFERENCE DETECTED |
+| AB-5 | micro | early_invalidation on vs shadow (agg Oct 6-7): B=early_invalidation=on vs A= | 48 hour net PnL (U) | Δ +0.01471 CI95 [-0.001413, +0.03304], DSR 0.08 | NO DIFFERENCE DETECTED |

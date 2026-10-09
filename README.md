@@ -177,6 +177,12 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.29 Cập nhật 09/10/2026 (bb) — Replay engine thật, A/B ghép cặp, làn trend 1D/4H (paper)
+- **Replay** `tools/engine_replay.py`: chạy chính `Engine` (swarm, gates, sizing, MARIN, phí) trên thời gian ảo với aggTrades / L2 đã ghi; ~0.1 symbol-giờ mỗi giây mỗi lõi (một năm không thể xong trong 30 s). Baseline 01–07/10: −5.41 bps/lệnh.
+- **A/B** `tools/ab_bench.py micro|trend --register`: cùng sự kiện, CI ghép cặp, DSR theo số lần thử, ghi `trial_log.jsonl`. CVD shield không chặn lệnh nào (AB-4); cắt sớm +1.15 bps/lệnh nhưng chưa ý nghĩa (AB-5).
+- **Trend 1D/4H** `core/trend_lane.py`: 4H LS OOS SR +0.69 (PSR 0.82, DSR 0.19, PBO 0.35) → chỉ **PAPER** (`trend_lane='paper'` demo, `off` live; không gửi lệnh).
+- Sửa: cầu dao lỗ ngày reset khi qua ngày mới. Test: 1396 passed. Chi tiết: `docs/research_upgrade/report_high_speed_replay_and_horizon_pivot_2026-10-09.md`.
+
 ### 8.28 Cập nhật 08/10/2026 (aa) — Vòng nghiên cứu nhanh, chuyển khung thời gian
 - **Vì sao chậm biết đúng/sai**: 55 lệnh nhưng 9 phiên bản code (~6 lệnh/bản); σ ≈ 15 bps/lệnh → cần ~93 lệnh (SPRT ~45) để phân biệt −3 với +2 bps. `python tools/edge_check.py --by code` cho kết luận trong < 1 s (toàn ledger: −3.48 bps, SPRT BAD).
 - **Vì sao lãi thấp**: biến động 10 s của BTC ~1.9 bps < phí round-trip; OFI/market making VIP0 âm sau phí theo các nghiên cứu (`docs/research_upgrade/research_alpha_after_fees_2026-10-08.md`).

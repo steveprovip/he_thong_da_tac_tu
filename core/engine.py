@@ -431,6 +431,13 @@ class Profile:
     early_inval_s: float = 45.0
     early_inval_vel_usd: float = 50_000.0
     early_inval_ofi: float = 0.30
+    # 10-09 multi-horizon trend lane (core/trend_lane.py): 'off' | 'paper'.  PAPER ONLY - targets and paper fills
+    # go to data/trend_paper_<bar>.jsonl, never an order.  Evidence is a hypothesis (OOS DSR < 0.95, PBO 0.35):
+    # docs/research_upgrade/report_high_speed_replay_and_horizon_pivot_2026-10-09.md.
+    trend_lane: str = 'off'
+    trend_bars: tuple = ('1d', '4h')
+    trend_equity: float = 5000.0
+    trend_every_s: float = 900.0
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -452,7 +459,7 @@ PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
-                    portfolio_risk_usdt=5.0, cs_max_notional=350.0),    # 10-08z2: hard notional cap $350 (was $1 000)
+                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='paper'),    # 10-08z2: hard notional cap $350 (was $1 000)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -858,6 +865,18 @@ class RiskBook:
         self.trade_times = deque()
         self.consec_losses = 0
         self.day_pnl = 0.0
+        self.day_key: Optional[str] = None
+
+    def roll(self, today: str) -> bool:
+        """10-09: the daily-loss meter belongs to ONE calendar day.  Before, day_pnl was only rebuilt at start-up,
+        so an engine left running past midnight kept yesterday's losses against today's kill switch."""
+        if self.day_key is None:
+            self.day_key = today
+            return False
+        if today != self.day_key:
+            self.day_key, self.day_pnl = today, 0.0
+            return True
+        return False
 
 
 def _shared(name: str) -> property:
@@ -936,6 +955,7 @@ class Engine:
         self.last_error = ''
         if fresh:
             self.day_pnl = self._load_today()
+            self.risk.day_key = datetime.now().strftime('%Y-%m-%d')
             self.risk.loaded = True
 
     # ------------------------------------------------------------------ housekeeping
@@ -1333,6 +1353,8 @@ class Engine:
             z = (True, f'cost {rt:.2f} bps RT ({self.cost.view()["source"]}) · spread {spread:.2f} bps')
         while self.trade_times and now - self.trade_times[0] > 3600:
             self.trade_times.popleft()
+        if self.risk.roll(datetime.now().strftime('%Y-%m-%d')):
+            self.event('new day -> daily loss meter reset')
         if self.halted:
             r = (False, f'HALT: {self.halted}')
         elif self.day_pnl <= -self.p.daily_kill_usdt:
@@ -3287,6 +3309,35 @@ def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: fl
             for k in rows if k[6] < now_ms]
 
 
+def fetch_funding(symbol: str, limit: int = 30, timeout: float = 5.0) -> list:
+    """Last funding prints [(t_s, rate)] from Binance USD-M mainnet public REST (no key)."""
+    import urllib.request
+    url = f'https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol.upper()}&limit={int(limit)}'
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        rows = json.loads(r.read().decode())
+    return sorted((int(x['fundingTime']) / 1000.0, float(x['fundingRate'])) for x in rows)
+
+
+TREND_BAR_LIMIT = {'1d': 150, '4h': 500}
+TREND_DIR = ROOT / 'data'
+
+
+def trend_fetch(symbols, bar: str, klines=None, funding=None) -> dict:
+    """Closed bars + recent funding for the trend lane (public REST; injectable for tests)."""
+    klines = klines or fetch_klines
+    funding = funding or fetch_funding
+    bars, fund = {}, {}
+    for s in symbols:
+        rows = klines(s, bar, TREND_BAR_LIMIT.get(bar, 300))
+        bars[s] = {'t': [r[0] for r in rows], 'o': [r[1] for r in rows], 'h': [r[2] for r in rows],
+                   'l': [r[3] for r in rows], 'c': [r[4] for r in rows]}
+        try:
+            fund[s] = funding(s)
+        except Exception:
+            fund[s] = []
+    return {'bars': bars, 'funding': fund}
+
+
 def fetch_klines_5m(symbol: str, limit: int = 40, timeout: float = 5.0) -> list:
     """Closed 5 m candles [(close_time_s, close)]."""
     return [(r[5], r[4]) for r in fetch_klines(symbol, '5m', limit, timeout)]
@@ -3482,6 +3533,7 @@ class Runner:
             if e is not None and self.tel is not None:
                 snap = e.snapshot()
                 snap['scanner'] = self.scanner_view(e)
+                snap['trend_lane'] = getattr(self, 'trend_state', None)
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
                             demo_keys=all(credentials('demo', self.env)))
@@ -3531,11 +3583,47 @@ class Runner:
         feeds = {s: x.feed for s, x in self.engines.items()}
         self.tasks = [asyncio.create_task(self.pump_multi(feeds, 'public')),
                       asyncio.create_task(self.pump_multi(feeds, 'market'))]
+        if any(x.p.trend_lane == 'paper' for x in self.engines.values()):
+            self.tasks.append(asyncio.create_task(self.trend_loop()))
         for x in self.engines.values():
             self.tasks += [asyncio.create_task(self.seed_macro(x)), asyncio.create_task(self.seed_bars(x)),
                            asyncio.create_task(self.sync_loop(x)),
                            asyncio.create_task(self.vbook_loop(x)), asyncio.create_task(self.decide_loop(x))]
         return e
+
+    async def trend_loop(self, fetch=None, once: bool = False, root: Optional[Path] = None) -> dict:
+        """10-09 PAPER trend lane next to the micro engine: every trend_every_s, rebalance a paper book per bar
+        size on the last CLOSED bar.  Never touches the venue.  State: self.trend_state (telemetry 'trend_lane')."""
+        from core import trend_lane as tl
+        root = root or TREND_DIR
+        e0 = next(iter(self.engines.values()))
+        syms = [s for s in SCAN_SYMBOLS if s in self.engines] or [e0.p.symbol]
+        cfgs = {b: tl.TrendConfig(bar=b) for b in e0.p.trend_bars}
+        books = {b: tl.PaperBook.load(root / f'trend_paper_{b}.json', e0.p.trend_equity) for b in cfgs}
+        self.trend_state = getattr(self, 'trend_state', {}) or {}
+        while True:
+            for b, cfg in cfgs.items():
+                try:
+                    data = await asyncio.to_thread(fetch or trend_fetch, syms, b)
+                    res = tl.paper_step(books[b], data['bars'], data['funding'], cfg)
+                    root.mkdir(parents=True, exist_ok=True)
+                    (root / f'trend_paper_{b}.json').write_text(books[b].to_json(), encoding='utf-8')
+                    if res['fills']:
+                        with open(root / f'trend_paper_{b}.jsonl', 'a', encoding='utf-8') as fh:
+                            for f in res['fills']:
+                                fh.write(json.dumps({**f, 'bar': b, 'code': CODE_VERSION}) + '\n')
+                    self.trend_state[b] = {'mode': 'PAPER', 'equity': res['equity'], 'fees': books[b].fees,
+                                           'targets': {s: round(v['w'], 4) for s, v in res['targets'].items()},
+                                           'fills': len(res['fills']), 'updated': time.time(), 'error': ''}
+                    for f in res['fills']:
+                        e0.event(f'TREND {b} PAPER {f["side"]} {f["symbol"]} {f["qty"]:.4g} @ {f["price"]:.6g} '
+                                 f'-> weight {f["target_w"]:+.3f} (no order sent)')
+                except Exception as exc:
+                    self.trend_state[b] = {**self.trend_state.get(b, {}), 'mode': 'PAPER',
+                                           'error': f'{type(exc).__name__}: {exc}'[:160]}
+            if once:
+                return self.trend_state
+            await asyncio.sleep(e0.p.trend_every_s)
 
     async def seed_bars(self, e: Engine) -> None:
         """ATR(14) / Yang-Zhang / ATR 15 m need closed 1 m bars: seed 240 (4 h) from public klines."""
