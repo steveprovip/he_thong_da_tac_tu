@@ -357,6 +357,8 @@ def build(symbols, overrides: dict, ledger: Path, balance: float):
     profiles = {}
     for s in symbols:
         p = replace(eng.PROFILES['demo'], symbol=s, qty=eng.SYMBOL_QTY.get(s, 0.0), mock_balance=balance)
+        if hasattr(p, 'micro_standalone'):             # 10-09 dd: the replay exists to test the micro lane ->
+            p = replace(p, micro_standalone=True, trend_lane='paper')   # ON unless --set says otherwise
         profiles[s] = replace(p, **{k: v for k, v in overrides.items() if hasattr(p, k)})
     unknown = [k for k in overrides if not hasattr(profiles[symbols[0]], k)]
     if unknown:

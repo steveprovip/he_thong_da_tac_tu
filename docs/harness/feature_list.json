@@ -173,6 +173,16 @@
       ],
       "status": "done",
       "evidence": "Week replay off -8.51 U / on v2 -6.87 U (fewer trades, same bps), DSR 0.68; v1 weights-in-vote upsized via JEV -> veto-only; dreaming dry-run CONVICTION trap on live ledger; pytest 1433 passed"
+    },
+    {
+      "id": "trend-activation-exec-timing-20261009dd",
+      "name": "4H trend lane trading on the demo venue with maker execution timing; standalone micro scalp muted; bracket and execution replays",
+      "description": "core/trend_executor.py, Runner.trend_active_loop, Profile trend_lane='active'/micro_standalone=False (demo), trend_exec, trend_notional_min/max, trend_disaster_atr; core/trend_lane.Brackets/backtest_brackets; tools/trend_execution_replay.py; tests/test_trend_activation_and_timing.py (19), tests/conftest.py profile override",
+      "dependencies": [
+        "autonomy-dreaming-20261009cc"
+      ],
+      "status": "done",
+      "evidence": "Brackets (form) OOS SR -0.48 vs +0.63; MAKER -1.20 bps vs TAKER [-1.84,-0.48] on 261 events; swarm timing worse than maker; pytest 1452 passed"
     }
   ]
 }

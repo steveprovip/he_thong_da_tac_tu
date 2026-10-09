@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.31 Cập nhật 09/10/2026 (dd) — Làn trend 4H giao dịch thật trên demo, tắt scalp vi mô độc lập
+- **Demo**: `micro_standalone=False` (vi mô chỉ quan sát: gross trung vị +1.8 bps < phí 4) và `trend_lane='active'` (`core/trend_executor.py`): 4H LS, chỉ đổi theo dấu, $150–300/lệnh, stop sàn thảm hoạ 8×ATR, khớp **maker** + IOC dự phòng, lệnh ghi `data/trend_trades.jsonl`. Live không đổi.
+- **Replay**: brackets của form (TP1 1.35 %, SL 1.5 ATR, trailing) làm OOS SR +0.63 → −0.48 nên tắt; maker rẻ hơn taker 1.2 bps/lần (261 sự kiện aggTrades thật); swarm định thời kém maker đơn giản.
+- Test: 1452 passed. Chi tiết: `docs/research_upgrade/report_execution_timing_and_4h_trend_activation_2026-10-09.md`.
+
 ### 8.30 Cập nhật 09/10/2026 (cc) — Tự học, Dreaming, nạp nóng tham số, điều phối vốn
 - **Autonomy** (`core/autonomy.py`, demo `autonomy='on'`, live `off`): learner trọng số NORO/LUMEN/TIDAL (chỉ được **phủ quyết** lệnh), bandit Thompson cho OFI tier / hurdle / TP1 khi flat, dreaming 15 phút hoặc 3 lệnh (bẫy CHURN/STREAK/ADVERSE/FEE_DRAG/NO_STOP/CONVICTION → bài học `data/brain_learnings.jsonl` → chỉ thị `config/live_tunables.json`), nạp nóng mỗi 5 s không restart, rủi ro chỉ giảm.
 - **Replay tuần 01–07/10**: −6.87 U vs −8.51 U khi tắt (ít lệnh hơn, bps/lệnh không đổi, DSR 0.68). Thiết kế đầu làm lệnh to hơn qua JEV → đã đổi sang chỉ phủ quyết.

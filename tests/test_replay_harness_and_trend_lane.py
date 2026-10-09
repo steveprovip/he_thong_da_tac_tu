@@ -365,8 +365,9 @@ def test_paper_step_uses_closed_bars_once(tmp_path):
     assert tl.PaperBook.load(p).qty == pb.qty
 
 
-def test_profiles_trend_lane_paper_demo_off_live():
-    assert eng.PROFILES['demo'].trend_lane == 'paper' and eng.PROFILES['live'].trend_lane == 'off'
+@pytest.mark.production_profile
+def test_profiles_trend_lane_active_demo_off_live():
+    assert eng.PROFILES['demo'].trend_lane == 'active' and eng.PROFILES['live'].trend_lane == 'off'   # 10-09 dd
 
 
 async def test_runner_trend_loop_paper_only(tmp_path):

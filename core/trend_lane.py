@@ -328,3 +328,118 @@ def paper_step(book: PaperBook, bars: Dict[str, dict], funding: Dict[str, list],
         if f:
             fills.append(f)
     return {'targets': targets, 'fills': fills, 'equity': book.equity(prices)}
+
+
+# ------------------------------------------------------------------ 10-09 (dd) bracket exits, event-based
+@dataclass(frozen=True)
+class Brackets:
+    """Exits layered on the trend signal (request 10-09 dd).  None = that leg is off.
+    tp1_pct      50 % (tp1_frac) closed at +tp1_pct %, maker fee
+    sl_atr       hard stop at entry -/+ sl_atr x ATR(14) of the bar, taker fee + slip, checked intrabar FIRST
+    trail        'chandelier' (best close -/+ trail_atr x ATR) | 'donchian_mid' ((N-high + N-low) / 2) | None
+    Signal exits (sign change / flat target) at the bar close, taker.  After a bracket exit the same side is
+    not re-entered until the signal changes sign or goes flat (no instant re-entry into the stop)."""
+    tp1_pct: Optional[float] = None
+    tp1_frac: float = 0.5
+    sl_atr: Optional[float] = None
+    trail: Optional[str] = None
+    trail_atr: float = 3.0
+    donchian_n: int = 20
+
+
+def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
+                      funding: Optional[Dict[str, list]] = None, taker_bps: float = 6.0, maker_bps: float = 2.0):
+    """Event-based: size fixed at entry (|target weight|), exits by brackets or signal.  -> same shape as
+    backtest(): {'bar_returns', 'turnover', 'trades'}.  Conservative intrabar order: stop before TP1."""
+    c = cfg.scaled()
+    tw, _ = weights_series(bars, cfg, funding)
+    hours = BAR_HOURS[cfg.bar]
+    dn = br.donchian_n * (24 // hours if cfg.bar == '4h' else 1)
+    rets, turn, trades = {}, {}, []
+    tk, mk = taker_bps / 1e4, maker_bps / 1e4
+    for s, b in bars.items():
+        o, h, l, cl, ts = b['o'], b['h'], b['l'], b['c'], b['t']
+        atr = atr_series(h, l, cl)
+        fr = funding.get(s, []) if funding else []
+        fi = 0
+        pos = None                      # {'side','w','entry','sl','tp','tp_done','best','frac'}
+        blocked = 0.0
+        for i in range(len(cl)):
+            pnl, dturn = 0.0, 0.0
+            if i > 0 and pos is not None:
+                d, w = pos['side'], pos['w'] * pos['frac']
+                prev = cl[i - 1]
+                exit_px, why = None, None
+                if pos['sl'] is not None and ((d > 0 and l[i] <= pos['sl']) or (d < 0 and h[i] >= pos['sl'])):
+                    exit_px = min(o[i], pos['sl']) if d > 0 else max(o[i], pos['sl'])     # gap -> open
+                    why = 'SL' if not pos.get('trailed') else 'TRAIL'
+                if exit_px is None and br.tp1_pct and not pos['tp_done']:
+                    tp = pos['entry'] * (1 + d * br.tp1_pct / 100)
+                    if (d > 0 and h[i] >= tp) or (d < 0 and l[i] <= tp):
+                        part = w * br.tp1_frac
+                        pnl += part * (d * (tp / prev - 1)) - part * mk
+                        pos['tr']['pnl'] += part * (d * (tp / pos['entry'] - 1)) - part * mk
+                        dturn += part
+                        pos['frac'] *= (1 - br.tp1_frac)
+                        pos['tp_done'] = True
+                        w = pos['w'] * pos['frac']
+                if exit_px is not None:
+                    pnl += w * d * (exit_px / prev - 1) - w * tk
+                    pos['tr']['pnl'] += w * d * (exit_px / pos['entry'] - 1) - w * tk
+                    dturn += w
+                    pos['tr'].update(exit_t=ts[i], why=why, bars=i - pos['i0'])
+                    trades.append(pos['tr'])
+                    blocked, pos = d, None
+                else:
+                    pnl += w * d * (cl[i] / prev - 1)
+                # funding on the held weight
+                t_lo, t_hi = ts[i], ts[i] + hours * 3600
+                while fi < len(fr) and fr[fi][0] < t_lo:
+                    fi += 1
+                k = fi
+                while k < len(fr) and fr[k][0] < t_hi:
+                    pnl -= w * d * fr[k][1]
+                    k += 1
+            sig = sign(tw[s][i])
+            if blocked and sig != blocked:
+                blocked = 0.0
+            if pos is not None:
+                d = pos['side']
+                if sig != d:                                           # signal exit at the close
+                    w = pos['w'] * pos['frac']
+                    pnl -= w * tk
+                    pos['tr']['pnl'] += w * d * (cl[i] / pos['entry'] - 1) - w * tk
+                    dturn += w
+                    pos['tr'].update(exit_t=ts[i], why='SIGNAL', bars=i - pos['i0'])
+                    trades.append(pos['tr'])
+                    pos = None
+                elif atr[i]:
+                    if br.trail == 'chandelier':
+                        pos['best'] = max(pos['best'], cl[i]) if d > 0 else min(pos['best'], cl[i])
+                        ts_px = pos['best'] - d * br.trail_atr * atr[i]
+                    elif br.trail == 'donchian_mid' and i >= dn:
+                        ts_px = (max(h[i - dn + 1:i + 1]) + min(l[i - dn + 1:i + 1])) / 2
+                    else:
+                        ts_px = None
+                    if ts_px is not None and (pos['sl'] is None or (d > 0 and ts_px > pos['sl']) or
+                                              (d < 0 and ts_px < pos['sl'])):
+                        pos['sl'], pos['trailed'] = ts_px, True
+            if pos is None and sig != 0 and sig != blocked and atr[i]:
+                w = abs(tw[s][i])
+                if w > 0:
+                    sl = cl[i] - sig * br.sl_atr * atr[i] if br.sl_atr else None
+                    pos = {'side': sig, 'w': w, 'entry': cl[i], 'sl': sl, 'tp_done': False, 'best': cl[i],
+                           'frac': 1.0, 'i0': i,
+                           'tr': {'symbol': s, 'side': 'LONG' if sig > 0 else 'SHORT', 'entry_t': ts[i],
+                                  'w': w, 'pnl': -w * tk}}
+                    pnl -= w * tk
+                    dturn += w
+            rets[ts[i]] = rets.get(ts[i], 0.0) + pnl
+            turn[ts[i]] = turn.get(ts[i], 0.0) + dturn
+        if pos is not None:
+            pos['tr'].update(exit_t=None, why='OPEN', bars=len(cl) - 1 - pos['i0'])
+            trades.append(pos['tr'])
+    for tr in trades:
+        tr['hold_h'] = tr['bars'] * hours
+        tr['ret_on_notional_bps'] = tr['pnl'] / tr['w'] * 1e4 if tr['w'] else 0.0
+    return {'bar_returns': rets, 'turnover': turn, 'trades': trades}

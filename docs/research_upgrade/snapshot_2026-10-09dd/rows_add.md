@@ -1,0 +1,3 @@
+| AB-8 | trend-exec | trend exec MAKER vs TAKER (through fill, 261 events): B=MAKER_through vs A=TAKER_through | 261 event, -cost bps | Δ +1.196 CI95 [+0.4801, +1.846], DSR 0.79 | B better, NOT significant after deflation |
+| AB-9 | trend-exec | trend exec SWARM-timed vs plain MAKER (through, 261 events): B=SWARM_through vs A=MAKER_through | 261 event, -cost bps | Δ -0.8717 CI95 [-1.644, -0.06835], DSR 0.00 | B WORSE (significant after deflation) |
+| AB-10 | trend | trend brackets of the 10-09 dd form vs signal exits (OOS): B=+TP1 1.35% + SL 1.5ATR + chandelier 3ATR vs A=4H LS signal exits | 638 day net return | Δ -0.0003032 CI95 [-0.0008768, +0.0002576], DSR 0.00 | NO DIFFERENCE DETECTED |

@@ -178,3 +178,15 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | CC5 | lỗi | Lệnh #76 NO_STOP −49 bps (−1.54 U) không ghi mã lỗi | ledger | `stop_reject` (loại + mã) + bẫy NO_STOP | sửa |
 | AB-6 | trend | trend 4H chandelier 3 ATR vs none (TAKER, OOS): B={"bar": "4h", "trail_atr": 3.0} vs A={"bar": "4h"} | 638 day net return | Δ -0.0002378 CI95 [-0.0007781, +0.0002745], DSR 0.00 | NO DIFFERENCE DETECTED |
 | AB-7 | micro | autonomy on v2 vs off (agg Oct 1-7, continuous week): B=autonomy=on v2 (continuous week) vs A=autonomy=off (continuous week) | 168 hour net PnL (U) | Δ +0.009712 CI95 [+0.004531, +0.01551], DSR 0.68 | B better, NOT significant after deflation |
+
+## Vòng (dd) — 09/10/2026: định thời khớp lệnh & kích hoạt trend 4H
+
+| ID | Loại | Giả thuyết | Dữ liệu | Kết quả | Trạng thái |
+|---|---|---|---|---|---|
+| DD1 | kiểm tra | "Gross dương 7/8, biên độ trend 150–300 bps" | ledger 8 lệnh gần nhất; 133 lệnh trend OOS | Gross 6/8 dương, trung vị +1.8 bps < phí 4; trend trung vị −59, TB +67 bps, p75 +41 | sửa tiền đề |
+| DD2 | trend | Brackets form (TP1 1.35 %, SL 1.5 ATR, chandelier/Donchian mid) | 4H 2022–2026, OOS 2025-01..2026-09 | OOS SR +0.63 → −0.48 / −0.54; SL thảm hoạ 8 ATR +0.59 | brackets tắt, stop 8 ATR bật |
+| DD3 | khớp lệnh | Maker / swarm-timed rẻ hơn taker cho làn trend | 261 sự kiện, aggTrades mainnet ±15/5 phút | MAKER −1.20 bps [−1.84, −0.48]; SWARM kém maker +0.87 [0.07, 1.64]; SR làn 0.59 → 0.60 | trend_exec='maker' |
+| DD4 | vận hành | Tắt scalp vi mô độc lập, bật trend 4H trên demo | — | micro_standalone=False, trend_lane='active' ($150–300, stop 8 ATR), live không đổi | bật demo (DSR 0.19 — theo yêu cầu người dùng) |
+| AB-8 | trend-exec | trend exec MAKER vs TAKER (through fill, 261 events): B=MAKER_through vs A=TAKER_through | 261 event, -cost bps | Δ +1.196 CI95 [+0.4801, +1.846], DSR 0.79 | B better, NOT significant after deflation |
+| AB-9 | trend-exec | trend exec SWARM-timed vs plain MAKER (through, 261 events): B=SWARM_through vs A=MAKER_through | 261 event, -cost bps | Δ -0.8717 CI95 [-1.644, -0.06835], DSR 0.00 | B WORSE (significant after deflation) |
+| AB-10 | trend | trend brackets of the 10-09 dd form vs signal exits (OOS): B=+TP1 1.35% + SL 1.5ATR + chandelier 3ATR vs A=4H LS signal exits | 638 day net return | Δ -0.0003032 CI95 [-0.0008768, +0.0002576], DSR 0.00 | NO DIFFERENCE DETECTED |

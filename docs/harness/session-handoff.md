@@ -99,3 +99,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Autonomy is ON in demo after the next restart: watch '⚡ AI SELF-ADAPTED' events and snapshot['autonomy']; override or clear config/live_tunables.json by hand at any time (validated, risk only down, expires).
 - First dreaming pass on the current ledger will cap cs_max_notional at $150 for 30 min (CONVICTION: top tier worst). Decision pending for the user: JEV fast-path trades inherit score = JEV/10 -> top conviction tier.
 - Learning is slow by construction (~100 trades/week spread over 3 regimes x 9 arms); evaluate with a continuous engine_replay run, not chunked ab_bench (state resets per chunk).
+
+## Handoff — 2026-10-09 (dd)
+- After restart, demo micro lane is OBSERVER (micro_standalone=False) and the 4H trend lane trades on the demo venue: watch 'TREND 4H ·' events, telemetry trend_lane['4h_active'], data/trend_trades.jsonl, data/trend_active.json. Expect ~6 trades/month, most small losers, a few large winners.
+- Revert: Profile demo trend_lane='paper', micro_standalone=True. Live untouched.
+- Open items: trend P&L is not in the micro daily-kill meter; evaluate the lane after ~100 trades (edge_check / mSPRT on trend_trades.jsonl).

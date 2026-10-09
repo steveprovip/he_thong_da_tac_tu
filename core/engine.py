@@ -435,6 +435,16 @@ class Profile:
     # go to data/trend_paper_<bar>.jsonl, never an order.  Evidence is a hypothesis (OOS DSR < 0.95, PBO 0.35):
     # docs/research_upgrade/report_high_speed_replay_and_horizon_pivot_2026-10-09.md.
     trend_lane: str = 'off'
+    # 10-09 (dd) 'active' = core/trend_executor.py trades the 4H lane on the DEMO venue (demo-only guard in code).
+    trend_notional_min: float = 150.0
+    trend_notional_max: float = 300.0
+    trend_exec: str = 'maker'               # 'taker' | 'maker' | 'swarm' (execution timing, replay-chosen)
+    trend_exec_window_s: float = 300.0
+    trend_disaster_atr: float = 8.0         # exchange-side stop, ATR(14, 4h); replay: 8 ATR costs ~0.04 Sharpe
+    trend_active_every_s: float = 60.0
+    # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
+    # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
+    micro_standalone: bool = True
     # 10-09 (cc) autonomy hub (core/autonomy.py): 'off' | 'shadow' | 'on'.  On = learned alpha-agent weights in the
     # vote, Thompson bandit on cs_super_ofi / hurdle_min_hold_s / tp1_scaled_pct while flat, hot tunables from
     # config/live_tunables.json (risk only DOWN vs this baseline), dreaming directives, capital router observer.
@@ -463,7 +473,7 @@ PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
-                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='paper',
+                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='active', micro_standalone=False,
                     autonomy='on'),    # 10-08z2: hard notional cap $350 (was $1 000)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
@@ -938,6 +948,7 @@ class Engine:
         self.align3_last: Optional[str] = None        # 10-08z2 three-layer alignment of the last churn check
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
         self.autonomy = None                          # 10-09 (cc) core.autonomy.Autonomy, attached by the Runner
+        self.trend_owned = False                      # 10-09 (dd) the venue position belongs to the 4H trend lane
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
@@ -1076,7 +1087,7 @@ class Engine:
     @property
     def observer(self) -> bool:
         """Observe-only symbol: features, swarm and telemetry run; no entry (an existing position is still managed)."""
-        return self.p.symbol in (self.p.observe_only or ())
+        return self.p.symbol in (self.p.observe_only or ()) or not self.p.micro_standalone
 
     def drift_acceleration(self, side: str) -> Optional[str]:
         """CVD 60 s >= ratio x |CVD 3 m| and >= min $ (x scale), on `side`: fresh flow overrides the stale 3 m
@@ -3006,7 +3017,7 @@ class Engine:
             pass
         self.orders = await self.venue.orders_view(sym)
         if (not self.pos and self.view.get('amt') and self.p.adopt_external and self.started and not self.busy
-                and self.spec):
+                and self.spec and not self.trend_owned):
             await self.adopt()
             return
         p = self.pos
@@ -3608,8 +3619,17 @@ class Runner:
         feeds = {s: x.feed for s, x in self.engines.items()}
         self.tasks = [asyncio.create_task(self.pump_multi(feeds, 'public')),
                       asyncio.create_task(self.pump_multi(feeds, 'market'))]
-        if any(x.p.trend_lane == 'paper' for x in self.engines.values()):
+        if any(x.p.trend_lane in ('paper', 'active') for x in self.engines.values()):
             self.tasks.append(asyncio.create_task(self.trend_loop()))
+        if any(x.p.trend_lane == 'active' for x in self.engines.values()):
+            from core.trend_executor import TrendExecutor
+            self.trend_exec = TrendExecutor(self.engines, ROOT / 'data' / 'trend_active.json',
+                                            ROOT / 'data' / 'trend_trades.jsonl')
+            for s_, x in self.engines.items():
+                x.trend_owned = s_ in self.trend_exec.state
+            self.tasks.append(asyncio.create_task(self.trend_active_loop()))
+        else:
+            self.trend_exec = None
         if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
             from core.autonomy import Autonomy
             self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
@@ -3643,6 +3663,25 @@ class Runner:
                     e0.event(f'autonomy loop error {type(exc).__name__}: {exc}'[:200])
             await asyncio.sleep(every_s)
 
+    async def trend_active_loop(self, fetch=None, once: bool = False) -> dict:
+        """10-09 (dd): the 4H trend lane on the DEMO venue (core/trend_executor.py); acts once per new closed bar."""
+        from core.trend_executor import ACTIVE_BAR
+        ex = self.trend_exec
+        e0 = next(iter(self.engines.values()))
+        syms = [s for s in SCAN_SYMBOLS if s in self.engines] or [e0.p.symbol]
+        self.trend_state = getattr(self, 'trend_state', {}) or {}
+        while True:
+            try:
+                data = await asyncio.to_thread(fetch or trend_fetch, syms, ACTIVE_BAR)
+                await ex.step(data)
+                self.trend_state['4h_active'] = ex.view()
+            except Exception as exc:
+                self.trend_state['4h_active'] = {**ex.view(), 'error': f'{type(exc).__name__}: {exc}'[:160]}
+                e0.event(f'TREND 4H error {type(exc).__name__}: {exc}'[:200])
+            if once:
+                return self.trend_state
+            await asyncio.sleep(e0.p.trend_active_every_s)
+
     async def trend_loop(self, fetch=None, once: bool = False, root: Optional[Path] = None) -> dict:
         """10-09 PAPER trend lane next to the micro engine: every trend_every_s, rebalance a paper book per bar
         size on the last CLOSED bar.  Never touches the venue.  State: self.trend_state (telemetry 'trend_lane')."""
@@ -3650,7 +3689,8 @@ class Runner:
         root = root or TREND_DIR
         e0 = next(iter(self.engines.values()))
         syms = [s for s in SCAN_SYMBOLS if s in self.engines] or [e0.p.symbol]
-        cfgs = {b: tl.TrendConfig(bar=b) for b in e0.p.trend_bars}
+        cfgs = {b: tl.TrendConfig(bar=b) for b in e0.p.trend_bars
+                if not (e0.p.trend_lane == 'active' and b == '4h')}          # 10-09 dd: 4h trades for real
         books = {b: tl.PaperBook.load(root / f'trend_paper_{b}.json', e0.p.trend_equity) for b in cfgs}
         self.trend_state = getattr(self, 'trend_state', {}) or {}
         while True:
