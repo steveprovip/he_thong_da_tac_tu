@@ -47,7 +47,7 @@ def load_bars(data: Path, symbols, bar: str):
         ts, arr = fs.load_klines(data, s)
         bts, b = fs.resample(ts, arr, hrs)
         out[s] = {'t': (bts / 1000.0).tolist(), 'o': b[:, 0].tolist(), 'h': b[:, 1].tolist(),
-                  'l': b[:, 2].tolist(), 'c': b[:, 3].tolist()}
+                  'l': b[:, 2].tolist(), 'c': b[:, 3].tolist(), 'v': b[:, 4].tolist(), 'tb': b[:, 5].tolist()}
         fund[s] = [(t / 1000.0, r) for t, r in fs.load_funding(data, s)]
     return out, fund
 

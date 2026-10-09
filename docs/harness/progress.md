@@ -233,3 +233,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - tools/trend_execution_replay.py: 261 OOS events, real aggTrades, engine MicroFeed: MAKER -1.20 bps vs TAKER [-1.84,-0.48]; SWARM-timed +0.87 bps worse than MAKER -> trend_exec='maker'.
 - tests/conftest.py autouse: micro-lane tests see micro ON / trend paper; production defaults tested with @pytest.mark.production_profile. engine_replay defaults micro ON.
 - Checks: python -m pytest -q 1452 passed. No restart, no order, ledger untouched.
+
+## 2026-10-09 (ee) Regime breakthrough & 10 % sizing (trend 4H, demo)
+- core/trend_lane: RegimeGate (TREND KER10>0.40 & ADX14>25, CHOP KER<0.25 & ADX<20; confirm vol>1.2xSMA20 + bar CVD with side; UNKNOWN volume -> no entry; chop_exit), Sizing min(10 %, 1 % / 8 ATR stop), Brackets lock_pct/soft; executor gate, CHOP/PROFIT-LOCK exits, size(atr); kline volume + taker-buy carried by fetch_klines/trend_fetch.
+- tools/trend_regime_replay.py (pre-registered 8 gates x 3 locks x 2 sizings, 2022-01..2026-09, 148 trials): DEV-selected G6 (G4 + chop exit) + L1 chandelier 3.5 ATR armed at +2 %. Size 10 %: OOS SR 0.83 vs 0.43, DD 5.9 vs 9.6 %, DSR 0.30; 2025 SR +0.23 vs -0.32; paired daily diff CI [-3.0, +3.3] bps. Targets SR>1 / DSR>0.8 NOT met.
+- Demo Profile: trend_regime='trend_only', trend_confirm, trend_chop_exit, trend_lock_pct=2.0, capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600. Live unchanged.
+- Checks: python -m pytest -q 1437 passed, 2 failed (pre-existing: missing local data/testnet signal lab + tools/check_models_live.py; same on stashed baseline). No restart, no order, ledgers untouched.

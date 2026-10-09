@@ -183,6 +183,16 @@
       ],
       "status": "done",
       "evidence": "Brackets (form) OOS SR -0.48 vs +0.63; MAKER -1.20 bps vs TAKER [-1.84,-0.48] on 261 events; swarm timing worse than maker; pytest 1452 passed"
+    },
+    {
+      "id": "trend-regime-gate-10pct-20261009ee",
+      "name": "4H trend lane: KER/ADX regime gate + volume/CVD breakout confirmation + chop exit, soft profit lock, 10 % capital sizing with 1 % risk cap (demo)",
+      "description": "core/trend_lane RegimeGate/ker_series/adx_series/regime_info/gate_entry/Sizing, Brackets.lock_pct/soft, backtest_brackets(gate, sizing); core/trend_executor gate + exit_check + size(atr); Profile trend_regime/trend_confirm/trend_chop_exit/trend_lock_*/capital_allocation_pct/trend_risk_pct; fetch_klines/trend_fetch volume; tools/trend_regime_replay.py; tests/test_trend_regime_breakthrough.py (15)",
+      "dependencies": [
+        "trend-activation-exec-timing-20261009dd"
+      ],
+      "status": "done",
+      "evidence": "DEV-selected G6+L1, size 10 %: OOS SR 0.83 (base 0.43) DD 5.9 % (9.6 %), DSR 0.30; paired diff CI includes 0; pytest 1437 passed (2 pre-existing env failures)"
     }
   ]
 }

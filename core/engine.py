@@ -442,6 +442,21 @@ class Profile:
     trend_exec_window_s: float = 300.0
     trend_disaster_atr: float = 8.0         # exchange-side stop, ATR(14, 4h); replay: 8 ATR costs ~0.04 Sharpe
     trend_active_every_s: float = 60.0
+    # 10-09 (ee) regime gate (core/trend_lane.RegimeGate): 'off' | 'trend_only' (KER10 > 0.40 and ADX14 > 25) |
+    # 'no_chop' (not KER < 0.25 and ADX < 20); trend_confirm = volume > 1.2 x SMA20 and bar CVD with the entry;
+    # trend_chop_exit = flat on a CHOP close.  Replay tools/trend_regime_replay.py (DEV-selected G6).
+    trend_regime: str = 'off'
+    trend_confirm: bool = False
+    trend_chop_exit: bool = False
+    # 10-09 (ee) soft profit lock: armed once the best 4H close is >= trend_lock_pct % in favour, then a close
+    # beyond best -/+ trend_lock_atr x ATR(14) ('chandelier') or the 20 d Donchian mid ('donchian_mid') exits.
+    trend_lock_pct: Optional[float] = None
+    trend_lock_trail: str = 'chandelier'
+    trend_lock_atr: float = 3.5
+    # 10-09 (ee) sizing: notional = min(capital_allocation_pct, trend_risk_pct / (trend_disaster_atr x ATR / px))
+    # x wallet, <= trend_notional_max.  None = legacy |weight| x wallet clipped to [min, max].
+    capital_allocation_pct: Optional[float] = None
+    trend_risk_pct: float = 0.01
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True
@@ -474,7 +489,11 @@ PROFILES = {
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
                     portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='active', micro_standalone=False,
-                    autonomy='on'),    # 10-08z2: hard notional cap $350 (was $1 000)
+                    autonomy='on',     # 10-08z2: hard notional cap $350 (was $1 000)
+                    # 10-09 (ee) trend lane: DEV-selected gate G6 + soft lock L1 (chandelier 3.5 ATR armed at +2 %),
+                    # 10 % of wallet / <= 1 % lost at the 8 ATR disaster stop, <= $600
+                    trend_regime='trend_only', trend_confirm=True, trend_chop_exit=True, trend_lock_pct=2.0,
+                    capital_allocation_pct=0.10, trend_risk_pct=0.01, trend_notional_max=600.0),
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -3340,8 +3359,8 @@ def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: fl
     with urllib.request.urlopen(url, timeout=timeout) as r:
         rows = json.loads(r.read().decode())
     now_ms = time.time() * 1000
-    return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0)
-            for k in rows if k[6] < now_ms]
+    return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0,
+             float(k[7]), float(k[10])) for k in rows if k[6] < now_ms]     # + quote volume, taker-buy quote
 
 
 def fetch_funding(symbol: str, limit: int = 30, timeout: float = 5.0) -> list:
@@ -3366,6 +3385,9 @@ def trend_fetch(symbols, bar: str, klines=None, funding=None) -> dict:
         rows = klines(s, bar, TREND_BAR_LIMIT.get(bar, 300))
         bars[s] = {'t': [r[0] for r in rows], 'o': [r[1] for r in rows], 'h': [r[2] for r in rows],
                    'l': [r[3] for r in rows], 'c': [r[4] for r in rows]}
+        if rows and all(len(r) >= 8 for r in rows):            # 10-09 (ee) volume + CVD for the regime gate
+            bars[s]['v'] = [r[6] for r in rows]
+            bars[s]['tb'] = [r[7] for r in rows]
         try:
             fund[s] = funding(s)
         except Exception:

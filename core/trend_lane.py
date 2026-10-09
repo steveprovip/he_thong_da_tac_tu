@@ -295,9 +295,14 @@ class PaperBook:
 
 
 def klines_to_bars(rows) -> dict:
-    """Binance kline rows [open_ms, o, h, l, c, ...] -> bars dict (drops nothing; caller drops the open bar)."""
-    return {'t': [r[0] / 1000.0 for r in rows], 'o': [float(r[1]) for r in rows], 'h': [float(r[2]) for r in rows],
-            'l': [float(r[3]) for r in rows], 'c': [float(r[4]) for r in rows]}
+    """Binance kline rows [open_ms, o, h, l, c, ...] -> bars dict (drops nothing; caller drops the open bar).
+    Raw REST rows (12 fields) also give 'v' (quote volume, r[7]) and 'tb' (taker-buy quote volume, r[10])."""
+    out = {'t': [r[0] / 1000.0 for r in rows], 'o': [float(r[1]) for r in rows], 'h': [float(r[2]) for r in rows],
+           'l': [float(r[3]) for r in rows], 'c': [float(r[4]) for r in rows]}
+    if rows and all(len(r) >= 11 for r in rows):
+        out['v'] = [float(r[7]) for r in rows]
+        out['tb'] = [float(r[10]) for r in rows]
+    return out
 
 
 def closed_only(bars: dict, now: float, hours: float) -> dict:
@@ -338,20 +343,25 @@ class Brackets:
     sl_atr       hard stop at entry -/+ sl_atr x ATR(14) of the bar, taker fee + slip, checked intrabar FIRST
     trail        'chandelier' (best close -/+ trail_atr x ATR) | 'donchian_mid' ((N-high + N-low) / 2) | None
     Signal exits (sign change / flat target) at the bar close, taker.  After a bracket exit the same side is
-    not re-entered until the signal changes sign or goes flat (no instant re-entry into the stop)."""
+    not re-entered until the signal changes sign or goes flat (no instant re-entry into the stop).
+    10-09 (ee) profit lock: lock_pct arms the trail only once the best close is >= lock_pct % in favour; soft=True
+    checks the trail on the bar CLOSE and exits at the close (taker), instead of an intrabar stop."""
     tp1_pct: Optional[float] = None
     tp1_frac: float = 0.5
     sl_atr: Optional[float] = None
     trail: Optional[str] = None
     trail_atr: float = 3.0
     donchian_n: int = 20
+    lock_pct: Optional[float] = None
+    soft: bool = False
 
 
 def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
-                      funding: Optional[Dict[str, list]] = None, taker_bps: float = 6.0, maker_bps: float = 2.0):
-    """Event-based: size fixed at entry (|target weight|), exits by brackets or signal.  -> same shape as
-    backtest(): {'bar_returns', 'turnover', 'trades'}.  Conservative intrabar order: stop before TP1."""
-    c = cfg.scaled()
+                      funding: Optional[Dict[str, list]] = None, taker_bps: float = 6.0, maker_bps: float = 2.0,
+                      gate: Optional['RegimeGate'] = None, sizing: Optional['Sizing'] = None):
+    """Event-based: size fixed at entry (|target weight|, or sizing.fraction), exits by brackets or signal.  -> same
+    shape as backtest(): {'bar_returns', 'turnover', 'trades'}.  Conservative intrabar order: stop before TP1.
+    gate (10-09 ee): entries only where gate_entry() passes on the entry bar; chop_exit closes on a CHOP close."""
     tw, _ = weights_series(bars, cfg, funding)
     hours = BAR_HOURS[cfg.bar]
     dn = br.donchian_n * (24 // hours if cfg.bar == '4h' else 1)
@@ -360,6 +370,7 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
     for s, b in bars.items():
         o, h, l, cl, ts = b['o'], b['h'], b['l'], b['c'], b['t']
         atr = atr_series(h, l, cl)
+        info = regime_info(b, gate) if gate else None
         fr = funding.get(s, []) if funding else []
         fi = 0
         pos = None                      # {'side','w','entry','sl','tp','tp_done','best','frac'}
@@ -405,27 +416,39 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
                 blocked = 0.0
             if pos is not None:
                 d = pos['side']
-                if sig != d:                                           # signal exit at the close
-                    w = pos['w'] * pos['frac']
-                    pnl -= w * tk
-                    pos['tr']['pnl'] += w * d * (cl[i] / pos['entry'] - 1) - w * tk
-                    dturn += w
-                    pos['tr'].update(exit_t=ts[i], why='SIGNAL', bars=i - pos['i0'])
-                    trades.append(pos['tr'])
-                    pos = None
+                pos['best'] = max(pos['best'], cl[i]) if d > 0 else min(pos['best'], cl[i])
+                why = None
+                if sig != d:
+                    why = 'SIGNAL'
+                elif gate and gate.chop_exit and info['regime'][i] == 'CHOP':
+                    why = 'CHOP'
                 elif atr[i]:
                     if br.trail == 'chandelier':
-                        pos['best'] = max(pos['best'], cl[i]) if d > 0 else min(pos['best'], cl[i])
                         ts_px = pos['best'] - d * br.trail_atr * atr[i]
                     elif br.trail == 'donchian_mid' and i >= dn:
                         ts_px = (max(h[i - dn + 1:i + 1]) + min(l[i - dn + 1:i + 1])) / 2
                     else:
                         ts_px = None
-                    if ts_px is not None and (pos['sl'] is None or (d > 0 and ts_px > pos['sl']) or
-                                              (d < 0 and ts_px < pos['sl'])):
+                    if br.lock_pct is not None and d * (pos['best'] / pos['entry'] - 1) * 100 < br.lock_pct:
+                        ts_px = None                                   # profit lock not armed yet
+                    if ts_px is not None and br.soft:
+                        if (d > 0 and cl[i] < ts_px) or (d < 0 and cl[i] > ts_px):
+                            why = 'LOCK'
+                    elif ts_px is not None and (pos['sl'] is None or (d > 0 and ts_px > pos['sl']) or
+                                                (d < 0 and ts_px < pos['sl'])):
                         pos['sl'], pos['trailed'] = ts_px, True
-            if pos is None and sig != 0 and sig != blocked and atr[i]:
-                w = abs(tw[s][i])
+                if why:                                                # exit at the close, taker
+                    w = pos['w'] * pos['frac']
+                    pnl -= w * tk
+                    pos['tr']['pnl'] += w * d * (cl[i] / pos['entry'] - 1) - w * tk
+                    dturn += w
+                    pos['tr'].update(exit_t=ts[i], why=why, bars=i - pos['i0'])
+                    trades.append(pos['tr'])
+                    if why == 'LOCK':
+                        blocked = d
+                    pos = None
+            if pos is None and sig != 0 and sig != blocked and atr[i] and (gate is None or gate_entry(info, i, sig, gate)[0]):
+                w = sizing.fraction(atr[i], cl[i]) if sizing else abs(tw[s][i])
                 if w > 0:
                     sl = cl[i] - sig * br.sl_atr * atr[i] if br.sl_atr else None
                     pos = {'side': sig, 'w': w, 'entry': cl[i], 'sl': sl, 'tp_done': False, 'best': cl[i],
@@ -443,3 +466,127 @@ def backtest_brackets(bars: Dict[str, dict], cfg: TrendConfig, br: Brackets,
         tr['hold_h'] = tr['bars'] * hours
         tr['ret_on_notional_bps'] = tr['pnl'] / tr['w'] * 1e4 if tr['w'] else 0.0
     return {'bar_returns': rets, 'turnover': turn, 'trades': trades}
+
+
+# ------------------------------------------------------------------ 10-09 (ee) regime gate, breakout confirmation, sizing
+@dataclass(frozen=True)
+class RegimeGate:
+    """Entry gate of the 4H lane (request 10-09 ee).  Thresholds are the request's; windows are the textbook
+    defaults (Kaufman ER 10, Wilder ADX 14, volume SMA 20), fixed before the replay, not tuned.
+      regime   TREND  KER > ker_trend and ADX > adx_trend
+               CHOP   KER < ker_chop  and ADX < adx_chop
+               MIXED  otherwise
+      mode     'trend_only' new entries only in TREND | 'no_chop' entries unless CHOP | 'off' no regime condition
+      confirm  bar quote volume > vol_mult x SMA(vol_n) of the prior bars AND the bar's CVD (taker buy - taker sell
+               quote volume) has the sign of the entry.  Missing volume is UNKNOWN -> no entry (never a silent pass).
+      chop_exit close a held position at the close of a CHOP bar (Cash / Observer while the market ranges).
+    Signal exits are never gated: the gate only delays or skips entries."""
+    mode: str = 'trend_only'
+    confirm: bool = True
+    ker_n: int = 10
+    adx_n: int = 14
+    ker_trend: float = 0.40
+    adx_trend: float = 25.0
+    ker_chop: float = 0.25
+    adx_chop: float = 20.0
+    vol_mult: float = 1.2
+    vol_n: int = 20
+    chop_exit: bool = False
+
+
+def ker_series(closes, n: int = 10) -> List[Optional[float]]:
+    """Kaufman efficiency ratio |c_i - c_{i-n}| / sum |c_k - c_{k-1}| over the last n bars."""
+    out = []
+    for i in range(len(closes)):
+        if i < n:
+            out.append(None)
+            continue
+        path = sum(abs(closes[k] - closes[k - 1]) for k in range(i - n + 1, i + 1))
+        out.append(abs(closes[i] - closes[i - n]) / path if path else 0.0)
+    return out
+
+
+def adx_series(highs, lows, closes, n: int = 14) -> List[Optional[float]]:
+    """Wilder ADX(n); None until 2n bars."""
+    m = len(closes)
+    out: List[Optional[float]] = [None] * m
+    if m < 2 * n + 1:
+        return out
+    tr, pdm, ndm = [], [], []
+    for i in range(1, m):
+        up, dn = highs[i] - highs[i - 1], lows[i - 1] - lows[i]
+        pdm.append(up if up > dn and up > 0 else 0.0)
+        ndm.append(dn if dn > up and dn > 0 else 0.0)
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    a, p, q = sum(tr[:n]), sum(pdm[:n]), sum(ndm[:n])
+    dx = []                                      # dx[j] belongs to bar j + n
+    for k in range(n - 1, len(tr)):
+        if k >= n:
+            a, p, q = a - a / n + tr[k], p - p / n + pdm[k], q - q / n + ndm[k]
+        pdi, ndi = (100 * p / a, 100 * q / a) if a else (0.0, 0.0)
+        dx.append(100 * abs(pdi - ndi) / (pdi + ndi) if pdi + ndi else 0.0)
+    adx = sum(dx[:n]) / n
+    out[2 * n - 1] = adx
+    for j in range(n, len(dx)):
+        adx = (adx * (n - 1) + dx[j]) / n
+        out[j + n] = adx
+    return out
+
+
+def regime_info(bars: dict, g: RegimeGate) -> dict:
+    """Per bar: 'regime' (TREND / CHOP / MIXED / None), 'ker', 'adx', 'vol_ratio', 'cvd' (None = UNKNOWN)."""
+    c = bars['c']
+    ker, adx = ker_series(c, g.ker_n), adx_series(bars['h'], bars['l'], c, g.adx_n)
+    reg = []
+    for k, x in zip(ker, adx):
+        if k is None or x is None:
+            reg.append(None)
+        elif k > g.ker_trend and x > g.adx_trend:
+            reg.append('TREND')
+        elif k < g.ker_chop and x < g.adx_chop:
+            reg.append('CHOP')
+        else:
+            reg.append('MIXED')
+    v, tb = bars.get('v'), bars.get('tb')
+    vr, cvd = [None] * len(c), [None] * len(c)
+    if v and tb and len(v) == len(c) == len(tb):
+        for i in range(g.vol_n, len(c)):
+            base = sum(v[i - g.vol_n:i]) / g.vol_n
+            vr[i] = v[i] / base if base > 0 else None
+            cvd[i] = 2.0 * tb[i] - v[i]
+    return {'regime': reg, 'ker': ker, 'adx': adx, 'vol_ratio': vr, 'cvd': cvd}
+
+
+def gate_entry(info: dict, i: int, side: float, g: Optional[RegimeGate]) -> Tuple[bool, str]:
+    """May the lane open `side` on the close of bar i?  -> (ok, reason)."""
+    if g is None:
+        return True, 'no gate'
+    reg = info['regime'][i]
+    if g.mode == 'trend_only' and reg != 'TREND':
+        return False, f'regime {reg or "UNKNOWN"} (needs TREND)'
+    if g.mode == 'no_chop' and reg in (None, 'CHOP'):
+        return False, f'regime {reg or "UNKNOWN"}'
+    if g.confirm:
+        vr, cvd = info['vol_ratio'][i], info['cvd'][i]
+        if vr is None or cvd is None:
+            return False, 'volume/CVD UNKNOWN'
+        if vr <= g.vol_mult:
+            return False, f'volume {vr:.2f}x SMA{g.vol_n} <= {g.vol_mult:g}x'
+        if side * cvd <= 0:
+            return False, 'CVD against the breakout'
+    return True, f'regime {reg} confirmed'
+
+
+@dataclass(frozen=True)
+class Sizing:
+    """10-09 (ee) fraction of equity per position = min(alloc_pct, risk_pct / stop distance), stop = stop_atr x ATR(14).
+    Low ATR: the alloc_pct ceiling binds.  High ATR: the size shrinks so the loss at the disaster stop stays
+    <= risk_pct of equity (a gap through the stop can still exceed it)."""
+    alloc_pct: float = 0.10
+    risk_pct: float = 0.01
+    stop_atr: float = 8.0
+
+    def fraction(self, atr: Optional[float], price: float) -> float:
+        if not atr or not price or atr <= 0:
+            return 0.0
+        return min(self.alloc_pct, self.risk_pct / (self.stop_atr * atr / price))

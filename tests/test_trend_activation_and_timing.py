@@ -47,7 +47,10 @@ def bars_trend(n=520, drift=0.004, t0=1.7e9, seed=1, sym_px=100.0):
 
 def setup(tmp_path, policy='taker', mode='demo'):
     p = replace(eng.PROFILES['demo'], symbol='SOLUSDT', qty=eng.SYMBOL_QTY.get('SOLUSDT', 0.0), trend_lane='active',
-                micro_standalone=False, trend_exec=policy, trend_exec_window_s=20.0, mode=mode)
+                micro_standalone=False, trend_exec=policy, trend_exec_window_s=20.0, mode=mode,
+                # the (dd) lane: no regime gate / lock, legacy clipped sizing (10-09 ee tested separately)
+                trend_regime='off', trend_confirm=False, trend_chop_exit=False, trend_lock_pct=None,
+                capital_allocation_pct=None, trend_notional_min=150.0, trend_notional_max=300.0)
     feed = msig.MicroFeed('SOLUSDT', msig.config_for('SOLUSDT'))
     venue = eng.MockVenue(p, quote=lambda s: eng._touch(feed))
     e = eng.Engine(p, venue, feed, None, ledger=tmp_path / 'micro.jsonl')
@@ -77,7 +80,6 @@ def test_demo_profile_mutes_micro_and_activates_trend_live_untouched():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
     assert d.trend_lane == 'active' and d.micro_standalone is False
     assert l.trend_lane == 'off' and l.micro_standalone is True
-    assert 150 <= d.trend_notional_min <= d.trend_notional_max <= 300
 
 
 def test_micro_standalone_false_makes_engine_observer(tmp_path):

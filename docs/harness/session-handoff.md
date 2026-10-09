@@ -104,3 +104,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After restart, demo micro lane is OBSERVER (micro_standalone=False) and the 4H trend lane trades on the demo venue: watch 'TREND 4H ·' events, telemetry trend_lane['4h_active'], data/trend_trades.jsonl, data/trend_active.json. Expect ~6 trades/month, most small losers, a few large winners.
 - Revert: Profile demo trend_lane='paper', micro_standalone=True. Live untouched.
 - Open items: trend P&L is not in the micro daily-kill meter; evaluate the lane after ~100 trades (edge_check / mSPRT on trend_trades.jsonl).
+
+## Handoff — 2026-10-09 (ee)
+- After restart the demo 4H lane enters only in TREND with volume/CVD confirmation, goes flat on CHOP closes, soft-locks profits after +2 % (chandelier 3.5 ATR), sizes min(10 % wallet, 1 % wallet at the 8 ATR stop) <= $600. Watch 'held back', 'CHOP', 'PROFIT-LOCK' events and regime_entry in data/trend_trades.jsonl.
+- Revert: demo trend_regime='off', trend_confirm=False, trend_chop_exit=False, trend_lock_pct=None, capital_allocation_pct=None, trend_notional_max=300.
+- Evidence still a hypothesis (OOS DSR 0.30, ~3.4 trades/month): do not route to live; evaluate after ~100 trades.
