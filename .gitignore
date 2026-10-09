@@ -95,3 +95,9 @@ docs/research_upgrade/snapshot_*/**/telemetry_state.json
 
 # raw mainnet market-data recordings (tools/record_market.py)
 data/recordings/
+
+# 10-09 (cc) autonomy runtime state (hot tunables written by the dreaming daemon / learner)
+config/live_tunables.json
+config/live_tunables.json.tmp
+config/dynamic_state.json
+config/dynamic_state.json.tmp

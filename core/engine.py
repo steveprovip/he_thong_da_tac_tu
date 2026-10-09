@@ -435,6 +435,10 @@ class Profile:
     # go to data/trend_paper_<bar>.jsonl, never an order.  Evidence is a hypothesis (OOS DSR < 0.95, PBO 0.35):
     # docs/research_upgrade/report_high_speed_replay_and_horizon_pivot_2026-10-09.md.
     trend_lane: str = 'off'
+    # 10-09 (cc) autonomy hub (core/autonomy.py): 'off' | 'shadow' | 'on'.  On = learned alpha-agent weights in the
+    # vote, Thompson bandit on cs_super_ofi / hurdle_min_hold_s / tp1_scaled_pct while flat, hot tunables from
+    # config/live_tunables.json (risk only DOWN vs this baseline), dreaming directives, capital router observer.
+    autonomy: str = 'off'
     trend_bars: tuple = ('1d', '4h')
     trend_equity: float = 5000.0
     trend_every_s: float = 900.0
@@ -459,7 +463,8 @@ PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
-                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='paper'),    # 10-08z2: hard notional cap $350 (was $1 000)
+                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='paper',
+                    autonomy='on'),    # 10-08z2: hard notional cap $350 (was $1 000)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -932,6 +937,7 @@ class Engine:
         self.ker_adapt: Optional[dict] = None         # 10-08x adaptive KER result of the last churn check
         self.align3_last: Optional[str] = None        # 10-08z2 three-layer alignment of the last churn check
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
+        self.autonomy = None                          # 10-09 (cc) core.autonomy.Autonomy, attached by the Runner
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
@@ -1394,6 +1400,8 @@ class Engine:
         f = self.features = self.feed.features(self.clock())
         if self.pos:                                  # MARIN reacts on every WS tick, not every REST poll
             await self.manage()
+        elif self.autonomy is not None and not self.busy:
+            self.autonomy.refresh(self, f)            # 10-09 (cc): effective Profile while flat (never mid-trade)
         self.chop_locked = msig.chop_locked(f.get('ker'), self.chop_locked, self.sig_cfg)
         self.absorb = msig.absorption(f, self.sig_cfg)
         self.flow = msig.concordance(f, self.sig_cfg)
@@ -1403,8 +1411,13 @@ class Engine:
         self.macro = msig.macro_bias(f, self.sig_cfg)
         self.reg = msig.regime(f, self.sig_cfg)
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
-        d, votes, diag = swarm.evaluate(self.sig, self.gates(f), self.consensus, self.p.jev_min,
+        g_now = self.gates(f)
+        d, votes, diag = swarm.evaluate(self.sig, g_now, self.consensus, self.p.jev_min,
                                         self.p.min_confluence, self.p.edge_ratio_min, allow=self.reg['allow'])
+        if self.autonomy is not None and d.allowed:   # 10-09 (cc): learned weights may only REMOVE a trade
+            d = self.autonomy.demote(self, d, lambda sg: swarm.evaluate(sg, g_now, self.consensus, self.p.jev_min,
+                                                                         self.p.min_confluence, self.p.edge_ratio_min,
+                                                                         allow=self.reg['allow'])[0], swarm.ALPHA)
         self.drift_probe = None
         self.blockers = []
         swarm_ok = d.allowed
@@ -2246,6 +2259,9 @@ class Engine:
                         'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
                         'tp_plan': tp_plan,
                         'conviction': {k[3:]: v for k, v in xm.items() if k.startswith('cs_')} or None,
+                        'agents': {v.agent: [v.side, v.confidence] for v in (self.votes or [])
+                                   if v.agent in swarm.ALPHA} or None,
+                        **(self.autonomy.entry_tags(self) if self.autonomy is not None else {}),
                         'align3': (self.align3_last or 'OK') if self.p.align3 in ('shadow', 'on') else None,
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
                         **({'eject_s': self.p.scalp_be_s, 'eject_mfe': 1e9} if path == 'SCALP' else {}),
@@ -2272,6 +2288,7 @@ class Engine:
                 await self.place_entry_stop(sym, opp, fmt(sl, tick), self.pos['sl_cid'])
             except Exception as exc:
                 self.event(f'MARIN stop rejected ({type(exc).__name__}: {exc}) -> closing at market')
+                self.pos['stop_reject'] = f'{type(exc).__name__} {getattr(exc, "code", "")}'.strip()[:80]   # 10-09 cc
                 await self.close('NO_STOP')
                 return {'ok': False, 'error': 'stop rejected, closed'}
             if not await self.venue.take_profit(sym, opp, fmt(self.pos['tp_qty'], step), fmt(tp, tick),
@@ -3061,6 +3078,8 @@ class Engine:
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
                'conviction': p.get('conviction'), 'align3': p.get('align3'), 'early_invalid': p.get('early_invalid'),
+               'agents': p.get('agents'), 'arms': p.get('arms'), 'agent_w': p.get('agent_w'),
+               'stop_reject': p.get('stop_reject'),
                'schema': LEDGER_SCHEMA, 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
                'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),
@@ -3075,6 +3094,11 @@ class Engine:
         self.history.appendleft(row)
         self.all_rows.append(row)
         self._write_ledger(row)
+        if self.autonomy is not None:
+            try:
+                self.autonomy.on_settle(self, row)
+            except Exception as exc:                  # learning must never break settlement
+                self.event(f'autonomy settle error {type(exc).__name__}: {exc}'[:200])
         self.cooldown_until = self.clock() + self.p.cooldown_s
         if pnl < 0 and p['tag'] == 'AUTO':
             self.consec_losses += 1
@@ -3534,6 +3558,7 @@ class Runner:
                 snap = e.snapshot()
                 snap['scanner'] = self.scanner_view(e)
                 snap['trend_lane'] = getattr(self, 'trend_state', None)
+                snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
                             demo_keys=all(credentials('demo', self.env)))
@@ -3585,11 +3610,38 @@ class Runner:
                       asyncio.create_task(self.pump_multi(feeds, 'market'))]
         if any(x.p.trend_lane == 'paper' for x in self.engines.values()):
             self.tasks.append(asyncio.create_task(self.trend_loop()))
+        if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
+            from core.autonomy import Autonomy
+            self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
+            self.autonomy.attach(self.engines)
+            self.tasks.append(asyncio.create_task(self.autonomy_loop()))
+        else:
+            self.autonomy = None
         for x in self.engines.values():
             self.tasks += [asyncio.create_task(self.seed_macro(x)), asyncio.create_task(self.seed_bars(x)),
                            asyncio.create_task(self.sync_loop(x)),
                            asyncio.create_task(self.vbook_loop(x)), asyncio.create_task(self.decide_loop(x))]
         return e
+
+    async def autonomy_loop(self, every_s: float = 5.0, threaded: bool = True) -> None:
+        """10-09 (cc): every 5 s poll config/live_tunables.json (mtime), run the capital router; every 15 min or
+        3 new closed trades run one dreaming pass (ledger read-only) whose directives come back through the file."""
+        a = self.autonomy
+        while True:
+            try:
+                a.poll()
+                a.route()
+                if a.dream_due():
+                    if threaded:
+                        await asyncio.to_thread(a.dream)
+                    else:
+                        a.dream()
+                    a.poll()
+            except Exception as exc:
+                e0 = next(iter(self.engines.values()), None)
+                if e0 is not None:
+                    e0.event(f'autonomy loop error {type(exc).__name__}: {exc}'[:200])
+            await asyncio.sleep(every_s)
 
     async def trend_loop(self, fetch=None, once: bool = False, root: Optional[Path] = None) -> dict:
         """10-09 PAPER trend lane next to the micro engine: every trend_every_s, rebalance a paper book per bar

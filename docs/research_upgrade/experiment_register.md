@@ -166,3 +166,15 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | AB-3 | trend | vol target 25 vs 20 % (4H, TAKER, OOS): B={"bar": "4h", "vol_target": 0.25} vs A={"bar": "4h"} | 638 day net return | Δ +4.014e-05 CI95 [-0.0001286, +0.0002097], DSR 0.01 | NO DIFFERENCE DETECTED |
 | AB-4 | micro | cvd_shield off vs on (agg Oct 1-7, 28 chunks): B=cvd_shield=off vs A= | 168 hour net PnL (U) | Δ +0 CI95 [+0, +0], DSR 0.01 | NO DIFFERENCE DETECTED |
 | AB-5 | micro | early_invalidation on vs shadow (agg Oct 6-7): B=early_invalidation=on vs A= | 48 hour net PnL (U) | Δ +0.01471 CI95 [-0.001413, +0.03304], DSR 0.08 | NO DIFFERENCE DETECTED |
+
+## Vòng (cc) — 09/10/2026: tự học, dreaming, nạp nóng, điều phối vốn
+
+| ID | Loại | Giả thuyết | Dữ liệu | Kết quả | Trạng thái |
+|---|---|---|---|---|---|
+| CC1 | learner | Trọng số agent vào thẳng phiếu bầu cải thiện kết quả | replay liên tục 01–07/10 (agg) | Hạ trọng số → JEV fast-path → tier 10 %: notional $205 vs $145, −8.90 vs −8.51 U | bác bỏ → chỉ được phủ quyết |
+| CC2 | autonomy | Learner (chỉ phủ quyết) + bandit + dreaming + router giảm lỗ | như CC1 | 88 vs 109 lệnh, −6.87 vs −8.51 U, bps/lệnh −5.31 vs −5.36; Δ +0.0097 U/h p 0.006, DSR 0.68 | demo 'on' (giảm lỗ do giao dịch ít đi, không có alpha) |
+| CC3 | dreaming | Ledger thật có bẫy | 79 lệnh, dry-run thư mục tạm | CONVICTION: tier 10 % 18 lệnh −5.7 bps vs tier nhỏ −2.2 → trần $150 | chỉ thị tự động khi restart |
+| CC4 | trend | Chandelier 3 ATR cho 4H LS | OOS 2025-01..2026-09 | Δ −2.4 bps/ngày [−7.8, +2.7] (tổng +18.7 % → +3.5 %) | mặc định tắt |
+| CC5 | lỗi | Lệnh #76 NO_STOP −49 bps (−1.54 U) không ghi mã lỗi | ledger | `stop_reject` (loại + mã) + bẫy NO_STOP | sửa |
+| AB-6 | trend | trend 4H chandelier 3 ATR vs none (TAKER, OOS): B={"bar": "4h", "trail_atr": 3.0} vs A={"bar": "4h"} | 638 day net return | Δ -0.0002378 CI95 [-0.0007781, +0.0002745], DSR 0.00 | NO DIFFERENCE DETECTED |
+| AB-7 | micro | autonomy on v2 vs off (agg Oct 1-7, continuous week): B=autonomy=on v2 (continuous week) vs A=autonomy=off (continuous week) | 168 hour net PnL (U) | Δ +0.009712 CI95 [+0.004531, +0.01551], DSR 0.68 | B better, NOT significant after deflation |

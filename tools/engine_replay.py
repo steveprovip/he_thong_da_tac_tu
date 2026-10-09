@@ -343,6 +343,9 @@ class _Shim:
         self.sync_loop = eng_mod.Runner.sync_loop.__get__(self)
         self.cadence = eng_mod.Runner.cadence.__get__(self)
         self.idle = eng_mod.Runner.idle.__get__(self)
+        self.autonomy = None
+        if hasattr(eng_mod.Runner, 'autonomy_loop'):
+            self.autonomy_loop = eng_mod.Runner.autonomy_loop.__get__(self)
 
 
 def build(symbols, overrides: dict, ledger: Path, balance: float):
@@ -373,18 +376,27 @@ def build(symbols, overrides: dict, ledger: Path, balance: float):
             e.authority.clock = VCLOCK
         e.funnel.clock = VCLOCK
         es[s] = e
-    return eng, es, venue, feeds
+    aut = None
+    if any(getattr(e.p, 'autonomy', 'off') != 'off' for e in es.values()):
+        from core.autonomy import Autonomy                 # 10-09 (cc): learner/bandit/dreaming in the replay too,
+        d = Path(ledger).parent                            # state in the temp dir, never data/ or config/
+        aut = Autonomy(d / 'data', d / 'config', Path(ledger), clock=VCLOCK, seed=7)
+        aut.attach(es)
+    return eng, es, venue, feeds, aut
 
 
 async def run_async(events, symbols, overrides, t0, t1, warmup_s, ledger: Path, balance: float, progress=False):
-    eng, es, venue, feeds = build(symbols, overrides, ledger, balance)
+    eng, es, venue, feeds, aut = build(symbols, overrides, ledger, balance)
     shim = _Shim(eng, es)
+    shim.autonomy = aut
     trade_from = t0 + warmup_s
     for e in es.values():
         await e.start()
         e.halted = 'REPLAY WARMUP'
     tasks = [asyncio.ensure_future(shim.decide_loop(e)) for e in es.values()]
     tasks += [asyncio.ensure_future(shim.sync_loop(e)) for e in es.values()]
+    if aut is not None:
+        tasks.append(asyncio.ensure_future(shim.autonomy_loop(threaded=False)))
     day_key = None
     n_msgs = 0
     it = iter(events)
@@ -425,6 +437,7 @@ async def run_async(events, symbols, overrides, t0, t1, warmup_s, ledger: Path, 
     await asyncio.gather(*tasks, return_exceptions=True)
     wall = _time.perf_counter() - t_wall
     return {'messages': n_msgs, 'wall_s': wall, 'events': {s: list(e.events)[:5] for s, e in es.items()},
+            'autonomy': aut.view() if aut is not None else None,
             'funnel': {s: getattr(e.funnel, 'view', lambda: {})() for s, e in es.items()}}
 
 
@@ -510,7 +523,7 @@ def replay(source: str, data: Path, symbols, t0: float, t1: float, overrides=Non
             'start': _dt.fromtimestamp(t0, timezone.utc).isoformat(), 'end': _dt.fromtimestamp(t1, timezone.utc).isoformat(),
             'warmup_s': warmup_s, 'overrides': overrides or {}, 'code': eng.CODE_VERSION,
             'summary': summarize(rows), 'positions': rows, 'hourly_pnl_u': hourly(rows, t0, t1),
-            'messages': info['messages'], 'wall_s': info['wall_s'],
+            'messages': info['messages'], 'wall_s': info['wall_s'], 'autonomy': info.get('autonomy'),
             'sim_hours_per_wall_s': sim_h / info['wall_s'] if info['wall_s'] else None}
 
 

@@ -1,0 +1,2 @@
+| AB-6 | trend | trend 4H chandelier 3 ATR vs none (TAKER, OOS): B={"bar": "4h", "trail_atr": 3.0} vs A={"bar": "4h"} | 638 day net return | Δ -0.0002378 CI95 [-0.0007781, +0.0002745], DSR 0.00 | NO DIFFERENCE DETECTED |
+| AB-7 | micro | autonomy on v2 vs off (agg Oct 1-7, continuous week): B=autonomy=on v2 (continuous week) vs A=autonomy=off (continuous week) | 168 hour net PnL (U) | Δ +0.009712 CI95 [+0.004531, +0.01551], DSR 0.68 | B better, NOT significant after deflation |

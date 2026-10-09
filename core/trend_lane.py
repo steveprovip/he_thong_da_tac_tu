@@ -43,6 +43,8 @@ class TrendConfig:
     funding_scale: float = 0.5
     funding_window_h: float = 72.0
     band: float = 0.05                               # rebalance band, fraction of equity per symbol
+    trail_atr: Optional[float] = None                # 10-09 (cc) chandelier: flat after a close beyond k x ATR(14)
+                                                     # from the best close since entry; re-entry on a new signal sign
     cost_bps: float = 6.0                            # per side: taker 5 + slip 1 (maker 2 if it fills)
 
     def bars_per_year(self) -> float:
@@ -123,8 +125,45 @@ def weights_series(bars: Dict[str, dict], cfg: TrendConfig, funding: Optional[Di
                 w *= c.funding_scale
             ws.append(w)
             cs.append({'tsmom': ts_i, 'donch': don[i], 'score': score, 'rv': rv, 'funding': fr})
+        if c.trail_atr:
+            ws = chandelier(ws, highs, lows, closes, c.trail_atr)
         out[s], comp[s] = ws, cs
     return out, comp
+
+
+def atr_series(highs, lows, closes, n: int = 14) -> List[Optional[float]]:
+    tr = [highs[0] - lows[0]] + [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+                                 for i in range(1, len(closes))]
+    out, acc = [], 0.0
+    for i, x in enumerate(tr):
+        acc += x
+        if i >= n:
+            acc -= tr[i - n]
+        out.append(acc / n if i >= n - 1 else None)
+    return out
+
+
+def chandelier(weights: Sequence[float], highs, lows, closes, k: float) -> List[float]:
+    """Trailing exit on top of the target weights: once a close retraces k x ATR(14) from the best close of the
+    current side, stay flat until the target changes sign (a fresh signal)."""
+    atr = atr_series(highs, lows, closes)
+    out, side, best, stopped = [], 0.0, None, 0.0
+    for i, w in enumerate(weights):
+        d = sign(w)
+        if stopped and d == stopped:
+            out.append(0.0)
+            continue
+        stopped = 0.0 if d != stopped else stopped
+        if d != side:
+            side, best = d, closes[i]
+        if side and atr[i]:
+            best = max(best, closes[i]) if side > 0 else min(best, closes[i])
+            if (side > 0 and closes[i] < best - k * atr[i]) or (side < 0 and closes[i] > best + k * atr[i]):
+                stopped, side, best = side, 0.0, None
+                out.append(0.0)
+                continue
+        out.append(w)
+    return out
 
 
 def apply_band(targets: Sequence[float], band: float) -> List[float]:

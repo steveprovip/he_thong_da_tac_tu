@@ -221,3 +221,8 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - micro_signals ker/realized_sigma newest_first fast path (identical output, test).
 - Results: baseline replay Oct 1-7 108 positions -5.41 bps; AB-4 cvd_shield never binds (identical); AB-5 early_invalidation on +1.15 bps/trade, CI includes 0.
 - Checks: python -m pytest -q 1396 passed. No restart, no order, ledger untouched.
+
+## 2026-10-09 (cc) Autonomous self-learning & dreaming
+- core/swarm_learner.py (NORO/LUMEN/TIDAL only; Brier, hit-rate, edge; weight 0.2-1.8 shrunk; mute 30 min after 3 losses), core/param_bandit.py (Thompson per KER regime: cs_super_ofi 0.85-0.95, hurdle_min_hold_s 30-90, tp1_scaled_pct 0.30-0.50; ban combo after 2 losses), core/tunables.py (whitelist, risk only down, expiry), core/dreaming_daemon.py (autopsy, CHURN/STREAK/ADVERSE/FEE_DRAG/NO_STOP/CONVICTION traps, data/brain_learnings.jsonl, config/dynamic_state.json, config/live_tunables.json), core/capital_router.py, core/autonomy.py (hub), Runner.autonomy_loop (5 s), Profile.autonomy ('on' demo, 'off' live), ledger fields agents/arms/agent_w/stop_reject, replay runs autonomy in temp dirs.
+- Replay week 10/01-07 continuous: off 109 trades -8.51 U; on v1 (weights in vote) larger size via JEV path -8.90 U -> redesigned to veto-only; on v2 88 trades -6.87 U (+0.0097 U/h p 0.006, DSR 0.68; same bps/trade).
+- Checks: python -m pytest -q 1433 passed. No restart, no order, ledger untouched.

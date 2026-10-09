@@ -177,6 +177,11 @@ BTCUSDT có min notional $100 nên **không** chạy được ở LIVE với v�
 - UI: radar hiện FROZEN VFR x.x, tooltip có VFR và ATR 15 m.
 - Số test: 1033 passed (tests/test_world_quant_economic_engine.py: 26).
 
+### 8.30 Cập nhật 09/10/2026 (cc) — Tự học, Dreaming, nạp nóng tham số, điều phối vốn
+- **Autonomy** (`core/autonomy.py`, demo `autonomy='on'`, live `off`): learner trọng số NORO/LUMEN/TIDAL (chỉ được **phủ quyết** lệnh), bandit Thompson cho OFI tier / hurdle / TP1 khi flat, dreaming 15 phút hoặc 3 lệnh (bẫy CHURN/STREAK/ADVERSE/FEE_DRAG/NO_STOP/CONVICTION → bài học `data/brain_learnings.jsonl` → chỉ thị `config/live_tunables.json`), nạp nóng mỗi 5 s không restart, rủi ro chỉ giảm.
+- **Replay tuần 01–07/10**: −6.87 U vs −8.51 U khi tắt (ít lệnh hơn, bps/lệnh không đổi, DSR 0.68). Thiết kế đầu làm lệnh to hơn qua JEV → đã đổi sang chỉ phủ quyết.
+- Không làm: tắt ZEPHR, tự tăng đòn bẩy, OFI 0.80 (tăng rủi ro). Test: 1433 passed. Chi tiết: `docs/research_upgrade/report_autonomous_self_learning_and_dreaming_2026-10-09.md`.
+
 ### 8.29 Cập nhật 09/10/2026 (bb) — Replay engine thật, A/B ghép cặp, làn trend 1D/4H (paper)
 - **Replay** `tools/engine_replay.py`: chạy chính `Engine` (swarm, gates, sizing, MARIN, phí) trên thời gian ảo với aggTrades / L2 đã ghi; ~0.1 symbol-giờ mỗi giây mỗi lõi (một năm không thể xong trong 30 s). Baseline 01–07/10: −5.41 bps/lệnh.
 - **A/B** `tools/ab_bench.py micro|trend --register`: cùng sự kiện, CI ghép cặp, DSR theo số lần thử, ghi `trial_log.jsonl`. CVD shield không chặn lệnh nào (AB-4); cắt sớm +1.15 bps/lệnh nhưng chưa ý nghĩa (AB-5).

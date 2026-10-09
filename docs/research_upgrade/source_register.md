@@ -70,3 +70,10 @@ Ngày truy cập: 08/10/2026. Kết quả cổ phiếu Mỹ/NYSE/Nasdaq không p
 | 34 | Moskowitz, Ooi & Pedersen (2012), "Time Series Momentum", JFE | TSMOM đa lookback + vol scaling | `core/trend_lane.py` |
 | 35 | Python asyncio event loop (CPython `BaseEventLoop._run_once`, `_clock_resolution`) | Loop thời gian ảo: thời gian tương đối, bỏ timer huỷ ở đầu heap | `tools/engine_replay.py` |
 | 36 | data.binance.vision USD-M daily aggTrades SOLUSDT 2026-09-08 + `data/l2` (bookTicker + depth diff đã ghi) | Nguồn `l2` sổ lệnh thật cho replay | BB2 |
+
+## Bổ sung 09/10/2026 (cc)
+| # | Nguồn | Kết luận dùng được · giới hạn | Áp dụng |
+|---|---|---|---|
+| 37 | Brier (1950), "Verification of forecasts expressed in terms of probability", Monthly Weather Review | Điểm Brier cho dự báo xác suất | `core/swarm_learner.py` |
+| 38 | Thompson (1933); Russo et al. (2018), "A Tutorial on Thompson Sampling" | Lấy mẫu posterior cho multi-armed bandit | `core/param_bandit.py` |
+| 39 | Repo skill `agent-memory-dreaming` (bài học nguyên tử, hợp nhất, nâng luật > 3 lần) và `groktopus-swarm-consensus` (3 agent định hướng, 5 cổng an toàn) | Kiến trúc dreaming; chỉ học trọng số NORO/LUMEN/TIDAL | `core/dreaming_daemon.py`, `core/autonomy.py` |

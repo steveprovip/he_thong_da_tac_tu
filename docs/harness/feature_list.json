@@ -163,6 +163,16 @@
       ],
       "status": "done",
       "evidence": "Replay Oct 1-7 108 positions -5.41 bps; AB-4 cvd_shield identical; AB-5 early_invalidation +1.15 bps CI incl 0; trend 4H LS OOS PSR 0.82 DSR 0.19, PBO 0.35; pytest 1396 passed"
+    },
+    {
+      "id": "autonomy-dreaming-20261009cc",
+      "name": "Autonomy hub: veto-only swarm learner, Thompson parameter bandit, hot-reload tunables (risk only down), dreaming daemon with lessons/rules, capital router",
+      "description": "core/autonomy.py, core/swarm_learner.py, core/param_bandit.py, core/tunables.py, core/dreaming_daemon.py, core/capital_router.py, Runner.autonomy_loop, Profile.autonomy, trend chandelier option; tests/test_autonomy_self_learning.py (37)",
+      "dependencies": [
+        "replay-ab-trend-20261009bb"
+      ],
+      "status": "done",
+      "evidence": "Week replay off -8.51 U / on v2 -6.87 U (fewer trades, same bps), DSR 0.68; v1 weights-in-vote upsized via JEV -> veto-only; dreaming dry-run CONVICTION trap on live ledger; pytest 1433 passed"
     }
   ]
 }

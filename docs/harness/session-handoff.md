@@ -94,3 +94,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Every micro change: `python tools/ab_bench.py micro --days <range> --b-set field=value --register` before demo; a code change: `git worktree add ../gt_old <commit>` + `--a-code ../gt_old`. Agg source = synthetic book (book gates approximate); prefer `--source rec` once tools/record_market.py --light has run.
 - Trend lane is PAPER (demo profile trend_lane='paper'): starts only when the user restarts the engine; outputs data/trend_paper_1d|4h.json(l). Do not route it to orders unless OOS DSR > 0.95 (currently 0.19 for 4H LS).
 - Open questions: CVD shield never binds on mainnet tape (thresholds in raw USD); early_invalidation needs ~262 paired hours.
+
+## Handoff — 2026-10-09 (cc)
+- Autonomy is ON in demo after the next restart: watch '⚡ AI SELF-ADAPTED' events and snapshot['autonomy']; override or clear config/live_tunables.json by hand at any time (validated, risk only down, expires).
+- First dreaming pass on the current ledger will cap cs_max_notional at $150 for 30 min (CONVICTION: top tier worst). Decision pending for the user: JEV fast-path trades inherit score = JEV/10 -> top conviction tier.
+- Learning is slow by construction (~100 trades/week spread over 3 regimes x 9 arms); evaluate with a continuous engine_replay run, not chunked ab_bench (state resets per chunk).
