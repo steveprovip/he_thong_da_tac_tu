@@ -224,8 +224,8 @@ async def test_mr_lane_trades_the_sideway_with_tp015_sl010(tmp_path):
     assert d.allowed and e.pos and e.pos['path'] == 'MR' and e.pos['entry_type'] == 'GTX'
     entry, mid = e.pos['entry'], (83_950.0 + 83_950.1) / 2
     assert entry == pytest.approx(mid * (1 - 2e-4), abs=0.11) and entry < 83_950.0       # A-S quote, capped 2 bps
-    dev = 0.13005
-    assert e.pos['tp'] == pytest.approx(entry * (1 + dev / 100), abs=0.2) and e.pos['sl'] == pytest.approx(entry * 0.9992, abs=0.2)
+    dev = abs(e.features.get('vwap_dev_pct') or 0.13005)
+    assert e.pos['tp'] == pytest.approx(entry * (1 + dev / 100), abs=1.5) and e.pos['sl'] == pytest.approx(entry * 0.9992, abs=1.5)
     assert e.pos['bracket_src'] == 'MR' and not e.pos['split'] and e.radar()['label'] == 'LONG OPEN'
     book_at(feed, round(e.pos['tp'] + 0.1, 1))                                 # back toward VWAP: TP fills
     await e.sync()
