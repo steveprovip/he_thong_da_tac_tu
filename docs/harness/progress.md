@@ -270,3 +270,10 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Binance: BNB -10 % = +0.6 bps; USDC-M 0 % maker promo ended 2025-12-10. P15_rr25 (100/40) HO -6.39 SR -4.0; P15_rr25atr -5.48 SR -1.8 -> added to demo shadow only.
 - core/venues/: BaseVenue (place_post_only, cancel_order, position_view, set_disaster_stop), BinanceAdapter, MexcVenue / HyperliquidVenue prototypes (send nothing without transport/signer); tools/venue_probe.py. Not wired into the engine.
 - Checks: python -m pytest -q 1503 passed, 28 skipped, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
+
+## 2026-10-10 (e) Burst log autopsy, 15m universe screener, funding arb architecture (research)
+- Burst DEMO log 19:19-22:12: 53 shadow trades (form said 40), 2 wins, -455.7 bps / -3.40 U; gross -2.62 (= replay -2.2..-3.1), fee ~6 bps; 0 TP/SL, all 60 s time stops (MAKER-EXIT = passive time-stop exit); forward net -8.6 [-10.05,-7.01] vs replay HO -7.2/-7.7. Lanes unchanged (trend active, burst/intraday shadow).
+- core/universe.py screen(): point-in-time USDT-perp universe (median 14 d quote volume >= 50 M, median daily range 150-1500 bps, age >= 90 d, COIN only, UNKNOWN excluded). Not wired. Live 10-10: 39 eligible, top 30 in snapshot_2026-10-10e/universe_2026-10-10.json (MAGIC/US/LUMIA pumps excluded).
+- Funding (public API): Binance majors 1.2-6.8 % APR over 166 d, 7 d windows > 30 bps cost 0-3 %; Binance vs Hyperliquid spread 2.4-5.1 % APR, break-even ~3-4 weeks. Existing core/funding_carry + carry_runtime reused; phased plan (offline replay -> CarryVenue read-only -> shadow -> testnet) in report_log_autopsy_universe_funding_2026-10-10e.md.
+- Open: multi-coin P15_rr25atr replay needs 1m kline download (~2-4 GB, user approval) and a decision on the win > 50 % gate for R:R >= 2 variants.
+- Checks: python -m pytest -q 1533 passed before, 1540 passed after (+7 tests/test_universe.py). No restart, no order, ledgers untouched.

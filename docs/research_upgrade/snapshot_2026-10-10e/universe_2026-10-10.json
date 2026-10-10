@@ -1,0 +1,152 @@
+[
+ {
+  "symbol": "BTCUSDT",
+  "median_qv": 11159366398.80695,
+  "median_range_bps": 241.50777829646813
+ },
+ {
+  "symbol": "ETHUSDT",
+  "median_qv": 8097068290.19619,
+  "median_range_bps": 213.3674091039589
+ },
+ {
+  "symbol": "SOLUSDT",
+  "median_qv": 1890511947.1793,
+  "median_range_bps": 369.83398897013143
+ },
+ {
+  "symbol": "ZECUSDT",
+  "median_qv": 1811931227.256905,
+  "median_range_bps": 696.9866980119535
+ },
+ {
+  "symbol": "XRPUSDT",
+  "median_qv": 927047225.636305,
+  "median_range_bps": 356.72526907106965
+ },
+ {
+  "symbol": "NEARUSDT",
+  "median_qv": 769389282.931,
+  "median_range_bps": 1087.4671547406494
+ },
+ {
+  "symbol": "HYPEUSDT",
+  "median_qv": 670670449.127745,
+  "median_range_bps": 517.8136116714338
+ },
+ {
+  "symbol": "DOGEUSDT",
+  "median_qv": 452671497.18333995,
+  "median_range_bps": 474.2019532807981
+ },
+ {
+  "symbol": "SUIUSDT",
+  "median_qv": 439452603.293345,
+  "median_range_bps": 656.8166939568398
+ },
+ {
+  "symbol": "PUMPUSDT",
+  "median_qv": 363772513.55716,
+  "median_range_bps": 1172.0971255681975
+ },
+ {
+  "symbol": "WLDUSDT",
+  "median_qv": 363391156.21155,
+  "median_range_bps": 1249.216922751547
+ },
+ {
+  "symbol": "ENAUSDT",
+  "median_qv": 355748555.10299504,
+  "median_range_bps": 1008.9603500875817
+ },
+ {
+  "symbol": "UNIUSDT",
+  "median_qv": 335742035.87049997,
+  "median_range_bps": 656.5429551228815
+ },
+ {
+  "symbol": "BNBUSDT",
+  "median_qv": 317278869.79955,
+  "median_range_bps": 266.78041074779657
+ },
+ {
+  "symbol": "ADAUSDT",
+  "median_qv": 227351879.435,
+  "median_range_bps": 686.7204902180365
+ },
+ {
+  "symbol": "1000PEPEUSDT",
+  "median_qv": 217203457.5533172,
+  "median_range_bps": 567.3908846027746
+ },
+ {
+  "symbol": "AVAXUSDT",
+  "median_qv": 205697031.7825,
+  "median_range_bps": 577.052664358526
+ },
+ {
+  "symbol": "TAOUSDT",
+  "median_qv": 196928705.654075,
+  "median_range_bps": 646.1548065544412
+ },
+ {
+  "symbol": "LINKUSDT",
+  "median_qv": 175093737.12456,
+  "median_range_bps": 456.34786954322067
+ },
+ {
+  "symbol": "ONDOUSDT",
+  "median_qv": 155482421.281135,
+  "median_range_bps": 758.6438474332497
+ },
+ {
+  "symbol": "AAVEUSDT",
+  "median_qv": 147500285.6855,
+  "median_range_bps": 544.1296564666668
+ },
+ {
+  "symbol": "FILUSDT",
+  "median_qv": 135688075.13025498,
+  "median_range_bps": 766.7297648416632
+ },
+ {
+  "symbol": "ARBUSDT",
+  "median_qv": 119062885.92775899,
+  "median_range_bps": 652.2773601975466
+ },
+ {
+  "symbol": "LTCUSDT",
+  "median_qv": 114806366.18417999,
+  "median_range_bps": 404.3139611207078
+ },
+ {
+  "symbol": "TRUMPUSDT",
+  "median_qv": 111582968.802615,
+  "median_range_bps": 578.4390513012829
+ },
+ {
+  "symbol": "SANDUSDT",
+  "median_qv": 108430036.278005,
+  "median_range_bps": 940.349618464157
+ },
+ {
+  "symbol": "BCHUSDT",
+  "median_qv": 98035268.38752,
+  "median_range_bps": 451.80052127722684
+ },
+ {
+  "symbol": "PENGUUSDT",
+  "median_qv": 94052237.088489,
+  "median_range_bps": 909.4049260495613
+ },
+ {
+  "symbol": "XLMUSDT",
+  "median_qv": 85834757.80357501,
+  "median_range_bps": 613.2491645074822
+ },
+ {
+  "symbol": "ZROUSDT",
+  "median_qv": 83107054.80011001,
+  "median_range_bps": 1394.8214586944987
+ }
+]

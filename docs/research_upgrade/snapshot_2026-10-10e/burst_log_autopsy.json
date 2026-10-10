@@ -1,0 +1,20 @@
+{
+ "window": "2026-10-10 19:19-22:13 UTC+7",
+ "n": 53,
+ "wins": 2,
+ "sum_net_bps": -455.7,
+ "mean_gross_bps": -2.62,
+ "mean_net_bps": -8.6,
+ "sum_net_usd": -3.401,
+ "by_exit": {
+  "TIME-TAKER": {
+   "n": 35,
+   "mean_gross": -2.67
+  },
+  "MAKER-EXIT": {
+   "n": 18,
+   "mean_gross": -2.52
+  }
+ },
+ "median_hold_s": 70.2
+}

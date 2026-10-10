@@ -1,0 +1,156 @@
+{
+ "source": "GET fapi.binance.com/fapi/v1/fundingRate limit=1000 (500 returned), read 2026-10-10",
+ "cost_assumption_bps": 30,
+ "symbols": {
+  "BTCUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.423,
+   "apr_pct": 4.64,
+   "pct_positive": 85.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "ETHUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.319,
+   "apr_pct": 3.5,
+   "pct_positive": 81.2,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "SOLUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.111,
+   "apr_pct": 1.22,
+   "pct_positive": 59.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "XRPUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.127,
+   "apr_pct": 1.39,
+   "pct_positive": 59.2,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "DOGEUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.456,
+   "apr_pct": 5.01,
+   "pct_positive": 79.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "BNBUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.371,
+   "apr_pct": 4.07,
+   "pct_positive": 60.6,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "ADAUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.222,
+   "apr_pct": 2.43,
+   "pct_positive": 64.6,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "SUIUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.362,
+   "apr_pct": 3.97,
+   "pct_positive": 73.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "AVAXUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.254,
+   "apr_pct": 2.79,
+   "pct_positive": 70.2,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "LINKUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.491,
+   "apr_pct": 5.39,
+   "pct_positive": 84.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "HYPEUSDT": {
+   "n": 500,
+   "days": 83.2,
+   "mean_bps_per_print": 0.311,
+   "apr_pct": 6.83,
+   "pct_positive": 82.0,
+   "pct_7d_windows_above_30bps": 1.7,
+   "first": "2026-07-19T08:00:00",
+   "last": "2026-10-10T12:00:00.003000"
+  },
+  "ENAUSDT": {
+   "n": 500,
+   "days": 83.2,
+   "mean_bps_per_print": 0.287,
+   "apr_pct": 6.3,
+   "pct_positive": 80.2,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-07-19T08:00:00",
+   "last": "2026-10-10T12:00:00.003000"
+  },
+  "1000PEPEUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.188,
+   "apr_pct": 2.06,
+   "pct_positive": 65.4,
+   "pct_7d_windows_above_30bps": 3.3,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "NEARUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.449,
+   "apr_pct": 4.93,
+   "pct_positive": 77.0,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  },
+  "AAVEUSDT": {
+   "n": 500,
+   "days": 166.3,
+   "mean_bps_per_print": 0.287,
+   "apr_pct": 3.14,
+   "pct_positive": 73.8,
+   "pct_7d_windows_above_30bps": 0.0,
+   "first": "2026-04-27T00:00:00.004000",
+   "last": "2026-10-10T08:00:00.001000"
+  }
+ }
+}

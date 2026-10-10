@@ -244,6 +244,16 @@
       ],
       "status": "done",
       "evidence": "No variant net > 0 with CI > 0 under any fee >= 0 incl. zero (intraday gross CI contains 0; burst gross -2.2..-3.1); MEXC API 6/8 bps -> -13..-15 bps/trade; P15_rr25 SR -4.0, P15_rr25atr SR -1.8; pytest 1503 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "log-autopsy-universe-funding-20261010e",
+      "name": "Burst log autopsy, point-in-time 15m universe screener, funding arb architecture",
+      "description": "core/universe.py (not wired), tests/test_universe.py (7), snapshot_2026-10-10e, report_log_autopsy_universe_funding_2026-10-10e.md",
+      "dependencies": [
+        "venue-pivot-zero-fee-20261010d"
+      ],
+      "status": "done",
+      "evidence": "Burst log 53 trades (not 40) gross -2.62 net -8.6 [-10.05,-7.01] = replay; universe 30/39 eligible live 10-10; funding majors 1.2-6.8 % APR, BN-HL spread 2.4-5.1 % APR; pytest 1540 passed (1533 before)"
     }
   ]
 }
