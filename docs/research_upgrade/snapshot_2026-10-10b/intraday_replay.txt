@@ -1,0 +1,63 @@
+intraday replay BTCUSDT,SOLUSDT,DOGEUSDT | 28s | DEV-best {'S1': 'S1_SESSION', 'S2': 'S2_slope3_tp60'}
+
+S1_ROLL100  POOLED
+   DEV     n  7689 (21.1/d) win 33% net   -8.1 [  -8.9,   -7.2] gross   -1.1 SR -17.42 $ -2.57/d DD $939 hold~16m {'SL': 4565, 'TP': 1860, 'TIME': 1264}
+   HOLDOUT n  5680 (20.8/d) win 32% net   -8.0 [  -8.9,   -7.0] gross   -0.9 SR -17.55 $ -2.49/d DD $681 hold~17m {'SL': 3398, 'TIME': 1025, 'TP': 1257}
+   BTCUSDT  DEV n  2897 ( 7.9/d) win 32% net   -7.2 [  -8.1,   -6.3] gross   -0.2 SR -15.16 $ -0.86/d DD $314 hold~16m {'SL': 1688, 'TP': 700, 'TIME': 509}
+            HO  n  2053 ( 7.5/d) win 31% net   -7.8 [  -8.8,   -6.7] gross   -0.6 SR -15.88 $ -0.88/d DD $239 hold~16m {'SL': 1251, 'TIME': 364, 'TP': 438}
+   SOLUSDT  DEV n  2471 ( 6.8/d) win 33% net   -9.2 [ -10.7,   -7.7] gross   -2.2 SR -11.65 $ -0.94/d DD $346 hold~16m {'SL': 1487, 'TP': 581, 'TIME': 403}
+            HO  n  1745 ( 6.4/d) win 33% net   -8.5 [ -10.0,   -6.8] gross   -1.4 SR -10.89 $ -0.81/d DD $222 hold~18m {'TP': 394, 'SL': 1042, 'TIME': 309}
+   DOGEUSDT DEV n  2321 ( 6.4/d) win 34% net   -8.1 [  -9.7,   -6.4] gross   -1.1 SR -9.67 $ -0.77/d DD $283 hold~17m {'SL': 1390, 'TIME': 352, 'TP': 579}
+            HO  n  1882 ( 6.9/d) win 34% net   -7.8 [  -9.2,   -6.3] gross   -0.7 SR -11.76 $ -0.80/d DD $220 hold~17m {'SL': 1105, 'TIME': 352, 'TP': 425}
+
+S1_SESSION  POOLED
+   DEV     n  5945 (16.3/d) win 32% net   -8.0 [  -9.2,   -6.9] gross   -0.3 SR -12.43 $ -1.97/d DD $717 hold~21m {'SL': 3552, 'TP': 441, 'TIME': 1952}
+   HOLDOUT n  4704 (17.2/d) win 32% net   -7.1 [  -8.3,   -5.8] gross   +0.6 SR -12.15 $ -1.83/d DD $500 hold~21m {'SL': 2757, 'TIME': 1538, 'TP': 409}
+   BTCUSDT  DEV n  2304 ( 6.3/d) win 30% net   -7.2 [  -8.4,   -6.0] gross   +0.4 SR -10.58 $ -0.68/d DD $250 hold~19m {'SL': 1395, 'TP': 183, 'TIME': 726}
+            HO  n  1641 ( 6.0/d) win 29% net   -7.8 [  -9.0,   -6.5] gross   -0.1 SR -12.55 $ -0.70/d DD $191 hold~19m {'SL': 995, 'TIME': 513, 'TP': 133}
+   SOLUSDT  DEV n  1973 ( 5.4/d) win 33% net   -9.0 [ -10.8,   -7.0] gross   -1.3 SR -8.40 $ -0.73/d DD $266 hold~21m {'SL': 1175, 'TIME': 661, 'TP': 137}
+            HO  n  1574 ( 5.8/d) win 33% net   -7.4 [  -9.5,   -5.4] gross   +0.2 SR -7.70 $ -0.64/d DD $178 hold~23m {'SL': 897, 'TIME': 539, 'TP': 138}
+   DOGEUSDT DEV n  1668 ( 4.6/d) win 34% net   -8.0 [ -10.2,   -5.9] gross   -0.3 SR -6.54 $ -0.55/d DD $201 hold~24m {'SL': 982, 'TIME': 565, 'TP': 121}
+            HO  n  1489 ( 5.5/d) win 35% net   -6.0 [  -8.0,   -4.0] gross   +1.6 SR -6.47 $ -0.49/d DD $134 hold~21m {'SL': 865, 'TIME': 486, 'TP': 138}
+
+S2_slope3_tp60  POOLED
+   DEV     n  1601 ( 4.4/d) win 28% net   -7.6 [  -9.9,   -5.3] gross   -0.5 SR -6.18 $ -0.50/d DD $185 hold~5m {'SL': 1220, 'TP': 381}
+   HOLDOUT n   620 ( 2.3/d) win 28% net   -8.4 [ -12.5,   -4.6] gross   -1.3 SR -4.50 $ -0.29/d DD $79 hold~5m {'SL': 483, 'TP': 137}
+   BTCUSDT  DEV n   117 ( 0.3/d) win 26% net   -6.2 [ -13.0,   +0.5] gross   +1.0 SR -1.86 $ -0.03/d DD $12 hold~5m {'SL': 93, 'TP': 24}
+            HO  n    82 ( 0.3/d) win 23% net  -13.5 [ -22.3,   -5.3] gross   -6.2 SR -3.25 $ -0.06/d DD $17 hold~4m {'SL': 68, 'TP': 14}
+   SOLUSDT  DEV n   699 ( 1.9/d) win 27% net   -8.1 [ -11.1,   -5.0] gross   -1.0 SR -4.75 $ -0.23/d DD $87 hold~5m {'TP': 160, 'SL': 539}
+            HO  n   243 ( 0.9/d) win 26% net   -9.7 [ -14.6,   -5.3] gross   -2.5 SR -4.32 $ -0.13/d DD $37 hold~5m {'SL': 193, 'TP': 50}
+   DOGEUSDT DEV n   785 ( 2.2/d) win 28% net   -7.3 [ -10.5,   -4.5] gross   -0.3 SR -4.51 $ -0.24/d DD $92 hold~5m {'SL': 588, 'TP': 197}
+            HO  n   295 ( 1.1/d) win 31% net   -6.0 [ -11.4,   -0.7] gross   +1.0 SR -2.52 $ -0.10/d DD $31 hold~5m {'SL': 222, 'TP': 73}
+
+S2_slope3_tp100  POOLED
+   DEV     n  1583 ( 4.3/d) win 24% net   -8.4 [ -11.1,   -5.8] gross   -0.8 SR -6.00 $ -0.54/d DD $204 hold~6m {'SL': 1399, 'TP': 182, 'TIME': 2}
+   HOLDOUT n   615 ( 2.3/d) win 27% net   -7.5 [ -12.1,   -2.8] gross   -0.0 SR -3.72 $ -0.25/d DD $70 hold~6m {'SL': 542, 'TP': 73}
+   BTCUSDT  DEV n   117 ( 0.3/d) win 26% net   -5.3 [ -13.6,   +3.6] gross   +2.3 SR -1.26 $ -0.03/d DD $10 hold~6m {'SL': 106, 'TP': 10, 'TIME': 1}
+            HO  n    82 ( 0.3/d) win 22% net  -11.8 [ -21.3,   -2.9] gross   -4.2 SR -2.86 $ -0.05/d DD $16 hold~5m {'SL': 74, 'TP': 8}
+   SOLUSDT  DEV n   691 ( 1.9/d) win 25% net   -7.9 [ -11.2,   -4.7] gross   -0.3 SR -4.44 $ -0.22/d DD $84 hold~5m {'SL': 608, 'TP': 83}
+            HO  n   240 ( 0.9/d) win 25% net   -8.5 [ -14.7,   -2.5] gross   -0.9 SR -3.37 $ -0.11/d DD $34 hold~6m {'SL': 212, 'TP': 28}
+   DOGEUSDT DEV n   775 ( 2.1/d) win 24% net   -9.3 [ -12.5,   -6.0] gross   -1.7 SR -5.04 $ -0.29/d DD $113 hold~6m {'SL': 685, 'TP': 89, 'TIME': 1}
+            HO  n   293 ( 1.1/d) win 30% net   -5.6 [ -11.6,   +0.8] gross   +1.9 SR -2.06 $ -0.09/d DD $28 hold~6m {'SL': 256, 'TP': 37}
+
+S2_slope1_tp60  POOLED
+   DEV     n    40 ( 0.1/d) win 48% net  -10.0 [ -31.1,   +9.9] gross   -3.9 SR -0.92 $ -0.02/d DD $11 hold~2m {'TP': 19, 'SL': 21}
+   HOLDOUT n    16 ( 0.1/d) win 31% net  -11.3 [ -51.2,  +15.5] gross   -4.5 SR -0.85 $ -0.01/d DD $3 hold~2m {'TP': 5, 'SL': 11}
+   BTCUSDT  DEV n     3 ( 0.0/d) win 67% net  +16.9 [ -61.3,  +56.0] gross  +22.2 SR +0.51 $ +0.00/d DD $1 hold~3m {'TP': 2, 'SL': 1}
+            HO  n     1 ( 0.0/d) win 100% net  +56.0 [ +56.0,  +56.0] gross  +60.0 SR +1.16 $ +0.00/d DD $0 hold~2m {'TP': 1}
+   SOLUSDT  DEV n    14 ( 0.0/d) win 36% net  -40.3 [-110.2,   +4.4] gross  -33.8 SR -1.21 $ -0.02/d DD $10 hold~3m {'SL': 9, 'TP': 5}
+            HO  n     9 ( 0.0/d) win 33% net   -2.0 [ -29.5,  +26.3] gross   +4.7 SR -0.19 $ -0.00/d DD $1 hold~2m {'SL': 6, 'TP': 3}
+   DOGEUSDT DEV n    23 ( 0.1/d) win 52% net   +4.9 [ -23.1,  +26.1] gross  +10.8 SR +0.40 $ +0.00/d DD $4 hold~2m {'SL': 11, 'TP': 12}
+            HO  n     6 ( 0.0/d) win 17% net  -36.3 [ -86.6,   +5.8] gross  -29.0 SR -1.54 $ -0.01/d DD $3 hold~2m {'SL': 5, 'TP': 1}
+
+S2_slope1_tp100  POOLED
+   DEV     n    40 ( 0.1/d) win 32% net  -14.8 [ -38.2,  +12.1] gross   -8.0 SR -1.06 $ -0.02/d DD $18 hold~3m {'TP': 12, 'SL': 28}
+   HOLDOUT n    16 ( 0.1/d) win 25% net   -5.9 [ -55.4,  +25.6] gross   +1.1 SR -0.35 $ -0.01/d DD $4 hold~2m {'TP': 4, 'SL': 12}
+   BTCUSDT  DEV n     3 ( 0.0/d) win 67% net  +43.6 [ -61.3,  +96.0] gross  +48.9 SR +0.88 $ +0.01/d DD $1 hold~4m {'TP': 2, 'SL': 1}
+            HO  n     1 ( 0.0/d) win 100% net  +96.0 [ +96.0,  +96.0] gross +100.0 SR +1.16 $ +0.01/d DD $0 hold~4m {'TP': 1}
+   SOLUSDT  DEV n    14 ( 0.0/d) win 29% net  -35.9 [-101.7,  +15.2] gross  -29.1 SR -1.12 $ -0.02/d DD $10 hold~3m {'SL': 10, 'TP': 4}
+            HO  n     9 ( 0.0/d) win 22% net   -1.4 [ -39.9,  +31.5] gross   +5.7 SR -0.12 $ -0.00/d DD $1 hold~2m {'SL': 7, 'TP': 2}
+   DOGEUSDT DEV n    23 ( 0.1/d) win 30% net   -9.5 [ -37.4,  +21.4] gross   -2.6 SR -0.64 $ -0.01/d DD $8 hold~3m {'SL': 17, 'TP': 6}
+            HO  n     6 ( 0.0/d) win 17% net  -29.7 [ -86.6,  +20.8] gross  -22.3 SR -1.15 $ -0.01/d DD $3 hold~2m {'SL': 5, 'TP': 1}
+
+verdict {"BTCUSDT": {"S1": {"variant": "S1_SESSION", "verdict": "SHADOW", "holdout_mean_net_bps": -7.760579610967437, "holdout_ci95": [-8.968871035693589, -6.532815099202819], "holdout_win_rate": 0.29250457038391225, "holdout_n": 1641}, "S2": {"variant": "S2_slope3_tp60", "verdict": "SHADOW", "holdout_mean_net_bps": -13.468624752669623, "holdout_ci95": [-22.269828702463702, -5.294252832174505], "holdout_win_rate": 0.23170731707317074, "holdout_n": 82}}, "SOLUSDT": {"S1": {"variant": "S1_SESSION", "verdict": "SHADOW", "holdout_mean_net_bps": -7.4416509629438945, "holdout_ci95": [-9.534436703075762, -5.380153219111005], "holdout_win_rate": 0.3290978398983482, "holdout_n": 1574}, "S2": {"variant": "S2_slope3_tp60", "verdict": "SHADOW", "holdout_mean_net_bps": -9.723043197301955, "holdout_ci95": [-14.64549891002994, -5.281124505196005], "holdout_win_rate": 0.26337448559670784, "holdout_n": 243}}, "DOGEUSDT": {"S1": {"variant": "S1_SESSION", "verdict": "SHADOW", "holdout_mean_net_bps": -5.988540096979315, "holdout_ci95": [-7.979849918134744, -3.9729303807276724], "holdout_win_rate": 0.3465413028878442, "holdout_n": 1489}, "S2": {"variant": "S2_slope3_tp60", "verdict": "SHADOW", "holdout_mean_net_bps": -5.9945689428806785, "holdout_ci95": [-11.44234539944301, -0.700296957240561], "holdout_win_rate": 0.30847457627118646, "holdout_n": 295}}}

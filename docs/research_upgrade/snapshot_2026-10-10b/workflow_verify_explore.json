@@ -1,0 +1,531 @@
+{
+ "independent-reimpl": {
+  "summary": "I wrote my own version of S1_ROLL100 and S2_slope3_tp60 using only the spec in the docstring (lines 1-45), without reading the tool's code. It is at /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_independent-reimpl/reimpl.py and runs in about 20 s. I ran it on BTC, SOL and DOGE and compared it with two runs of the original tool. One was the run the task asked for (orig.json, 03:29 UTC), made from the uncommitted working copy and identical to the first run in intra_v1.json. The other (orig2.json) is a re-run of the version committed as 978a89b at 03:35, because the tool file changed after my first run.\n\nS1 agrees within 0.35 % on trade count and 0.03 bps on mean net. S2 differs by about 20 % in trade count against the 03:29 run, which crosses the 20 % threshold in DEV. I traced every gap to a specific rule: adding two rules to my version reproduces each original run exactly, per symbol and per split, with mean net matching to at least 1e-6 bps.\n\nRule 1 (S2 only, 03:29 run): a pending S2 entry order was cancelled after 3 five-minute closes (the `pull_bars=3` parameter). This TTL appears nowhere in the spec, which says the order is re-anchored while the trend holds and cancelled only when it fails. The committed version no longer does this; on S2 it now matches my spec-literal code except for rule 2.\n\nRule 2 (both strategies, both runs): no new entry at a 5m close if the previous trade exited in that same minute. The spec is ambiguous here, and the effect is tiny.\n\nSo my implementation follows the spec on the S2 order lifetime, and the committed tool now does too. Neither difference changes the economic conclusion: both strategies lose about 7.5\u20138.5 bps per trade after costs, with win rates of 27\u201333 %. That is far from the user's targets of more than 50 % wins and more than +15 bps per trade.\n\nSeparately, an issue both versions share: in 89 % of S2 fills the stop from the last two closed 5m bars lands on the wrong side of the entry price. Those trades fall back to a 1\u00d7ATR stop, which is then trailed up to the low (or high) of the 5m bar the fill happened in. As a result the median S2 trade lasts only 4\u20135 minutes and never reaches the 45-minute time exit. If someone read the spec's \"within 5 bps\" rule as an absolute distance, the replay would show a fake edge.",
+  "findings": [
+   {
+    "severity": "minor",
+    "title": "S2 trade count in the requested run (and the first run, intra_v1.json) came from an unspecified 3-bar order lifetime",
+    "detail": "The 03:29 run used the uncommitted working copy and gave S2 DEV n=1340 and HOLDOUT n=519. My spec-literal version gives 1611 and 622, which is +20.2 % and +19.8 %; DEV crosses the 20 % materiality threshold. Adding one extra rule to my code reproduces the original exactly. The rule is a 3-bar lifetime on the pending pull-back order (`params.pull_bars=3`): the order is placed at the 5m close, re-anchored at the next two closes, cancelled at the third close with no new order placed at that close, and placed again at the following close if the trend still holds. The spec (lines 26-27) says the order is re-anchored at each 5m close while the trend condition holds and cancelled only at the first close where it fails; it says nothing about a lifetime. My implementation follows the spec. The committed tool (978a89b; the file changed at 03:35:01, after my run) no longer has the lifetime: it gives 1601 and 620, which equals my spec-literal version plus the rule in the next finding. `pull_bars: 3` is still printed in the params JSON. I did not read the code, so I cannot tell whether it is now unused. Any report numbers taken from intra_v1.json or orig.json for S2 are stale: 3.67 trades/day, win 28.2 %, net -7.05 bps in DEV, and 1.90 trades/day, net -9.10 bps in HOLDOUT.",
+    "evidence": "Pooled S2_slope3_tp60.\n- Original at 03:29: DEV n=1340, win 28.2 %, net -7.054. HOLDOUT n=519, win 27.2 %, net -9.103.\n- My spec-literal version: DEV n=1611, win 27.50 %, net -7.656. HOLDOUT n=622, win 27.97 %, net -8.494.\n- My version with the 3-bar lifetime and the same-minute block: DEV 1340 (BTC/SOL/DOGE 99/574/667), net -7.054, exits SL 1017 / TP 323. HOLDOUT 519 (65/209/245), net -9.103. All identical to orig.json; per-symbol nets match to 1e-9.\n- Lifetime alone: 1347 and 519.\n- Committed 978a89b: DEV 1601 (117/699/785), net -7.575, win 27.6 %. HOLDOUT 620 (82/243/295), net -8.444, win 28.1 %. Identical to my spec-literal version plus the same-minute block.\n- Rejected hypotheses: ADX taken from the previous 15m bar 1587; ADX smoothed with ewm span 14 1565; ADX smoothed with SMA 1487; requiring the trend for 2 bars 1430 / 3 bars 1214; one trade per trend episode 1498; stop from the last 3 bars 1609.",
+    "direction": "neutral: net changes by only about 0.6 bps, in opposite directions in DEV and HOLDOUT, and the conclusion stays negative. Following the spec raises trade frequency by about 20 % (DEV 3.67 to 4.41 trades/day; HOLDOUT 1.90 to 2.28 trades/day) without making the strategy profitable.",
+    "suggested_fix": "Quote S2 numbers from the committed tool (orig2.json: 1601 and 620 trades, net -7.6 and -8.4 bps), not from intra_v1.json. Either remove `pull_bars` from params or document it in the pre-registered docstring if any lifetime is meant to exist."
+   },
+   {
+    "severity": "minor",
+    "title": "Extra rule in both versions: no new entry at a 5m close when the previous trade exited in that same minute",
+    "detail": "The original skips a new S1 or S2 signal at a 5m close if that strategy's previous position exited during the last 1m bar of the 5m bar, i.e. the same minute as the decision. Read literally, the spec allows the entry: the exit happens inside that minute, so the strategy is flat when the bar closes. The spec only says 'one position per symbol per strategy', so both readings are defensible. Adding this block to my version reproduces S1 exactly. Without it, my S1 has 18 more trades in DEV and 20 more in HOLDOUT.",
+    "evidence": "S1_ROLL100 pooled, spec-literal version vs original:\n- DEV: n 7707 vs 7689 (+0.23 %), win 33.07 vs 33.03 %, net -8.097 vs -8.118 bps.\n- HOLDOUT: n 5700 vs 5680 (+0.35 %), win 32.44 vs 32.41 %, net -7.988 vs -7.987.\n\nWith the same-minute block (--s1-block 1):\n- DEV 7689 (2897/2471/2321), exits SL 4565 / TP 1861 / TIME 1263. The original has TP 1860 / TIME 1264, a single trade differing.\n- HOLDOUT 5680 (2053/1745/1882), exits SL 3398 / TP 1257 / TIME 1025, exact.\n- BTC HOLDOUT net -7.7758512 vs original -7.7758512.\n\nFor S2 the block removes 10 trades in DEV (1611 to 1601) and 2 in HOLDOUT (622 to 620).",
+    "direction": "neutral: at most 0.6 % change in trade count and about 0.1 bps in net",
+    "suggested_fix": "State the rule in the docstring, e.g. 'a new entry cannot be placed at a 5m close in whose last minute the previous position of that strategy exited', or drop it. It does not change any conclusion."
+   },
+   {
+    "severity": "minor",
+    "title": "Shared by both versions: S2's two-bar stop is usually on the wrong side, so S2 becomes a ~5-minute trade",
+    "detail": "This is not a disagreement between the implementations; both behave the same way, so the spec is the issue. A long S2 entry is a buy limit at EMA20 below a close that is above EMA20. It fills when the still-open 5m bar trades down through EMA20, so the lowest low of the last two closed bars is usually above the entry price. Read as a signed distance (stop distance below 5 bps, including negative, means use 1 ATR), which is what the original's numbers match, 92 % of trades fall back to the 1\u00d7ATR stop. The stop is then trailed to the fill bar's own low at the first 5m close, which is very close to entry. That gives a median hold of 4\u20135 minutes and zero 45-minute time exits, so S2 does not test the request's 15\u201330 minute swing. Read as an absolute distance (|distance| < 5 bps), the stop often sits above the entry, and the 'in the fill minute only the stop counts' rule books those exits as profits. That produces a spurious edge. Not trailing to the fill bar does not rescue the strategy.",
+    "evidence": "- Spec-literal run over all periods: 3284 S2 fills. 2919 (89 %) have the two-bar extreme on the wrong side of entry, 107 are 0\u20135 bps away, 258 are 5 bps or more away.\n- Median hold: 4 min (mine), 5 min (original). Exits: 0 TIME in both.\n- Absolute reading (--sl-abs): DEV n=1765, win 76.4 %, net +13.12. HOLDOUT n=660, win 82.9 %, net +16.36. This is an artefact.\n- No trailing to the fill bar (--trail-skip-fill-bar): DEV n=1608, win 37.7 %, net -7.95. HOLDOUT n=620, win 37.4 %, net -8.15.",
+    "direction": "unclear: one alternative fix (not trailing to the fill bar) raises the win rate by about 10 percentage points but makes net slightly worse; the absolute reading would make results look falsely better",
+    "suggested_fix": "Say in the docstring and the report that the 5-bps fallback uses the signed distance, and that S2 trades effectively last about 5 minutes. If the 15\u201330 minute swing is the goal, pre-register a new stop rule, for example the last swing low before the pull-back, or wait for one closed bar before trailing. Validate it on HOLDOUT as a new variant, not as a fix to this one."
+   }
+  ],
+  "numbers": "Pooled over BTCUSDT, SOLUSDT and DOGEUSDT. DEV = 2025 (365 days), HOLDOUT = 2026-01..09 (273 days). Costs: maker 2 bps, taker 5 bps + 1 bp slippage. Win = net bps > 0.\n\nMY SPEC-LITERAL VERSION (reimpl_base.json)\n- S1_ROLL100 DEV: n=7707, 21.12/day, win 33.07 %, mean net -8.097 bps (gross -1.065). Exits SL 4575 / TP 1866 / TIME 1266.\n- S1_ROLL100 HOLDOUT: n=5700, 20.88/day, win 32.44 %, net -7.988 (gross -0.873).\n- S2_slope3_tp60 DEV: n=1611, 4.41/day, win 27.50 %, net -7.656 (gross -0.605). Exits SL 1229 / TP 382.\n- S2_slope3_tp60 HOLDOUT: n=622, 2.28/day, win 27.97 %, net -8.494 (gross -1.376).\n\nORIGINAL, RUN AS INSTRUCTED (orig.json, 03:29, uncommitted working copy; same as intra_v1.json)\n- S1_ROLL100 DEV: n=7689, 21.07/day, win 33.03 %, net -8.118 (gross -1.085).\n- S1_ROLL100 HOLDOUT: n=5680, 20.81/day, win 32.41 %, net -7.987.\n- S2_slope3_tp60 DEV: n=1340, 3.67/day, win 28.21 %, net -7.054 (gross -0.018).\n- S2_slope3_tp60 HOLDOUT: n=519, 1.90/day, win 27.17 %, net -9.103.\n\nORIGINAL, COMMITTED 978a89b (orig2.json)\n- S1: identical to orig.json.\n- S2 DEV: n=1601, 4.39/day, win 27.61 %, net -7.575.\n- S2 HOLDOUT: n=620, 2.27/day, win 28.06 %, net -8.444.\n\nDIFFERENCES, MINE vs orig.json\n- S1: n +0.23 % / +0.35 %, net +0.02 / -0.00 bps, win +0.04 / +0.03 percentage points (pp).\n- S2: n +20.2 % / +19.8 %, net -0.60 / +0.61 bps, win -0.71 / +0.81 pp.\n\nEXACT REPRODUCTIONS\n- S1 with the same-minute block = 7689 / 5680.\n- S2 with the 3-bar lifetime and the same-minute block = 1340 / 519.\n- S2 with the same-minute block only = 1601 / 620 (the committed version).\n\nS2 STOP SIDE\n- 2919 of 3284 fills (89 %) have the two-bar extreme on the wrong side of entry.\n\nRuntimes: original about 29 s wall; mine about 20 s.\n\nFiles: /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_independent-reimpl/\n- reimpl.py\n- reimpl_base.json and trades_base.csv\n- orig.json and orig2.json\n- reimpl_s2_lifenf3blk.json, reimpl_s1_blk1.json, reimpl_s2_blk.json, reimpl_s2_slabs.json, reimpl_s2_trailskip.json\n\nI did not modify any repository file. The core/engine.py, tests/ and tools/ changes visible in git during the session came from a concurrent writer, committed as 978a89b at 03:35:10."
+ },
+ "lookahead-audit": {
+  "summary": "I found no look-ahead, time-alignment or leakage bug in tools/intraday_replay.py. I left the repo untouched; everything I ran is under /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_lookahead-audit/.\n\nFive independent checks support this:\n(1) I re-implemented every feature with my own causal code (pandas resample, ewm, rolling, merge_asof, textbook Wilder ATR and ADX). All match the replay's values: ATR, ADX, ADX alignment and CVD exactly; EMA to about 1e-15 relative; VWAP to about 3e-10 relative.\n(2) Truncating the 1m series at 5 cut points per symbol and recomputing changes no earlier feature value (max abs diff 0).\n(3) I instrumented a copy of run_symbol and _exit_scan to log the time at which every price, volume and feature value it reads becomes known. Across all 18 symbol\u00d7variant runs (36,275 trades) there were 0 causality violations, and the instrumented copy reproduces the original trades bit-for-bit. Four injected one-bar look-aheads are all caught (counts in numbers).\n(4) Rerunning the original pipeline, features included, on truncated data reproduces all 41,945 trades that exit before the cut, with 0 mismatches.\n(5) A synthetic test shows that incomplete 5m/15m groups are dropped and that ADX falls back to the last complete 15m bar. The real data has no gaps at all, so this case never arises in the replay.\n\nWhat I did find are small, non-leak timing and bookkeeping choices. Fixing them moves results by at most about +1.5 bps/trade (credible case), with an absolute upper bound of +4.8 bps/trade for S2 tp60. Break-even needs +7 to +9 bps and the request's +15 bps target needs about +22 to +24, so the negative results from the first run (S1 win rate ~32 %, net ~-8 bps; S2 win rate ~25-28 %, net ~-7 to -9 bps) are not artifacts of the simulator.",
+  "findings": [
+   {
+    "severity": "none",
+    "title": "No look-ahead in features (EMA20, slope1/3, ATR14, ADX14 on 15m, VWAP/sigma for ROLL100 and SESSION, CVD60)",
+    "detail": "Each feature at 5m bar k uses only 1m data up to and including the last minute of that bar. EMA slopes are causal differences. Wilder ATR and ADX are stored at the index of the bar they describe, so there is no off-by-one. ADX is taken from the last 15m bar whose close is at or before the 5m close; a 15m bar closing at the same instant is complete at that point. VWAP and sigma are read at the 5m bar's last minute, and CVD60 is 2*taker_buy_quote - quote_vol for that same minute.",
+    "evidence": "a1_features.py checks each feature against an independent causal implementation, for all 3 symbols and all 236,736 5m bars:\n- 5m OHLC and bar times: identical.\n- EMA20: max relative diff 9.9e-16; slope1/slope3: max abs diff 2e-14 / 7e-14.\n- ATR5: 0 diff against a textbook Wilder loop.\n- ADX15: 0 diff against textbook Wilder (1978) on the 15m bars.\n- ADX at each 5m close: 0 diff against pandas merge_asof (direction backward, exact matches allowed). The 15m bar used always closes at or before the 5m close, and the next 15m bar always closes after it.\n- VWAP ROLL100 and SESSION: max relative diff 3.1e-10; sigma diff at most 2.1e-6 of VWAP.\n- CVD60: allclose True.\n- Prefix invariance: recomputed on the series truncated at minute 40,003 / 250,007 / 611,111 / 999,998 / 1,183,000 (mid 5m and mid 15m bars), max abs diff 0 with 0 NaN mismatches.\n- Positive control: an ADX alignment missing its '-1' is flagged by the prefix test.",
+    "direction": "none (nothing to fix)"
+   },
+   {
+    "severity": "none",
+    "title": "No look-ahead in simulation (fill minute, stop/target levels, trailing stop, exits, overlap)",
+    "detail": "In a copy of run_symbol and _exit_scan, every read of o/h/l/c/v/qv/tbq, the b5 OHLC and the f[...] features is logged with the time it becomes known (1m bar: open+60; 5m bar: its close).\n\nWhat the checks assert:\n- The S1 signal uses data known at or before the 5m close tc.\n- The S1 fill is evaluated only in minute i_next, which starts at tc.\n- The S2 trend condition at bar kk uses data known at or before close[kk]; the fill scan starts after close[kk].\n- The S2 initial stop is known at or before the fill minute's open.\n- In _exit_scan, the stop and target in force at minute i are known at or before the start of minute i (the trail from the 5m bar closing at T[i]+60 applies from minute i+1).\n- Bar reads never go past the current minute.\n- The exit index is never before the fill index, and no trade's fill is at or before the previous trade's exit-minute close.\n\nThe fill-minute stop is path-consistent: a long limit below the open must be crossed before any low below it can print.",
+    "evidence": "a2_tracked.py: across all 18 symbol\u00d7variant runs (36,275 trades), 0 violations of any kind, and the instrumented trades are bit-identical to the original's.\n\na3_posctrl.py (SOL, first 200k minutes) shows the instrumentation catches injected bugs:\n- S1 entry from the next 5m close: 1,219 signal and 2,387 level violations.\n- Trail using the next 5m bar: 435.\n- S2 condition using the next bar's EMA: 38,692.\n- Exit scan peeking at the next minute's low: 20,200 (S1) / 1,144 (S2).\n\na4_trunc.py runs the original features plus simulation on data truncated at minute 420,017 and 905,003 for each symbol: 41,945 trades compared, 0 mismatches.",
+    "direction": "none"
+   },
+   {
+    "severity": "minor",
+    "title": "S2 skips the 5m close at which a pull-back order expires, and the bar where the trend direction flips",
+    "detail": "The pull-back loop evaluates bars kk = k, k+1, k+2 (pull_bars = 3) and then sets k = max(k, kk) + 1 = k+4. Bar k+3's close is never evaluated as a new signal, so no order rests during the following 5 minutes even if the trend still holds. Likewise, when the loop breaks because the direction flips at kk, bar kk is not re-evaluated in the new direction. This is not a leak; it only removes trades.",
+    "evidence": "Patched copy ir_pA.py (k = kk on expiry or flip), pooled over 3 symbols:\n- S2_slope3_tp60 DEV: n 1340 \u2192 1601, win rate 28.2 % \u2192 27.6 %, net -7.05 \u2192 -7.58 bps.\n- S2_slope3_tp60 HOLDOUT: n 519 \u2192 620, win rate 27.2 % \u2192 28.1 %, net -9.10 \u2192 -8.44 bps.\n- S2_slope3_tp100 DEV: net -7.73 \u2192 -8.35; HOLDOUT: -7.50 \u2192 -7.53.",
+    "direction": "unclear: about 19 % more trades, net slightly worse on DEV and slightly better on HOLDOUT, no change of sign",
+    "suggested_fix": "After the loop, set k = kk when it ended because pull_bars ran out or the direction flipped (kk > k); otherwise k = kk + 1."
+   },
+   {
+    "severity": "minor",
+    "title": "Fill-minute target crossings are ignored (by design); for S2 tp60 the impact is bounded",
+    "detail": "In the fill minute only the stop is checked. For S2 long, a fill at EMA20 means price fell through the EMA, and many of these fill minutes also printed above TP. Most of those prints happened before the fill: the minute's open was already beyond TP. Only the remaining cases are genuinely ambiguous at 1m resolution.",
+    "evidence": "a7_filltp.py, DEV+HOLDOUT trades:\n- S2_slope3_tp60: 130 of 1,859 trades crossed TP in the fill minute; in 84 of them the minute's OPEN was already beyond TP, so the TP print preceded the fill and ignoring it is correct.\n  - Crediting TP to the 46 truly ambiguous trades: +1.48 bps/trade.\n  - Crediting TP to all 130: +4.82 bps/trade.\n- S2_slope3_tp100: 26 crossed, 17 with the open beyond TP; uplift +0.41 / +1.77 bps/trade.\n- S1: 15 cases (ROLL100) and 1 case (SESSION) out of 17,201 and 13,498 trades.",
+    "direction": "Fixing (crediting the TP) would make results better, by +0.4 to +1.5 bps/trade in the credible case and at most +4.8; S2 stays negative (-7 to -9 bps).",
+    "suggested_fix": "Optional: credit TP in the fill minute only when that minute's open is on the entry side of TP, or settle the order with 1s klines or aggTrades."
+   },
+   {
+    "severity": "minor",
+    "title": "Within a minute, the stop is assumed hit before the target (conservative)",
+    "detail": "When a minute after the fill touches both SL and TP, the code books SL. Such minutes are rare.",
+    "evidence": "a6_s1amb.py, all trades 2024-07..2026-09:\n- S1_ROLL100: 4 of 17,201 trades; upper-bound uplift if TP came first: +0.016 bps/trade.\n- S1_SESSION: 0 of 13,498.\n- S2_slope3_tp60: 5 of 2,718; +0.31 bps/trade.\n- S2_slope3_tp100: 1 of 2,692; +0.22.\n- S2_slope1: 1-2 of 83; about +7 bps/trade, but this variant has n = 83 in total and is irrelevant.",
+    "direction": "Fixing would make results better, but by a negligible amount (at most 0.31 bps for the main variants).",
+    "suggested_fix": "None needed; settle with 1s data if desired."
+   },
+   {
+    "severity": "minor",
+    "title": "Busy rule skips a legal decision at the exit minute's close",
+    "detail": "busy_until is set to t1[ix] + 60 and new signals require tc > busy_until. A 5m close that coincides with the exit minute's close is therefore skipped, even though the position is already flat at that instant.",
+    "evidence": "Patched copy ir_pB.py (tc < busy_until):\n- S1_ROLL100 DEV: n 7689 \u2192 7707, net -8.118 \u2192 -8.097.\n- S1_SESSION HOLDOUT: n 4704 \u2192 4746, net -7.093 \u2192 -7.036.\n- S2_slope3_tp60 DEV: n 1340 \u2192 1347, net -7.05 \u2192 -6.94.",
+    "direction": "Fixing changes results by an insignificant amount (about \u00b10.1 bps).",
+    "suggested_fix": "Use tc < busy_until."
+   },
+   {
+    "severity": "none",
+    "title": "Gap through the stop inside the fill minute never occurs",
+    "detail": "In the fill minute, a triggered stop exits exactly at sl instead of min(open, sl), which would be optimistic if the minute opened beyond the stop.",
+    "evidence": "a5_edges.py: stop exits in the fill minute number 448 (S1_ROLL100), 377 (S1_SESSION), 161 (S2_slope3_tp60) and 149 (S2_slope3_tp100). In none of them was the open beyond the stop.",
+    "direction": "none"
+   },
+   {
+    "severity": "none",
+    "title": "Trades are bucketed by UTC day of the exit minute, which is harmless here",
+    "detail": "summarize() assigns trades to DEV/HOLDOUT and to daily P&L by the open time of the exit minute.",
+    "evidence": "- Trades whose entry and exit days differ: S1_ROLL100 208, S1_SESSION 181, S2 0-4.\n- Trades straddling the DEV/HOLDOUT boundary: 0 in every variant.\n- Re-bucketing by entry time leaves n, win rate, mean net and gross identical in every split.\n- Sharpe moves by at most 0.21 (S1_SESSION DEV -12.43 vs -12.64), and CI bounds by about 0.1 bps.",
+    "direction": "none"
+   },
+   {
+    "severity": "none",
+    "title": "Latent only: gap handling (the data has no gaps)",
+    "detail": "If minutes were missing, three things would happen. Incomplete 5m/15m groups would be dropped, which is correct (shown in a synthetic test). The ROLL100 window and EMA/ATR would bridge the gap by bar index. S2's fill scan over i_last[kk]+1 .. +5 could run into the next period. None of this applies to this dataset, and none of it uses future data.",
+    "evidence": "chk_data.py: each symbol has 1,183,680 minutes from 2024-07-01 00:00 to 2026-09-30 23:59 with every step exactly 60 s, timestamps in ms in all files, and 236,736 complete 5m and 78,912 complete 15m bars.\n\na0_synth.py: with minute 00:07 deleted, the 5m bar at 00:05 and the 15m bar at 00:00 are dropped, and 5m closes from :05 to :25 get no ADX.",
+    "direction": "none on this data"
+   }
+  ],
+  "numbers": "Data: 3 symbols \u00d7 1,183,680 one-minute bars (2024-07-01 to 2026-09-30), 0 gaps, 0 non-60 s steps; 236,736 5m and 78,912 15m bars, all complete; timestamps in ms in every file. 126-128 zero-volume 1m bars per symbol.\n\nFeature checks against my own causal implementation (all 3 symbols):\n- 5m OHLC / bar times: identical.\n- EMA20 max relative diff: 9.9e-16. slope1 / slope3 max abs diff: 2.2e-14 / 6.7e-14.\n- ATR5: 0. ADX15: 0. ADX at each 5m close: 0.\n- VWAP max relative diff: ROLL100 3.1e-10, SESSION 2.2e-10. Sigma max diff / VWAP: 2.1e-6.\n- CVD60: allclose True.\n- Prefix invariance (5 cuts \u00d7 3 symbols): max abs diff 0.0, 0 NaN mismatches.\n\nInstrumented simulation (a2_tracked.py): 36,275 trades over 18 runs, 0 violations, trades bit-identical to the original.\n- Positive controls: 1,219 + 2,387 / 435 / 38,692 / 20,200 + 1,144 violations caught.\n- Truncation test (a4_trunc.py): 41,945 trades compared, 0 mismatches.\n\nBaseline reproduced (pooled):\n| Variant | Split | n | Win rate | Net bps | CI95 | Gross bps |\n|---|---|---|---|---|---|---|\n| S1_ROLL100 | DEV | 7,689 | 33.0 % | -8.12 | [-8.93, -7.22] | -1.09 |\n| S1_ROLL100 | HOLDOUT | 5,680 | 32.4 % | -7.99 | [-8.93, -7.00] | |\n| S1_SESSION | HOLDOUT | 4,704 | 32.2 % | -7.09 | | |\n| S2_slope3_tp60 | DEV | 1,340 | 28.2 % | -7.05 | | |\n| S2_slope3_tp60 | HOLDOUT | 519 | 27.2 % | -9.10 | [-13.86, -4.53] | |\n| S2_slope3_tp100 | HOLDOUT | 514 | 26.5 % | -7.50 | | |\n\nS2 expiry/flip-skip fix (ir_pA.py):\n- tp60 DEV: n 1340 \u2192 1601, net -7.05 \u2192 -7.58. tp60 HOLDOUT: n 519 \u2192 620, net -9.10 \u2192 -8.44.\n- tp100 DEV: net -7.73 \u2192 -8.35. tp100 HOLDOUT: net -7.50 \u2192 -7.53.\n\nBusy-boundary fix (ir_pB.py): S1_ROLL100 DEV n 7689 \u2192 7707, net -8.118 \u2192 -8.097.\n\nFill-minute TP (S2_slope3_tp60, DEV+HOLDOUT): 130 of 1,859 crossed TP, 84 with the open already beyond TP. Uplift +1.48 bps/trade (ambiguous ones credited), +4.82 (all credited). For tp100: 26 / 17, uplift +0.41 / +1.77.\n\nSame-minute SL+TP: 4 / 0 / 5 / 1 trades (S1_ROLL100 / S1_SESSION / S2_slope3_tp60 / S2_slope3_tp100); uplift +0.016 / 0 / +0.31 / +0.22 bps/trade.\n\nFill-minute stop with the open beyond the stop: 0 in every variant.\n\nDay bucketing: 0 trades straddle DEV/HOLDOUT; entry-day vs exit-day bucketing gives identical n and means; Sharpe moves by at most 0.21."
+ },
+ "stats-audit": {
+  "summary": "I re-ran tools/intraday_replay.py at HEAD 978a89b without changing it. I imported a byte-identical copy (sha256 03e727ce...) from scratchpad/wf_stats-audit/ and captured every trade. The data has no gaps and covers 2024-07-01 to 2026-09-30 23:59 UTC for all 3 symbols. summarize() reproduces intra_v2.json exactly (0 mismatches over 6 variants x 2 splits x pooled + 3 symbols). intra_v1.json is stale for S2 and should not be cited.\n\nI recomputed the numbers independently and they agree with the code:\n- Mean, n, win rate and per_day match.\n- Day-cluster CI matches to Monte-Carlo error. IID, t and weekly-block CIs are nearly the same, so day clustering does not hide autocorrelation.\n- Sharpe matches. It includes zero-trade days as the docstring says.\n- Moving trades to the entry day changes nothing (no trade crosses a split boundary).\n\nThe conclusion that S1 (both VWAP variants) and S2_slope3 (both TPs) lose money is robust:\n- Pooled and per symbol, in both DEV and HOLDOUT.\n- Per quarter 2025Q1..2026Q3, all 56 S1 cells have a CI upper bound below 0. No S2_slope3 cell with n>=30 has a positive mean.\n- Win rate is far below 50% under both the net and the gross definition.\n- No (symbol, quarter) cell with n>=100 reaches even +15 bps GROSS. The best is +7.2.\n\nErrors and limits on what may be claimed:\n1. The verdict rule has no per-symbol HOLDOUT sample floor. A single trade gives a degenerate CI [x, x] and passes. This is latent: the slope1 variants clear the pooled DEV n>=30 filter, and a 1-trade BTC verdict would come out ACTIVE-ELIGIBLE. The lane trusts the verdict file.\n2. \"Every variant negative\" overstates the S2_slope1 variants. They have 16 pooled HOLDOUT trades, CIs that span 0, and positive per-symbol means at n=1..23. They are untestable, not negative.\n3. The DEV-best choice is noise. S1_SESSION beats ROLL100 by only +0.07 bps (P=0.55). For S2, tp60 vs tp100 reverses in HOLDOUT.\n4. max_dd_usd leaves out the first day's loss because the equity curve does not start at 0. The understatement is $5 to $7.\n5. The verdict rule is weaker than the user's acceptance targets: win rate 55-65%, more than +15 bps per trade, Sharpe of at least 1.2.\n6. S2 median hold is 5 minutes and it has no TIME exits, so the 15-45 minute holding horizon was never tested for S2.",
+  "findings": [
+   {
+    "severity": "major",
+    "title": "Verdict rule has no per-symbol HOLDOUT sample floor: a single trade can be ACTIVE-ELIGIBLE",
+    "detail": "main() keeps only variants with pooled DEV n>=30, then judges each (symbol, strategy) on per-symbol HOLDOUT `h.get('n')` truthy AND ci95[0] > 0 AND win_rate > 0.5. A per-symbol HOLDOUT with n=1 has a degenerate bootstrap CI [x, x], so one winning trade passes. The slope1 variants clear the DEV floor (pooled DEV n=40), so if either had the best DEV mean, BTCUSDT would be marked ACTIVE-ELIGIBLE on 1 holdout trade. core/intraday_lane.py _mode() trusts config/intraday_verdict.json with no n check, so this would enable active DEMO orders. Today's verdict is unaffected because DEV-best is slope3_tp60 and every verdict is SHADOW. A secondary problem: 6 (symbol, strategy) one-sided tests at 2.5% each, with no multiplicity control.",
+    "evidence": "Counterfactual: the verdict rule applied to every variant: S2_slope1_tp60 BTCUSDT HOLDOUT n=1 mean=+56.00 ci=[56.0,56.0] win=1.000 -> ACTIVE-ELIGIBLE; S2_slope1_tp100 BTCUSDT n=1 mean=+96.00 ci=[96.0,96.0] win=1.000 -> ACTIVE-ELIGIBLE. S2_slope1_* pooled DEV n=40 (>=30). tools/intraday_replay.py lines 387 and 394; core/intraday_lane.py lines 232-236.",
+    "direction": "stricter / safer; no change to current results (all SHADOW)",
+    "suggested_fix": "Require per-symbol HOLDOUT n>=100 (at least >=30) and >=20 distinct trade days. Use the Wilson lower bound of win rate > 0.5 rather than the point estimate. Repeat the floor in intraday_lane._mode() (read holdout_n). Optionally apply a Bonferroni or Holm correction across the 6 tests."
+   },
+   {
+    "severity": "minor",
+    "title": "'Every variant negative' is not true for the S2_slope1 variants: they are untestable",
+    "detail": "Pooled, all 6 variants have a negative mean net in both splits. Per symbol, though, S2_slope1_tp60/tp100 have positive means: BTC DEV n=3, BTC HOLDOUT n=1, DOGE DEV n=23. Their pooled HOLDOUT CIs span zero widely. In the quarter table, 8 and 7 of their non-empty 2025Q1..2026Q3 cells are positive, all with n<=13, and none has n>=30. The report must say slope1 gives too few trades to evaluate (16 pooled HOLDOUT trades in 9 months). It must not call slope1 negative.",
+    "evidence": "S2_slope1_tp60 pooled HO n=16 mean -11.3 CI [-51.2,+15.5]; S2_slope1_tp100 pooled HO n=16 mean -5.9 CI [-55.4,+25.6]; POSITIVE S2_slope1_tp60 DOGEUSDT DEV n=23 +4.90 ci [-23.1,26.1]; BTC HO n=1 +56/+96.",
+    "direction": "unclear (claim correction only; does not create an edge)",
+    "suggested_fix": "Word it as: S1 (both VWAP variants) and S2_slope3 (both TPs) are negative in every symbol and quarter with n>=30. S2_slope1 has too few trades (40 DEV / 16 HOLDOUT pooled) to evaluate."
+   },
+   {
+    "severity": "minor",
+    "title": "DEV-best selection is noise; the report must not call S1_SESSION or S2 tp60 the 'better' variant",
+    "detail": "DEV-best picks the highest pooled DEV mean. S1_SESSION beats S1_ROLL100 by +0.073 bps/trade in DEV: paired day-bootstrap P(SESSION better)=0.551, CI of difference [-1.06,+1.28]. S2 tp60 beats tp100 in DEV by +0.78 (P=0.91), and the order reverses in HOLDOUT (-0.91). The verdict file uses S1_SESSION while the brief and summaries quote S1_ROLL100. Whichever variant a report cites, it should say the verdict variant was chosen on a statistical tie.",
+    "evidence": "DEV S1_SESSION - S1_ROLL100: +0.073 bps, P=0.551, CI [-1.06,+1.28]; HOLDOUT +0.894. DEV S2_slope3_tp60 - tp100: +0.777, P=0.911, CI [-0.34,+1.89]; HOLDOUT -0.911.",
+    "direction": "unclear (no variant positive either way)",
+    "suggested_fix": "Report both S1 variants side by side. State that the DEV-best pick has no statistical support. Optionally pick only when the paired CI of the difference excludes 0."
+   },
+   {
+    "severity": "minor",
+    "title": "max_dd_usd misses the first day's loss (equity curve does not start at 0) and is daily resolution",
+    "detail": "eq = cumsum(daily) and DD = max(running_max(eq) - eq). The running max starts at eq[0], not at 0, so a losing first day is left out of the drawdown. All three main variants lose on HOLDOUT day 1, so the reported DD is short by exactly that loss. DD is also measured on daily closes, not per trade (a small further understatement).",
+    "evidence": "S1_ROLL100 HO: code $675.31 vs from-zero $680.52 (first-day loss -$5.21) vs trade-level $681.18. S1_SESSION HO: $493.30 vs $500.48 (-$7.18) vs $501.46. S1_ROLL100 DEV: $938.26 vs $939.46 vs $941.55. Per symbol, S1_SESSION BTC HO: $188.03 vs $191.03.",
+    "direction": "worse (larger DD) for these losing strategies; immaterial to the verdict",
+    "suggested_fix": "eq = np.r_[0.0, np.cumsum(daily)]. Optionally also compute DD on the per-trade equity sequence."
+   },
+   {
+    "severity": "minor",
+    "title": "Verdict rule is weaker than the user's acceptance targets; ACTIVE-ELIGIBLE would not certify them",
+    "detail": "The rule is HOLDOUT CI lower > 0 AND win rate > 50%. Task 4 of the request asks for win rate >= 55-65%, net > +15 bps/trade after VIP0 fees, and intraday Sharpe >= 1.2-1.8. Even if a cell passed, the report could not claim the user's targets were met. Here nothing comes close: no symbol x quarter cell with n>=100 reaches +15 bps even GROSS (max +7.21, S2_slope3_tp100 DOGE 2024H2). The highest win rate in any S1/S2_slope3 cell with n>=30 is 38.4%.",
+    "evidence": "tools/intraday_replay.py docstring line 37-38 and line 394. Quarter table: S1 max mean among n>=30 cells -5.55 (ROLL100) / -4.48 (SESSION); S2_slope3_tp60 max -1.90; max win among n>=30: 0.384 / 0.372 / 0.345.",
+    "direction": "stricter",
+    "suggested_fix": "Report the request's three targets separately as FAIL for each variant. Keep ACTIVE-ELIGIBLE as a necessary condition, not a sufficient one."
+   },
+   {
+    "severity": "minor",
+    "title": "S2 never exercises the 15-45 min holding horizon; median hold is 5 min",
+    "detail": "S2's stop is the extreme of the last 2 closed 5m bars, trailed every 5m bar. In HOLDOUT, 100% of S2_slope3_tp60 exits are SL or TP, there are 0 TIME exits, the median hold is 5 min, and only 7.3% of trades last 15 min or more. The replay therefore does not test the request's idea of letting a 15m wave run for 15-30 min, and the report cannot say the smart time barrier was validated for S2. For S1 the median hold is 17-21 min, with 55-58% of trades at 15 min or more.",
+    "evidence": "S2_slope3_tp60 HO exits {SL: 483 (gross -18.7), TP: 137 (+60.0)}, hold median 5.0, hold>=15m share 0.073; S1_ROLL100 HO hold median 17, share 0.549; S1_SESSION 21, 0.584.",
+    "direction": "unclear (a wider stop is a different, not pre-registered hypothesis)",
+    "suggested_fix": "State the limitation in the report. Any wider-stop S2 variant would be a new hypothesis and needs a new DEV/HOLDOUT test."
+   },
+   {
+    "severity": "minor",
+    "title": "intra_v1.json / intra_v1.log are stale for S2; cite only the HEAD (v2) numbers",
+    "detail": "HEAD code reproduces intra_v2.json exactly. v1 predates the S2 re-anchor fix and gives different S2 counts and means. S1 is identical in both.",
+    "evidence": "S2_slope3_tp60 pooled HOLDOUT: v1 n=519 net -9.1 CI [-13.9,-4.5] vs v2/HEAD n=620 net -8.44 CI [-12.49,-4.60]; DEV v1 n=1340 -7.1 vs v2 n=1601 -7.58.",
+    "direction": "unclear (both negative)",
+    "suggested_fix": "Take the report numbers from intra_v2.json, or from a fresh run, and record the commit hash."
+   },
+   {
+    "severity": "none",
+    "title": "summarize() arithmetic confirmed: CI, Sharpe, per_day, win rate, cluster bootstrap",
+    "detail": "The day-cluster bootstrap resamples days that have trades and takes a ratio estimator (sum of net / number of trades), which is the right target for mean net per trade. In the pooled view it clusters all symbols on the same day together. IID, t and weekly-block CIs nearly match, so day clustering is not hiding autocorrelation. Sharpe uses all calendar days in the split (zero-P&L days included) at fixed $150 on $5000, times sqrt(365). Excluding zero-trade days would make S2's Sharpe more negative. per_day = trades / calendar days, pooled over symbols. Win rate = net > 0; the gross > 0 win rate is also <= 37%. The data has no gaps and covers the full HOLDOUT, so the per_day denominators are correct.",
+    "evidence": "S1_ROLL100 pooled HO: code CI [-8.93,-7.00] vs my 10k-rep cluster [-8.92,-7.05], iid [-8.76,-7.23], t [-8.75,-7.22], weekly [-8.81,-7.09]. S2_slope3_tp60 HO: code [-12.49,-4.60] vs cluster [-12.46,-4.49], weekly [-11.73,-5.07]. Sharpe identical (-17.547, -4.500). S2 HO active-days-only Sharpe -6.14 vs all-days -4.50.",
+    "direction": "none",
+    "suggested_fix": "None needed. Optionally state the Sharpe convention (all calendar days) in the report."
+   },
+   {
+    "severity": "none",
+    "title": "Negative conclusion is robust per symbol and per quarter for S1 (both) and S2_slope3 (both)",
+    "detail": "Cells are 2025Q1..2026Q3 x {BTC, SOL, DOGE, POOLED}, 28 per variant. S1_ROLL100 and S1_SESSION: 28/28 cells have a negative mean and a cluster CI upper bound < 0. S2_slope3_tp60/tp100: 24 cells with n>=30, all negative and 18 with CI upper < 0. Their only positive cells are BTC 2025Q3 (n=1) and BTC 2026Q3 (n=6). S1 losses are essentially the fees: gross is about 0 (HO -0.87 ROLL100, +0.56 SESSION) and the mean cost is 7.1-7.7 bps/trade. The observed win rate is well below the break-even win rate implied by the measured average win and loss.",
+    "evidence": "HO break-even win vs observed: S1_ROLL100 46.9% vs 32.4% (Wilson [31.2,33.6]); S1_SESSION 43.4% vs 32.2%; S2_slope3_tp60 39.2% vs 28.1% (Wilson [24.7,31.7]). Max mean among n>=30 quarter cells: S1_ROLL100 -5.55, S1_SESSION -4.48, S2_slope3_tp60 -1.90, S2_slope3_tp100 -1.17.",
+    "direction": "none",
+    "suggested_fix": "None."
+   }
+  ],
+  "numbers": "HEAD replay reproduced: 0 mismatches vs scratchpad/intra_v2.json. Data: 1,183,680 1m bars per symbol, 0 gaps, 2024-07-01..2026-09-30. Split days: DEV 365, HOLDOUT 273.\nS1_ROLL100 POOLED HOLDOUT: n=5680, per_day 20.81 (calendar), active days 272, win(net>0) 0.3241 (Wilson 0.312-0.336), win(gross>0) 0.362, mean net -7.987 bps, median -19.30, gross -0.873, cost 7.115; code CI95 [-8.93,-7.00]; my 10k day-cluster [-8.918,-7.047], iid [-8.764,-7.228], t [-8.753,-7.222], week-block [-8.807,-7.088]; Sharpe all-days -17.547 (active-only -17.607); DD code $675.31, from-0 $680.52, trade-level $681.18; total -$680.52, -$2.493/d; avg win +29.19, avg loss -25.82, break-even win 0.469. Per symbol HO: BTC n=2053 -7.78 win .308; SOL n=1745 -8.46 win .330; DOGE n=1882 -7.78 win .336.\nS1_SESSION POOLED HOLDOUT (verdict variant): n=4704, 17.23/d, win .3219, mean -7.093, gross +0.559, CI code [-8.33,-5.82] / mine [-8.316,-5.817], Sharpe -12.147, DD code $493.30 vs from-0 $500.48.\nS2_slope3_tp60 POOLED HOLDOUT: n=620, per_day 2.271 calendar / 4.052 per active day (153 active days), win .2806 (Wilson .247-.317), win gross .337, mean -8.444, median -14.91, gross -1.328, cost 7.116; code CI [-12.49,-4.60]; mine cluster [-12.464,-4.494], iid [-11.616,-5.293], t [-11.631,-5.258], week [-11.725,-5.067]; Sharpe all-days -4.500 (active-only -6.138); DD $79.44 (same from 0); total -$78.53; avg win +46.19, avg loss -29.76, break-even win .392; exits SL 483 / TP 137 / TIME 0; median hold 5 min, hold>=15m 7.3%. Per symbol HO: BTC n=82 -13.47 CI [-22.58,-5.38] win .232; SOL n=243 -9.72 [-14.58,-4.97] win .263; DOGE n=295 -6.00 [-11.32,-0.54] win .308.\nDEV-best: S1_SESSION-S1_ROLL100 DEV +0.073 bps (P=0.551, CI [-1.06,+1.28]), HO +0.894; S2 tp60-tp100 DEV +0.777 (P=0.911, CI [-0.34,+1.89]), HO -0.911.\nVerdict counterfactual: S2_slope1_tp60 BTC HO n=1 +56.00 CI [56,56] win 1.0 -> ACTIVE-ELIGIBLE; S2_slope1_tp100 BTC n=1 +96.00 -> ACTIVE-ELIGIBLE; slope1 pooled DEV n=40.\nQuarter cells 2025Q1..2026Q3 (28 per variant): S1_ROLL100 0 positive, 28/28 CI-upper<0, max mean -5.55, max win .384; S1_SESSION 0 positive, 28/28 CI-upper<0, max -4.48, max win .372; S2_slope3_tp60 2 positive (n=1, n=6, BTC), 24 cells n>=30 all negative, 18 CI-upper<0, max -1.90; S2_slope3_tp100 2 positive (n=1, 6), max -1.17; S2_slope1_tp60 8 positive (n<=13), S2_slope1_tp100 7 positive (n<=13), 0 cells n>=30. Max GROSS among n>=100 cells: +7.21 (S2_slope3_tp100 DOGE 2024H2). Only cell with CI lower>0: S2_slope1_tp100 DOGE 2024H2 n=25 (warm-up period, outside DEV/HOLDOUT).\nHOLDOUT first-day net: S1_ROLL100 -$5.21, S1_SESSION -$7.18, S2_slope3_tp60 -$0.08. Max concurrent positions pooled: 3. Split-boundary straddling trades: 0.\nScripts/outputs: /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_stats-audit/{run_trades.py,trades.pkl,audit.py,audit.log,indep.json,quarters.py,quarters.log,quarters.json,extra.py,extra.log}"
+ },
+ "fill-cost-bounds": {
+  "summary": "No. None of the bounds makes S1_ROLL100, S1_SESSION or S2_slope3_tp60 profitable after VIP0 fees, and none gets the win rate above 50%. This holds pooled and for each symbol, in DEV and in HOLDOUT.\n\nHow it was run: tools/intraday_replay.py was copied to the scratch folder as ir_orig.py, and run_symbol/_exit_scan were re-implemented with switches for each assumption. The BASE switch setting reproduces the original trade-by-trade on all 9 symbol\u00d7variant pairs (6396/5100/304 BTC, 5514/4509/1320 SOL, 5291/3889/1638 DOGE trades, every one matching).\n\n- **(a) Optimistic bound:** touch fills, target checked before stop, TP allowed in the fill minute, time exit at maker fee. Best pooled result is S2 at -2.5 to -3.0 bps net with a 32\u201333% win rate. S1 stays at -5.1 to -6.6 bps with a 35\u201336% win rate.\n- **OPT_max:** (a) plus TP filled on touch, no stop gap, and no stop check in the fill minute. It barely differs from (a): the best per-symbol win rate with VIP0 fees is 37.3%, and the best per-symbol net is -1.5 bps.\n- **(b) Zero fees:** gross is about 0 for every strategy (-1.3 to +0.6 bps, CIs including or below 0), with win rates of 31\u201337%.\n- **(a)+(b) together:** this is the only case with positive means (S2 +3.9 to +4.3 bps, S1_SESSION HOLDOUT +1.2). Even then the win rate stays at or below 38.8% pooled (41.4% for one symbol).\n- **(c) Pessimistic (+1 bp on taker exits):** costs a further 0.8\u20130.9 bps.\n\nSo the replay is not materially too pessimistic. All the intrabar optimism together is worth about +1.6 to +2.1 bps for S1 and +5.0 to +5.9 bps for S2. The gap to break-even is 7\u20138.5 bps, and the gap to the user's +15 bps/trade target is more than 22 bps.\n\nA tick-level check on real aggTrades (SOL and DOGE, September 2026, which is part of HOLDOUT) points the other way: the base model is slightly optimistic, not pessimistic. Two reasons:\n- Stops fill beyond the stop level, worth +0.3 bps/trade in the bar model's favour.\n- About 59\u201362% of S1 base fills would be rejected as post-only (GTX), because the order at the 5m close price would cross the book. The fills that survive are no better (-4.5 to -11.6 bps).\n\nThe >50% win-rate requirement also conflicts with the pre-registered geometry. S1's median target is 2.0\u00d7 the stop for ROLL100 and 3.8\u00d7 for SESSION, which on a random walk gives a 33% / 21% chance of hitting the target before the stop. A win rate above 50% at R:R \u2265 1.5 would need an edge of at least about +0.375R per trade. The zero-fee runs show essentially no edge.",
+  "findings": [
+   {
+    "severity": "critical",
+    "title": "Fees, not fill/ordering assumptions, decide the sign: gross edge is about 0 for all three strategies",
+    "detail": "With fees set to zero the base replay gives pooled net = gross of -1.09/-0.87 (S1_ROLL100 DEV/HO), -0.34/+0.56 (S1_SESSION), -0.53/-1.33 (S2). The VIP0 round trip costs 4 bps when both sides are maker and 8 bps with a taker exit. Even a hypothetical maker 0 / taker 3 bps tier (better than any VIP0 discount) stays negative: S1 -2.2 to -3.4, S2 -2.8/-3.7. The strategies have no gross edge to protect.",
+    "evidence": "ZERO_FEE pooled: S1_ROLL100 DEV -1.09 [-1.87,-0.22] / HO -0.87 [-1.77,+0.08]; S1_SESSION DEV -0.34 [-1.46,+0.82] / HO +0.56 [-0.66,+1.82]; S2 DEV -0.53 [-2.75,+1.63] / HO -1.33 [-5.26,+2.39]. BASE_maker0_taker3 is negative in every cell. Files: wf_sensitivity-bounds/bounds.json, bounds.log",
+    "direction": "Removing fees makes results better, but only to about 0. No realistic fee assumption gives a positive result.",
+    "suggested_fix": "Treat this as a NO-EDGE signal finding rather than a modelling artefact. Any redesign must first show positive GROSS bps on DEV before fee or fill tuning is worth doing."
+   },
+   {
+    "severity": "critical",
+    "title": "No bound reaches win rate > 50%; the R:R >= 1.5 geometry caps it around 33\u201340% without a large edge",
+    "detail": "The highest pooled win rate under any bound with VIP0 fees is 36.4% (OPT_max S1_ROLL100 HOLDOUT). The highest per-symbol win rate is 37.3% (OPT_max S1_ROLL100 DOGE HO). Even with optimism plus zero fees the pooled maximum is 38.8% and the per-symbol maximum 41.4%. Median S1 stop/target is 23/46 bps (ROLL100) and 25/97 bps (SESSION). The random-walk probability of hitting the target before the stop is therefore 33.6% and 20.4%. For S2 the initial stop is about 55 bps against a 60 bps target, but the trailing stop to each 5m bar's low ends most trades within about 5 minutes. Break-even win rates given the observed average win/loss are 43\u201348% for S1 and 35\u201339% for S2, and the actual rates fall below even those.",
+    "evidence": "BASE avg win/loss: S1_ROLL100 DEV +34.9/-29.3 (break-even win rate 45.7%, actual 33.0%); S1_SESSION DEV +40.8/-31.1 (break-even 43.2%, actual 32.0%); S2 DEV +49.5/-29.4 (break-even 37.2%, actual 27.6%). Random-walk P(TP first): 33.6% / 20.4% / 48.1% (S2 initial stop).",
+    "direction": "Unclear. This is a specification conflict, not a modelling error: the user's R:R >= 1.5 and win rate > 55\u201365% together imply an expectancy of at least about +0.375R per trade.",
+    "suggested_fix": "Report to the user that a >50% win rate needs the target closer than the stop, or real directional edge. Neither is supported by these signals."
+   },
+   {
+    "severity": "major",
+    "title": "S2: allowing TP inside the fill minute is the largest single optimistic lever, and the tick evidence does not support it",
+    "detail": "Allowing TP in the fill minute raises S2 net by +3.95 bps on DEV (-7.58 to -3.63) and +2.67 bps on HOLDOUT (-8.44 to -5.77). Win rate rises from 27.6% to 30.9%, with 60 extra TPs on DEV. These are 1m bars that trade through EMA20 and also print 60 bps above the entry. In the tick check (S2, Sept 2026, SOL+DOGE, n=67) the single such case turned out to be a stop-out. On that sample the paired bar-minus-tick net was +2.03 bps for OPT_a and +0.05 for BASE.",
+    "evidence": "only_tp_fill_min S2 DEV -3.63 [-5.86,-1.45] WR 30.9%; HO -5.77 [-10.09,-1.09]. tickcheck.json S2 OPT_a: 1 exit type changed, pooled bar -6.64 vs tick -8.67.",
+    "direction": "Fixing it (keeping the base rule) makes S2 worse. The base rule is the realistic one.",
+    "suggested_fix": "Keep 'stop only in the fill minute'. If needed, resolve these bars with aggTrades instead of assuming high-after-low."
+   },
+   {
+    "severity": "major",
+    "title": "About 60% of S1 base fills would be GTX post-only rejections (the order at the 5m close price crosses the book)",
+    "detail": "S1 places a post-only order at the 5m close price, and 51\u201361% of the base fills happen within 1 s of the next minute's open (median 0.6\u20130.95 s). On ticks, the last trade before the close was usually on the aggressive side at that price. This correlates with the CVD>0 / CVD<0 filter, which means the post-only order would sit at the touch and be rejected. With arrival latency L = 0 / 0.25 / 1 s, 132\u2013137 of 213\u2013225 (ROLL100) and 92\u2013103 of 161 (SESSION) signals are rejected. The surviving fills are no better: pooled net -7.0/-4.5/-5.4 bps for ROLL100 and -8.2/-11.6/-10.0 for SESSION (SE about 3 bps).",
+    "evidence": "latency.json: SOL S1_ROLL100 fill seconds p10/p50/p90 = 0.09/0.63/18.5; L=0 REJECT 132/213; DOGE S1_ROLL100 REJECT 137/225. Pooled L=0.25: ROLL100 n=178, WR 37.6%, net -4.50.",
+    "direction": "Fixing it means fewer trades (frequency drops about 60%) with no improvement in per-trade net, so the result is worse overall. The base fill model is optimistic on fill count.",
+    "suggested_fix": "Model GTX rejection or re-peg to the passive side (1 tick, about 0.4\u20130.5 bps better entry) and arrival latency in the replay. Tick sample is 1 month and 2 symbols only."
+   },
+   {
+    "severity": "minor",
+    "title": "Time-barrier exit at maker fee: worth +0.7 to +1.3 bps for S1 and unrealistic",
+    "detail": "S1_SESSION exits 33% of trades on the 45-minute time barrier, so a maker-fee time exit adds +1.31 DEV / +1.30 HO bps and about +2.0\u20132.7 pp of win rate. The gain is +0.66/+0.72 for S1_ROLL100 and 0 for S2, which never reaches the time barrier. A maker exit at the bar close is not guaranteed to fill, and a re-pegged maker exit carries its own adverse selection.",
+    "evidence": "only_time_maker: S1_SESSION DEV -6.73 / HO -5.79 vs BASE -8.04 / -7.09; S1_ROLL100 -7.46/-7.27 vs -8.12/-7.99.",
+    "direction": "Fixing it (keeping the taker time exit) makes results slightly worse. The base is the realistic choice.",
+    "suggested_fix": "Keep the taker time exit, or model a maker re-peg with a real fill probability."
+   },
+   {
+    "severity": "minor",
+    "title": "Touch fills: +0.7 to +0.85 bps and about 9% more S1 trades in the bar model, partly fictitious on ticks",
+    "detail": "Touch fills alone add +0.85/+0.84 bps (ROLL100 DEV/HO) and +0.45/+0.69 bps (SESSION), and raise the S1 trade count by 9%. They have no effect on S2, because an exact EMA20 equality essentially never occurs. On ticks, 38/246 (SOL) and 24/244 (DOGE) of the OPT_a ROLL100 trades never traded through the limit. Tick-touch net was -5.34 bps against -4.37 for the bar OPT_a model.",
+    "evidence": "only_fill_touch S1_ROLL100 DEV -7.27 n=8359 vs BASE -8.12 n=7689; tickcheck pooled S1_ROLL100 OPT_a: bar -4.37, tick_touch -5.34, tick_strict -6.07 (n=428).",
+    "direction": "Fixing it (strict trade-through) makes results slightly worse. The base is the realistic choice.",
+    "suggested_fix": "Keep trade-through fills."
+   },
+   {
+    "severity": "minor",
+    "title": "Bar model stop fill at the exact stop level is slightly optimistic compared with ticks",
+    "detail": "On the same trades and the same exit types (0 flips in BASE), the bar model's net exceeds the tick-path net by +0.31 bps/trade for S1_ROLL100 (SE 0.02), +0.30 for S1_SESSION and +0.05 for S2. The cause is the stop trigger tick printing beyond the stop. Klines and aggTrades agree on 99.9% of September minute highs and lows.",
+    "evidence": "tickcheck.json pooled 'pair' net: S1_ROLL100 +0.306, S1_SESSION +0.302, S2 +0.046. Consistency: SOL low_match 0.9995, high_match 0.9991; DOGE 0.9995 / 0.9994.",
+    "direction": "Fixing it makes results worse, by about 0.3 bps for S1.",
+    "suggested_fix": "Optionally model stop slippage explicitly. Bound (c) at +1 bp already covers it."
+   },
+   {
+    "severity": "minor",
+    "title": "Intrabar ordering (target vs stop in the same 1m bar) is immaterial",
+    "detail": "Checking the target before the stop changes S1 by 0.00 to 0.02 bps and S2 by +0.49 (DEV) / +0.11 (HO). Only about 4 S2 trades and 1\u20132 S1 trades have both levels inside one minute. The S1 target sits 2\u20134 stop distances away, so it is never inside the same bar.",
+    "evidence": "only_tp_first: S1_ROLL100 DEV -8.11 vs -8.12; S2 DEV -7.09 vs -7.58 (SL count 1216 vs 1220).",
+    "direction": "Unclear and negligible.",
+    "suggested_fix": "No change needed."
+   },
+   {
+    "severity": "minor",
+    "title": "Fill selection (trade-through) costs S1 about 1 bp gross, but entering on every signal still has no edge",
+    "detail": "The diagnostic run (not a bound) enters every S1 signal at the 5m close regardless of fill. Gross rises by +1.0 bps for ROLL100 (-1.09 to -0.09 DEV, -0.87 to +0.19 HO) and +0.6/+0.8 for SESSION. Net stays -6.3 to -7.5 bps and win rate 33\u201335%. The adverse selection from waiting for a trade-through is real but small. The signal itself has about zero gross edge.",
+    "evidence": "DIAG_S1_fill_always: S1_ROLL100 DEV net -7.06 gross -0.09 WR 34.6%; HO net -6.86 gross +0.19; S1_SESSION HO net -6.28 gross +1.35.",
+    "direction": "Unclear. This is not achievable as a maker order, so it is not a fix.",
+    "suggested_fix": "None. It confirms that the signal has no gross edge."
+   }
+  ],
+  "numbers": "Pooled 3 symbols; columns are DEV (2025) | HOLDOUT (2026-01..09): n, win rate, mean net bps [95% day-bootstrap CI].\nBASE (reproduces the original exactly): S1_ROLL100 n7689 WR 33.0% -8.12 [-8.93,-7.22] | n5680 WR 32.4% -7.99 [-8.93,-7.00]; S1_SESSION n5945 32.0% -8.04 [-9.19,-6.85] | n4704 32.2% -7.09 [-8.33,-5.82]; S2_slope3_tp60 n1601 27.6% -7.58 [-9.89,-5.34] | n620 28.1% -8.44 [-12.49,-4.60]\n(a) OPT_a (touch fill + target before stop + TP in fill minute + maker time exit): S1_ROLL100 n8359 36.2% -6.59 [-7.37,-5.74] | n6429 36.1% -6.38 [-7.32,-5.55]; S1_SESSION n6258 34.7% -6.25 [-7.35,-5.12] | n5092 35.8% -5.07 [-6.38,-3.79]; S2 n1619 32.1% -2.53 [-4.81,-0.26] | n624 33.2% -3.01 [-7.67,+1.95]; Sharpe HO S1 -15.26/-8.91, S2 -1.43\nOPT_max ((a) + TP on touch + no stop gap + no stop check in fill minute): S1_ROLL100 36.3% -6.53 | 36.4% -6.25; S1_SESSION 34.9% -6.17 | 36.1% -4.98; S2 32.5% -2.19 [-4.44,+0.08] | 33.7% -2.55 [-7.59,+2.95]\n(b) ZERO_FEE: S1_ROLL100 36.4% -1.09 [-1.87,-0.22] | 36.2% -0.87 [-1.77,+0.08]; S1_SESSION 35.7% -0.34 | 37.2% +0.56 [-0.66,+1.82]; S2 31.2% -0.53 | 33.7% -1.33\n(a)+(b) OPT_a_ZERO_FEE: S1_ROLL100 37.7% -0.27 | 38.0% -0.06; S1_SESSION 36.5% +0.11 | 38.3% +1.23 [-0.02,+2.45]; S2 35.6% +4.34 [+2.14,+6.51] | 38.8% +3.89 [-0.57,+8.60]\n(c) PESS_c (+1 bp on taker exits): S1_ROLL100 32.6% -8.88 | 31.9% -8.77; S1_SESSION 31.6% -8.97 | 31.8% -8.01; S2 27.3% -8.34 | 27.3% -9.22\nSingle-assumption deltas vs BASE (DEV/HO): touch fill S1 +0.85/+0.84 (ROLL100), +0.45/+0.69 (SESSION), S2 0; target-before-stop S1 about 0, S2 +0.49/+0.11; TP in fill minute S1 0, S2 +3.95/+2.67; maker time exit S1 +0.66/+0.72 (ROLL100), +1.31/+1.30 (SESSION), S2 0.\nMaker 0 / taker 3 bps tier: S1 -2.18 to -3.36, S2 -2.81/-3.67 (all negative).\nBest per-symbol result with VIP0 fees under any bound: win rate max 37.3% (OPT_max S1_ROLL100 DOGE HO, net -6.00); net max -1.52 (OPT_max S2 DOGE DEV, WR 33.5%).\nGeometry: S1_ROLL100 median stop/target 23.2/46.0 bps, random-walk P(TP first) 33.6%; S1_SESSION 25.3/97.3, 20.4%; S2 initial stop 55.6 vs target 60, 48.1%. Break-even win rate given observed avg win/loss: 45.7% / 43.2% / 37.2% (DEV).\nTick check (aggTrades, SOL+DOGE, Sept 2026): klines vs ticks agree on 99.9% of minute highs and lows. BASE bar-minus-tick paired net: S1_ROLL100 +0.31 (n438), S1_SESSION +0.30 (n322), S2 +0.05 (n67). OPT_a: bar -4.37 vs tick_touch -5.34 vs tick_strict -6.07 (S1_ROLL100); S1_SESSION -5.32 / -6.85 / -8.33; S2 -6.64 vs -8.67. Untraded touch-only fills: 38/246 SOL, 24/244 DOGE.\nGTX/latency test (S1 base signals, Sept 2026): median fill 0.6\u20130.95 s into the minute; 51\u201361% of fills within 1 s. Signals rejected as post-only at L=0: 132/213 (SOL ROLL100), 137/225 (DOGE ROLL100), 94/161 and 92/161 (SESSION). Surviving fills, pooled net: ROLL100 L=0/0.25/1 s -6.97/-4.50/-5.38 (n 169/178/166); SESSION -8.22/-11.58/-10.00 (n 136/135/114).\nFiles: /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_sensitivity-bounds/{bounds.py,bounds.json,bounds.log,tickcheck.py,tickcheck.json,tickcheck.log,latency.py,latency.json,latency.log,ir_orig.py}. Repo unchanged (git status clean). Runtime: bounds about 82 s wall, tickcheck 79 s, latency 51 s."
+ },
+ "htf-mean-reversion": {
+  "family": "HTF range mean reversion: 1-day Bollinger/VWAP bands (2-3 sigma) evaluated at 15m closes, only when ADX14(1h) < 20, target the mid band, stop 1.5-2 x ATR14(15m), max hold 4 h, maker entry at the band",
+  "hypothesis": "The idea: when 1h trend strength is low (ADX14 on 1h < 20, a range regime), a move of 2-3 sigma away from the 1-day mean should drift back toward that mean within a few hours. Using 1-day bands instead of the replay's 100-min/5m bands makes the band-to-mid target about 150-195 bps (median, DEV), far larger than the 4-8 bps round-trip cost, so a small directional edge would survive fees. Null: touching the band says nothing about the next 4 h, so gross is about 0 and net is about minus the cost. DEV verdict: the null is not rejected. Gross is negative for all 4 variants (-4.8 to -11.2 bps/trade) and net is significantly negative for all 4 (95% CI upper bound below 0 every time).",
+  "literature": "Bollinger (2001) \"Bollinger on Bollinger Bands\": defines the bands; the author himself says a band touch is not a signal on its own. Wilder (1978) \"New Concepts in Technical Trading Systems\": ATR and ADX; ADX < 20 is the usual \"no trend\" convention. Short-horizon reversal in equities, mostly explained by microstructure and liquidity provision: Lehmann (1990, QJE), Jegadeesh (1990, JF), Lo & MacKinlay (1990, RFS). Avellaneda & Lee (2010, Quant. Finance), stat-arb mean reversion: the edge decayed after costs. Brock, Lakonishok & LeBaron (1992, JF), technical rules tested before costs. Crypto intraday: Shen, Urquhart & Wang (2022, Financial Review) find Bitcoin intraday time-series momentum; Wen, Bouri, Xu & Zhao (2022, NAJEF) find a mix of momentum and reversal. Corbet & Katsiampa (2020, IRFA): asymmetric mean reversion in daily BTC returns. For this exact rule (ADX(1h)<20 + 1-day 2-3 sigma band + mid target on crypto perps at 15m with conservative maker fills): none known.",
+  "script_path": "/tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_htf-mean-reversion/strategy.py",
+  "variants": [
+   {
+    "name": "BB2_SL2",
+    "rule": "Base. Bollinger mid = SMA of last 96 15m closes, sigma = their population std, K=2.0. Gate: ADX14(1h, last closed bar) < 20. At each 15m close, if flat: post-only BUY at min(lower, close) and SELL at max(upper, close), live 15 min. Fills only if a later 1m bar trades through. Skip a side whose target is < 20 bps. TP = post-only at the decision-bar mid. SL = 2.0 x ATR14(15m), taker. 240-min time exit, taker. Fees: maker 2, taker 5+1.",
+    "n": 1514,
+    "win_rate": 0.4207,
+    "mean_net_bps": -12.87,
+    "ci_lo": -20.45,
+    "ci_hi": -5.82,
+    "per_day": 4.148,
+    "sharpe": -3.44
+   },
+   {
+    "name": "BB3_SL2",
+    "rule": "Same as BB2_SL2 but K=3.0 (wider band).",
+    "n": 718,
+    "win_rate": 0.3677,
+    "mean_net_bps": -18.68,
+    "ci_lo": -30.06,
+    "ci_hi": -6.69,
+    "per_day": 1.967,
+    "sharpe": -3.01
+   },
+   {
+    "name": "BB2_SL15",
+    "rule": "Same as BB2_SL2 but SL = 1.5 x ATR14(15m) (tighter stop).",
+    "n": 1788,
+    "win_rate": 0.3574,
+    "mean_net_bps": -12.17,
+    "ci_lo": -18.43,
+    "ci_hi": -5.93,
+    "per_day": 4.899,
+    "sharpe": -3.84
+   },
+   {
+    "name": "VW2_SL2",
+    "rule": "Same as BB2_SL2 but bands from a rolling 1-day VWAP (1440 x 1m typical price, volume-weighted sigma), K=2.0.",
+    "n": 1318,
+    "win_rate": 0.4067,
+    "mean_net_bps": -12.67,
+    "ci_lo": -20.36,
+    "ci_hi": -4.76,
+    "per_day": 3.611,
+    "sharpe": -3.15
+   }
+  ],
+  "chosen": "NONE",
+  "notes": "All numbers are DEV only (2025-01-01..2025-12-31), pooled over BTCUSDT, SOLUSDT and DOGEUSDT, from ir.summarize (bootstrap CI over days; Sharpe uses $150 per trade on $5,000 equity). Indicators were warmed up on 2024-07..12.\n\nHoldout hygiene: the data dir holds symlinks to 2024-07..2026-01 only, and the 1m arrays are cut at 2026-01-01 05:00 UTC. That cut exists only so trades entered on 2025-12-31 can close naturally. Trades exiting after 2025-12-31 are dropped and were never printed. No 2026 result was computed or looked at.\n\nPre-registration: the 4 variants were written into the docstring of strategy.py before the first run, and nothing was tuned afterwards.\n\nResult: all 4 variants have negative mean net, with the 95% CI upper bound below 0 every time. The rule's choice is therefore NONE. Mean net and Sharpe by variant:\n- BB2_SL2: -12.9 bps, Sharpe -3.4\n- BB3_SL2: -18.7 bps, Sharpe -3.0\n- BB2_SL15: -12.2 bps, Sharpe -3.8\n- VW2_SL2: -12.7 bps, Sharpe -3.2\n\nNo win rate reaches 50% (36-42%). Gross is already negative before costs: -5.6, -11.2, -4.8 and -5.3 bps.\n\nPer symbol, BB2_SL2 net:\n- BTC: -9.5 bps, CI [-15.0, -3.5]\n- SOL: -24.5 bps, CI [-36.8, -12.8]\n- DOGE: -6.0 bps, CI [-17.1, +4.0], gross +1.2\n\nDOGE is the least bad but is not significant. Both 2025 halves are negative for every variant. Long and short are both negative; longs are worse.\n\nExit mix (BB2_SL2): TP 283 trades, average gross +135; SL 742, -94; time exit 489, +47. Stops outnumber target hits about 2.6 to 1. This is why the large target-to-stop ratio (median 154 vs 88 bps) does not help.\n\nDiagnostic, not a variant: signal-only test. This measures the sign-adjusted close-to-close forward return after a 15m close beyond the BB band with ADX(1h) < 20, with no fills and no costs.\n- BTC: K=2 gives -0.1, +0.7 and +3.0 bps at 60, 120 and 240 min (standard errors 1.4-2.5).\n- SOL and DOGE: negative, i.e. the move continues rather than reverting. At K=3: SOL -29 bps (se 13) and DOGE -36 bps (se 14) at 240 min.\n\nSo the band touch in an ADX<20 regime carries no reversion edge in 2025, and at 3 sigma on the altcoins it marks continuation.\n\nDiagnostic: fill-model bound. An optimistic touch-fill version of BB2_SL2 gives -12.68 bps vs -12.87 with the trades-through rule. The fill model is not what kills this strategy; the signal is.\n\nSpot check: the first BTC trade was hand-checked against the raw 1m bars. Band level, fill minute, stop distance and the 240-min time exit all match the 2025-01-01 data.\n\nLimitations: funding is not modelled, as in the replay. The TP is fixed at the decision-bar mid rather than re-anchored. A 1-day rolling window can span more than a day if data has gaps.\n\nFiles, all under /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_htf-mean-reversion/:\n- strategy.py: the module (VARIANTS, simulate)\n- run_dev.py: DEV runner\n- dev_run.log, dev_results.json, dev_trades.json: DEV output only\n- diag.py, diag.log: diagnostics\n\nNothing in the repository was modified."
+ },
+ "intraday-tsmom": {
+  "family": "Intraday time-series momentum (session rest-of-day -> last part; rolling last-4h z-score -> next 120 min; noise-area breakout)",
+  "hypothesis": "The sign of a recent multi-hour return predicts the sign of the next 60-120 min return in BTC/SOL/DOGE USD-M perps. The return in question is either the session so far (US cash session or the UTC day) or the last 4 h. The test was whether the effect is strong enough that a maker-first entry plus a taker time exit (8-12 bps round trip at VIP0) leaves positive mean net bps per trade. Proposed mechanisms are late-informed or infrequently rebalancing traders (GHLZ 2018) and short-gamma hedging into the close (Baltussen et al. 2021). For BTC there is also my own conjecture, which is not from the literature: spot-ETF NAV hedging in the 15:00-16:00 ET reference-rate window.",
+  "literature": "These citations are from memory and I did not re-verify them in this session. Gao, Han, Li & Zhou (2018), \"Market intraday momentum\", JFE 129 (SPY: first half-hour predicts last half-hour). Elaut, Froemmel & Lampaert (2018), J. Financial Markets (same pattern in RUB/USD). Baltussen, Da, Lammers & Martens (2021), \"Hedging demand and market intraday momentum\", JFE 142 (rest-of-day predicts last 30 min in 60+ futures; gamma hedging). Shen, Urquhart & Wang (2022), \"Bitcoin intraday time series momentum\", Financial Review 57. Wen, Bouri, Xu & Zhao (2022), \"Intraday return predictability in the cryptocurrency markets: momentum, reversal, or both\", NAJEF (mixed results). Zarattini, Aziz & Barbon (2024), \"Beat the market: an effective intraday momentum strategy for S&P500 ETF (SPY)\", SSRN (noise-area breakout with VWAP trailing stop). Moskowitz, Ooi & Pedersen (2012), \"Time series momentum\", JFE 104 (parent concept). I know of no replication on 2025-era crypto perps with maker/taker costs and through-fill execution.",
+  "script_path": "/tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_intraday-tsmom/strategy.py",
+  "variants": [
+   {
+    "name": "US_ROD_LAST60",
+    "rule": "NY weekdays: r = C(15:00 ET)/C(16:00 ET of the previous weekday) - 1; trade sign(r) at 15:00 ET; time exit at 16:00 ET (taker). DST-aware; NYSE holidays not excluded.",
+    "n": 782,
+    "win_rate": 0.4258,
+    "mean_net_bps": -12.33,
+    "ci_lo": -20.27,
+    "ci_hi": -4.06,
+    "per_day": 2.142,
+    "sharpe": -3.01
+   },
+   {
+    "name": "UTC_ROD_LAST120",
+    "rule": "Every UTC day: r = C(22:00)/O(00:00) - 1; trade sign(r) at 22:00 UTC; time exit at 24:00 UTC (taker).",
+    "n": 1091,
+    "win_rate": 0.4125,
+    "mean_net_bps": -10.44,
+    "ci_lo": -18.7,
+    "ci_hi": -1.95,
+    "per_day": 2.989,
+    "sharpe": -2.43
+   },
+   {
+    "name": "ROLL4H_Z2_H120",
+    "rule": "At each HH:00 UTC: z = ln(C_T/C_T-4h) / (std of the last 720 hourly log returns * sqrt 4); if |z| >= 2, trade sign(z); time exit at T+120 min (taker).",
+    "n": 791,
+    "win_rate": 0.4437,
+    "mean_net_bps": -6.64,
+    "ci_lo": -20.71,
+    "ci_hi": 8.27,
+    "per_day": 2.167,
+    "sharpe": -0.92
+   },
+   {
+    "name": "NOISE_BO_H120",
+    "rule": "Zarattini-Aziz-Barbon on the UTC day: bands O*(1 +/- mean of |C_k/O - 1| at the same 30-min checkpoint over the previous 14 days). Entry at checkpoints 00:30-22:00 when the close is outside a band. Exit at the first later checkpoint where the close is back inside max(U, VWAP) for longs or min(L, VWAP) for shorts, otherwise at decision + 120 min (taker).",
+    "n": 5746,
+    "win_rate": 0.3484,
+    "mean_net_bps": -10.39,
+    "ci_lo": -14.22,
+    "ci_hi": -6.31,
+    "per_day": 15.742,
+    "sharpe": -5.17
+   }
+  ],
+  "chosen": "NONE",
+  "notes": "All four pre-registered variants lose money on DEV 2025, pooled over the 3 symbols. The best raw variant is ROLL4H_Z2_H120 at -6.64 bps/trade (95% CI -20.71 to +8.27), so the choice is NONE. No variant wins more than 50% of trades: win rates are 35-44% pooled and at most 46.2% for any single symbol. Gross bps/trade before costs is close to zero: -4.09 (US_ROD), -1.95 (UTC_ROD), +1.62 (ROLL4H), -2.15 (NOISE). That is far below the 8-12 bps round-trip cost.\n\nPer symbol, every (variant, symbol) pair has negative mean net. The best pair is ROLL4H on SOL at -4.10 bps (CI -25.3 to +17.7).\n\nSignal-only check (decision close to horizon close, no execution, no costs, overlapping signals allowed): the signal has essentially no predictive power on DEV. Mean is between -5.5 and +6.4 bps and hit rate between 45.5% and 51.2%; the largest |t| is 1.34, and that figure is overstated because the signals overlap. For BTC UTC_ROD I recomputed this check independently with pandas and got the same numbers: n 365, mean -1.85, hit 45.5%.\n\nMaker-first entry: 88-96% of entries filled as maker. Gross on maker-filled trades was about the same as on taker fallbacks, so the losses come mainly from costs on a near-zero signal, not from fill selection.\n\nTail risk: there is no stop by design, and the worst single trades were -362 to -711 bps net.\n\nExecution matches the repo replay. Decisions use closed 1m bars and act from the next minute. The post-only limit at the decision close is live for 3 minutes and fills only when price trades through it (maker 2 bps); otherwise a taker order fills at the open of minute T+3 (5 + 1 bps). Exits are taker at 6 bps. There is one position per symbol per variant, and a new decision is accepted only after the previous exit.\n\nHoldout discipline: run_dev.py truncates the data at 2026-01-01 03:00 UTC, so I computed no 2026 result. simulate() itself has no date filter, as required.\n\nFiles, all under /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_intraday-tsmom/: strategy.py (pre-registration in the docstring, VARIANTS, simulate, candidates), run_dev.py, dev_results.json (pooled and per-symbol DEV summaries plus diagnostics), dev_run.log. The run took 15 s wall time on 3 processes. No file in the repository was modified."
+ },
+ "range-breakout": {
+  "family": "Opening-range / session breakout (ORB): ranges set after 00:00, 08:00 and 13:30 UTC, entry needs a 5m close outside the range on 1.5x relative volume, target 1-2x the range, stop at the range middle",
+  "hypothesis": "Liquidity and participation change at three session anchors: 00:00 UTC (daily candle and funding), 08:00 UTC (Europe open and funding) and 13:30 UTC (US cash-equity open). Information may arrive in bunches at these times. Take the range of the first 30 or 60 min after an anchor. A later closed 5m bar that closes outside that range, on quote volume at least 1.5x the same time-of-day slot's mean over the previous 20 days, would mark directional, information-driven flow. The hypothesis is that this flow continues to a 1-2x range projection before price returns to the range middle, by more than the VIP0 taker-entry costs. Null hypothesis: crypto trades 24/7 with no overnight gap or opening auction, so the session open carries no special information, and the expected net return is <= 0 after costs.",
+  "literature": "Cited from memory and not re-checked: Crabel (1990) Day Trading with Short Term Price Patterns and Opening Range Breakout. Fisher (2002) The Logical Trader (ACD method). Blume, Easley & O'Hara (1994) Market statistics and technical analysis: the role of volume, J. Finance. Holmberg, Lonnbark & Lundstrom (2013) Assessing the profitability of intraday opening range breakout strategies, Finance Research Letters. Gao, Han, Li & Zhou (2018) Market intraday momentum, JFE. Zarattini & Aziz (2023), ORB on QQQ, SSRN. Zarattini, Barbon & Aziz (2024) A profitable day trading strategy for the U.S. equity market, SSRN (5-min ORB with a relative-volume filter). Eross, McGroarty, Urquhart & Wolfe (2019) The intraday dynamics of bitcoin, RIBAF. Wen, Bouri, Xu & Zhao (2022) Intraday return predictability in the cryptocurrency markets: momentum, reversal, or both, NAJEF. I know of no study that tests a session-anchored ORB with volume confirmation on crypto perpetuals net of taker costs.",
+  "script_path": "/tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_range-breakout/strategy.py",
+  "variants": [
+   {
+    "name": "ORB30_T1_H45",
+    "rule": "Range = first 30 min after 00:00/08:00/13:30 UTC; skip the session if the range is < 20 bps. Signal = first closed 5m bar within 120 min after the range that closes beyond RH/RL, with qv >= 1.5x the same slot's 20-day mean. Entry = taker at the next 1m open. TP = boundary +/- 1.0x range (maker). SL = range mid (taker). Time barrier 45 min. Max 1 trade per session, 1 position per symbol.",
+    "n": 1906,
+    "win_rate": 0.416,
+    "mean_net_bps": -15.07,
+    "ci_lo": -18.73,
+    "ci_hi": -11.3,
+    "per_day": 5.22,
+    "sharpe": -7.79
+   },
+   {
+    "name": "ORB60_T1_H45",
+    "rule": "Same rules with a 60-min range, TP = boundary +/- 1.0x range, time barrier 45 min.",
+    "n": 1922,
+    "win_rate": 0.426,
+    "mean_net_bps": -11.24,
+    "ci_lo": -15.92,
+    "ci_hi": -6.39,
+    "per_day": 5.27,
+    "sharpe": -4.61
+   },
+   {
+    "name": "ORB30_T2_H240",
+    "rule": "Same rules with a 30-min range, TP = boundary +/- 2.0x range, time barrier 240 min.",
+    "n": 2068,
+    "win_rate": 0.382,
+    "mean_net_bps": -16.72,
+    "ci_lo": -23.02,
+    "ci_hi": -10.72,
+    "per_day": 5.67,
+    "sharpe": -5.13
+   },
+   {
+    "name": "ORB60_T2_H240",
+    "rule": "Same rules with a 60-min range, TP = boundary +/- 2.0x range, time barrier 240 min.",
+    "n": 2006,
+    "win_rate": 0.4,
+    "mean_net_bps": -13.58,
+    "ci_lo": -20.95,
+    "ci_hi": -6.26,
+    "per_day": 5.5,
+    "sharpe": -3.63
+   }
+  ],
+  "chosen": "NONE",
+  "notes": "Result: NO EDGE on DEV 2025. All 4 pre-registered variants lose money after costs, and every bootstrap 95% CI (over days) is entirely below zero. Gross per trade is about zero before costs: -4.5, -0.4, -5.8 and -2.4 bps. Costs average about 10.5-11 bps per trade, made up of 6 bps for the taker entry plus a 2 bps maker or 6 bps taker exit. Win rate is 38-43%, below the user's 50% requirement in every variant. The least-bad variant is ORB60_T1_H45 at -11.24 bps/trade (CI -15.9..-6.4), but every mean is negative, so the selection rule returns NONE.\n\nBreakdowns, pooled over BTC/SOL/DOGE. These are descriptive only and were not used for selection.\n- By symbol: all negative. Best cell is ORB60_T1_H45 SOL at -8.4 bps (CI -15.8..-1.6).\n- By session: all 12 session-by-variant cells are negative. 00:00 UTC is the least bad (ORB60_T1_H45: -7.9, CI -15.5..+1.3). 13:30 UTC is the worst in all 4 variants.\n- By side: longs are worse than shorts everywhere.\n- DEV halves: ORB60_T2_H240 went from H1 -21.9 to H2 -5.4 (CI -14.8..+3.6). No half is significantly positive.\n\nPost-hoc diagnostic, not a candidate: turning the 1.5x volume filter off raises trade count by about 45% (n 2832-2992) and lowers win rate by 3-7 points. Gross barely changes (-0.5..-5.5 vs -0.4..-5.8 bps). So the relative-volume confirmation carries no economically meaningful information here.\n\nFrequency is about 5.2-5.7 trades/day across 3 coins, inside the 5-15/day target, but the edge is negative.\n\nMethod and checks:\n- I modified no repo files.\n- To avoid computing anything after 2025-12-31, the runner reads a symlink dir holding only the 2024-07..2025-12 zips. An assert checks that no 2026 bar is present. 2024 serves as warm-up for the 20-day volume baseline only.\n- simulate() itself does no date filtering, so a holdout runner can pass full data.\n- The model reuses ir.resample and ir._exit_scan unchanged: closed-bar decisions acting from the next minute, maker TP filled only when traded through, stop checked before target inside a 1m bar, maker 2 / taker 5+1 bps, one position per symbol.\n- I hand-checked 3 random BTC trades against raw klines: range, signal close, volume ratio (computed independently from the 20 prior days), entry at the next open, TP/SL, exit bar. All matched.\n\nRuntime: about 19 s wall for all 4 variants on 3 symbols.\n\nFiles, all under /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_range-breakout/:\n- strategy.py: docstring with the pre-registration, VARIANTS, simulate.\n- run_dev.py\n- dev_run.log\n- dev_results.json\n- dev_trades.json (DEV trades only)\n- check.py (hand verification)\n- diag_novol.py (post-hoc diagnostic)\n- data_dev/ (symlinks)\n\nRecommendation: do not send any ORB variant to the holdout, and do not enable it on demo."
+ },
+ "funding-window": {
+  "family": "Funding-settlement window effects (00:00 / 08:00 / 16:00 UTC), conditioned on the sign of the 8h trend as a funding proxy",
+  "hypothesis": "When funding is positive (proxy: the 8h return over the funding interval is up), leveraged longs close and basis traders add perp shorts just before the snapshot. That should push price against the 8h trend in the 15-60 min before settlement. After the snapshot, payers re-open and funding collectors unwind, which should push price with the trend for 15-60 min. Negative funding is the mirror case. The prior was a drift of a few bps at most, below the 8 bps round-trip cost (maker 2 + taker 6), so NO EDGE was expected.",
+  "literature": "None of these papers tests a tradable crypto funding-settlement-window drift. I know of no peer-reviewed evidence for one. Background: He, Manela, Ross & von Wachter (2022, rev. 2024) \"Fundamentals of Perpetual Futures\"; Ackerer, Hugonnier & Jermann (2023/2024) \"Perpetual Futures Pricing\"; Christin, Routledge, Soska & Zetlin-Jones (2022/2023) \"The Crypto Carry Trade\". Intraday seasonality: Eross, McGroarty, Urquhart & Wolfe (2019) \"The intraday dynamics of bitcoin\" (RIBAF); Baur, Cahill, Godfrey & Liu (2019) Bitcoin time-of-day effects (FRL). Price pressure at fixed settlement or fixing times in other markets: Stoll & Whaley (1987) expiration-day effects (FAJ); Melvin & Prins (2015) London 4pm fix (JFM); Evans (2018) WMR fix (JBF).",
+  "script_path": "/tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_funding-window/strategy.py",
+  "variants": [
+   {
+    "name": "PRE60_FADE",
+    "rule": "Decide at the 1m close at T-60min. Side = -sign(8h return). Post-only limit at that close, live 2 min, fills only when traded through. SL 3xATR14(5m), taker. No TP. Taker time exit at T-1min, so the position is never open at the snapshot.",
+    "n": 3084,
+    "win_rate": 0.398,
+    "mean_net_bps": -11,
+    "ci_lo": -14.71,
+    "ci_hi": -7.04,
+    "per_day": 8.45,
+    "sharpe": -5.6
+   },
+   {
+    "name": "PRE15_FADE",
+    "rule": "Same as PRE60_FADE but decide at T-15min. Exit at T-1min.",
+    "n": 3022,
+    "win_rate": 0.345,
+    "mean_net_bps": -10.62,
+    "ci_lo": -12.63,
+    "ci_hi": -8.76,
+    "per_day": 8.28,
+    "sharpe": -10.89
+   },
+   {
+    "name": "POST15_TREND",
+    "rule": "Decide at the 1m close at T. Side = +sign(8h return ending at T). Maker limit placed after the snapshot, live 2 min, fills only when traded through. SL 3xATR14(5m). Taker time exit at T+15min.",
+    "n": 2981,
+    "win_rate": 0.371,
+    "mean_net_bps": -7.59,
+    "ci_lo": -9.63,
+    "ci_hi": -5.41,
+    "per_day": 8.17,
+    "sharpe": -7.09
+   },
+   {
+    "name": "POST60_TREND",
+    "rule": "Same as POST15_TREND but taker time exit at T+60min.",
+    "n": 2981,
+    "win_rate": 0.395,
+    "mean_net_bps": -7.82,
+    "ci_lo": -12.19,
+    "ci_hi": -3.45,
+    "per_day": 8.17,
+    "sharpe": -3.63
+   }
+  ],
+  "chosen": "NONE",
+  "notes": "Result: all four variants lose money on DEV 2025, pooled over BTC/SOL/DOGE, so chosen = NONE. The least-negative variant is POST15_TREND at -7.59 bps/trade, CI [-9.63, -5.41]. Win rates are 35-40%, against the user's required >50%. Gross is about 0 bps (-4.2 to +3.1 per symbol), so the 8 bps maker+taker cost decides the outcome.\n\nPer symbol, all 12 symbol x variant cells have a negative mean. Only DOGE POST60_TREND has a CI that crosses zero: -4.87 [-11.37, +1.37]. Every DEV quarter Q1-Q4 is negative for every variant.\n\nDiagnostic event study (DEV only, every event, no fills, no costs, close-to-close in the hypothesised direction, iid SE):\n- PRE60: -2.94 bps (SE 1.51).\n- PRE15: -1.33 bps (SE 0.62).\n- So the pre-settlement fade has the wrong sign. If anything, price continued with the trend before settlement, and the mirror image (about +3 gross) would still not cover 8 bps.\n- POST15: +1.92 bps (SE 0.78).\n- POST60: +2.98 bps (SE 1.51).\n- So the post-settlement with-trend drift has the sign the hypothesis predicted but is about 2-3 bps, far below costs.\n- The adverse-selection maker fill model cuts realised gross further, to +0.41 (POST15) and +0.18 (POST60) bps.\n\nOther checks:\n- Fill rate is 91-94%.\n- Splitting by |z| of the 8h trend (tercile, descriptive only) gives no tercile with positive net.\n- By settlement hour, the 16:00 UTC settlement shows the largest |drift| in all four windows, but this was not pre-registered and is not actionable after costs.\n\nIntegrity:\n- Variants were pre-registered in the strategy.py docstring before any run. The file hash was frozen in strategy.sha256.prereg and re-verified OK after the run.\n- Only 2024-07..2025-12 files were loaded, through symlinks in data_dev/, and an assertion blocks any data from 2026 or later. No holdout result was computed or viewed.\n- No position is open at a funding snapshot: PRE exits at T-1min, POST orders are placed at T. So the funding P&L of every trade is exactly zero, not unknown.\n- Same execution model as the replay: closed-bar decisions acting from the next minute, maker fills only when traded through, stop before target, maker 2 / taker 6 bps, one position per symbol.\n- Nothing was modified in /home/user/he_thong_da_tac_tu.\n- CPU time was about 30 s.\n\nFiles (all in /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_funding-window/):\n- run_dev.py (DEV runner and diagnostics)\n- dev_run.log\n- dev_results.json\n- dev_trades.json (DEV trades only)"
+ },
+ "volume-shock-reversal": {
+  "family": "Volume-shock (liquidation-cascade proxy) reversal on 1m bars: fade a bar with volume >= 5x its 60-min mean and |return| >= 3x its 60-min sigma, 50% retracement target, stop beyond the shock extreme, hold <= 60 min",
+  "hypothesis": "In crypto perps a 1m bar with abnormal volume and an abnormal return is often forced, one-sided taker flow (stop-outs or liquidation cascades). Price-pressure theory says this non-informational flow pushes price past its efficient level, and part of the overshoot reverts once the forced flow stops, which pays whoever fades it for supplying liquidity. The counter-hypothesis is that some shocks carry information and continue, and a resting fade order gets filled exactly when the cascade keeps going (adverse selection). Pre-registered before any run (module docstring): shock defined as above using the previous 60 contiguous bars; side = -sign(r); P0 = previous close, X = shock extreme, leg = |P0-X|; TP = 50% retracement (post-only maker, fills only when traded through); SL = X - side*0.25*leg (taker + 1 bp slippage); 60 min time barrier (taker); skip if the TP is < 10 bps from the shock close. Maker entry = post-only limit at the shock close, live for 5 min, cancelled if price reaches the TP first. Taker entry = next minute's open. Execution, fees and one position per symbol are the same as tools/intraday_replay.py (ir._exit_scan).",
+  "literature": "Grossman & Miller (1988, JF) liquidity provision and reversals; Campbell, Grossman & Wang (1993, QJE) high-volume price changes reverse more; Llorente, Michaely, Saar & Wang (2002, RFS) informed volume continues while hedging/liquidity volume reverses; Brunnermeier & Pedersen (2005, JF) predatory trading and forced-liquidation overshoot; Nagel (2012, RFS) reversal profits as liquidity-provision returns; Fung, Mok & Lam (2000, JBF) and Grant, Wolf & Yu (2005, JBF) intraday reversals after large moves in index futures; Zawadowski, Andor & Kertesz (2006, Quantitative Finance) short-term reaction after extreme 1-minute price changes. Crypto-specific 1m liquidation-cascade reversal with realistic maker/taker costs: none known.",
+  "script_path": "/tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_volume-shock-reversal/strategy.py",
+  "variants": [
+   {
+    "name": "MK_ALL",
+    "rule": "maker post-only fade at the shock close (5-min window, cancel if TP reached first); every shock that passes the 10-bp TP guard",
+    "n": 3515,
+    "win_rate": 0.4492,
+    "mean_net_bps": -8.167,
+    "ci_lo": -9.577,
+    "ci_hi": -6.79,
+    "per_day": 9.63,
+    "sharpe": -10.827
+   },
+   {
+    "name": "MK_L40",
+    "rule": "MK_ALL + shock leg >= 40 bps",
+    "n": 2320,
+    "win_rate": 0.4871,
+    "mean_net_bps": -8.29,
+    "ci_lo": -10.381,
+    "ci_hi": -6.203,
+    "per_day": 6.356,
+    "sharpe": -7.386
+   },
+   {
+    "name": "TK_L40",
+    "rule": "taker market entry at the next minute's open, shock leg >= 40 bps",
+    "n": 2453,
+    "win_rate": 0.5141,
+    "mean_net_bps": -11.034,
+    "ci_lo": -13.096,
+    "ci_hi": -9.057,
+    "per_day": 6.721,
+    "sharpe": -9.761
+   },
+   {
+    "name": "MK_L40_FLOW",
+    "rule": "MK_L40 + taker-flow filter on the shock bar: taker-buy share <= 0.40 for a down shock, >= 0.60 for an up shock",
+    "n": 1892,
+    "win_rate": 0.4826,
+    "mean_net_bps": -8.209,
+    "ci_lo": -10.275,
+    "ci_hi": -6.238,
+    "per_day": 5.184,
+    "sharpe": -7.538
+   }
+  ],
+  "chosen": "NONE",
+  "notes": "RESULT: NEGATIVE. No variant is chosen. DEV is 2025-01-01..2025-12-31, pooled over BTCUSDT, SOLUSDT and DOGEUSDT with ir.summarize. All 4 pre-registered variants lose money, and the upper end of every 95% bootstrap CI is below about -6 bps/trade. The highest mean is MK_ALL at -8.17 bps, but it is negative, so the answer is NONE.\n\nGross edge before fees is about zero: MK_ALL -1.96, MK_L40 -2.24, TK_L40 -1.09, MK_L40_FLOW -2.14 bps. Round-trip costs are 4-12 bps, so fees decide the result.\n\n- **Win rate:** 45-51%. TK_L40 is the only variant just above 50% (51.4%), and it still nets -11.0 bps.\n- **Win and loss size:** average net win is 17-21 bps and average net loss is 29-41 bps.\n- **Time-split check:** H1 and H2 of 2025 have the same sign for every variant (for example MK_L40: H1 -8.97, H2 -7.57).\n- **Per symbol:** every symbol is negative in every variant. BTC is the least bad (MK_L40 -4.89 bps, CI [-8.05, -1.44]); SOL and DOGE are around -8.5 to -11.7 bps.\n- **Hold time:** median hold is about 2 minutes. Almost every trade ends on SL or TP; the 60-min time barrier triggered only 0-2 times per variant.\n- **Shock frequency:** shock bars in DEV were BTC 3002, SOL 2351, DOGE 2398 (about 6.4-8.2 per symbol per day). Frequency is not the problem; edge is.\n\nPost-hoc diagnostic (DEV only, not a variant, not used for selection): average close-to-close return in the fade direction after a shock is small. At +1m it is +0.5 to +1.9 bps, which is partly bid-ask bounce. At +5m to +60m it is mixed: BTC +0.6 to +1.9, SOL +0.4 to +2.0, DOGE -2.3 to -5.4 (DOGE continues rather than reverts). Only BTC with leg >= 40 bps reached +8.1 bps at +60m (n = 466). That is about the size of the cost hurdle, comes from a post-hoc slice, and is not a basis for any change. The pre-registered stop at 0.25 x leg is tight next to post-shock 1m volatility, but no wider-stop variant was tested, by design.\n\nIntegrity:\n- No file in /home/user/he_thong_da_tac_tu was modified.\n- The DEV run loaded only the 2024-07..2025-12 files, through a symlink folder (wf_volume-shock-reversal/data_dev). An assert guards against loading later data, so no 2026 result was computed or seen. 2024-07..12 was used only as warm-up (the 60-bar windows need very little).\n- Trades whose exit would fall past the loaded data ('END' exits): 0 dropped.\n- simulate(m, name) does not filter dates, so the holdout run can use it on the full data as is.\n- I spot-checked 3 random SOL trades by hand (shock bar, leg, TP, SL, fill, net); they match the rules.\n- Runtime is about 13 s.\n\nFiles (all in /tmp/claude-0/-home-user-he-thong-da-tac-tu/91ca436c-9415-5d3b-b784-e5a036caf65c/scratchpad/wf_volume-shock-reversal/):\n- strategy.py: the module and the pre-registration text\n- run_dev.py: the DEV runner\n- dev_results.json and dev_run.log: full per-symbol and per-half numbers\n- diag_dev.py: the post-hoc diagnostic\n\nImplication for the user's goal (win rate > 55% and > +15 bps/trade net): this family does not meet it in DEV under the conservative fill model, so it should not be put forward for the holdout or demo."
+ }
+}
