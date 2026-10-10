@@ -492,7 +492,7 @@ class Profile:
     # win rate > 50 %).  Replay tools/intraday_replay.py 10-10 b: every pre-registered variant negative -> shadow.
     intraday_lane: str = 'off'
     intraday_symbols: tuple = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')
-    intraday_variants: tuple = ('S1_ROLL100', 'S2_slope3_tp60')
+    intraday_variants: tuple = ('S1_SESSION', 'S2_slope3_tp60')   # the replay's DEV-best per strategy
     intraday_notional_usdt: float = 150.0
     intraday_budget_pct: float = 0.04
     intraday_daily_kill_usdt: float = 25.0

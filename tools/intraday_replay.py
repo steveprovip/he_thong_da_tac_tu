@@ -27,7 +27,8 @@ PRE-REGISTERED (written before the first run; thresholds = the request's, window
                   condition holds, cancelled at the first 5m close where it fails;
              TP = entry +/- 60 | 100 bps (post-only);  SL = the extreme of the last 2 closed 5m bars (if within
                   5 bps of entry: 1 ATR), trailed to each new closed 5m bar's low / high (never loosened).
-  both       one position per symbol per strategy; 45 min time barrier -> taker at that minute's close;
+  both       one position per symbol per strategy (no new entry at a 5m close whose last minute closed the previous
+             position - the same rule as the live lane); 45 min time barrier -> taker at that minute's close;
              a resting order fills only when a later 1m bar trades THROUGH it (low < buy limit, high > sell limit);
              inside one 1m bar the stop is assumed hit BEFORE the target (conservative); in the fill minute itself
              only the stop counts (the high may have printed before the fill); a gap through the stop fills at
@@ -35,7 +36,8 @@ PRE-REGISTERED (written before the first run; thresholds = the request's, window
   splits     DEV 2025-01-01..2025-12-31 (choose the variant per strategy, pooled symbols),
              HOLDOUT 2026-01-01..2026-09-30 (report).  CI: bootstrap over days.
   verdict    a (strategy, symbol) may trade the demo venue only if its HOLDOUT mean net bps/trade has a 95 % CI
-             lower bound > 0 AND its win rate > 50 % (the user's two conditions); otherwise SHADOW.
+             lower bound > 0 AND its win rate > 50 % (the user's two conditions) AND it has >= 100 HOLDOUT trades
+             (floor added after the stats audit; it changes no current verdict); otherwise SHADOW.
   money      fixed $150 per trade (3 % of a $5 000 wallet); Sharpe from daily P&L / $5 000, x sqrt(365).
 """
 from __future__ import annotations
@@ -54,22 +56,15 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from core.intraday_lane import P, VARIANTS, features, resample  # noqa: E402,F401  (resample re-exported)
+from core.intraday_lane import s1_signal, s2_stop, s2_trend  # noqa: E402
+
 MAKER, TAKER = 2.0, 6.0
+MIN_HOLDOUT_N = 100                                       # per (symbol, strategy): no verdict from a handful of trades
 NOTIONAL, EQUITY = 150.0, 5000.0
 DEV = ('2025-01-01', '2025-12-31')
 HOLD = ('2026-01-01', '2026-09-30')
-VARIANTS = {
-    'S1_ROLL100': {'kind': 'S1', 'vwap': 'ROLL100'},
-    'S1_SESSION': {'kind': 'S1', 'vwap': 'SESSION'},
-    'S2_slope3_tp60': {'kind': 'S2', 'slope': 3, 'tp': 60.0},
-    'S2_slope3_tp100': {'kind': 'S2', 'slope': 3, 'tp': 100.0},
-    'S2_slope1_tp60': {'kind': 'S2', 'slope': 1, 'tp': 60.0},
-    'S2_slope1_tp100': {'kind': 'S2', 'slope': 1, 'tp': 100.0},
-}
-P = {'band_k': 2.0, 'mr_slope_max': 0.08, 'rr_min': 1.5, 'sl_atr': 1.0, 'trend_slope': 0.15, 'adx_min': 25.0,
-     'hold_min': 45, 'pull_bars': 3, 'sl_min_bps': 5.0, 'vwap_roll': 100, 'session_min': 60}
-
-
 # ------------------------------------------------------------------ data
 def load_1m(data: Path, symbol: str):
     """-> dict of numpy arrays t (open, s), o, h, l, c, v, qv, tbq; sorted, de-duplicated."""
@@ -86,111 +81,6 @@ def load_1m(data: Path, symbol: str):
     return {'t': a[:, 0] / 1000.0, 'o': a[:, 1], 'h': a[:, 2], 'l': a[:, 3], 'c': a[:, 4], 'v': a[:, 5],
             'qv': a[:, 6], 'tbq': a[:, 7]}
 
-
-def resample(m: dict, span: int):
-    """Complete clock-aligned bars of `span` seconds from 1m bars -> dict (t = open, t_close = open + span)."""
-    k = (m['t'] // span).astype(np.int64)
-    starts = np.flatnonzero(np.r_[True, k[1:] != k[:-1]])
-    ends = np.r_[starts[1:], len(k)]
-    full = (ends - starts) == span // 60
-    s, e = starts[full], ends[full]
-    return {'t': k[s] * float(span), 't_close': k[s] * float(span) + span, 'o': m['o'][s],
-            'h': np.maximum.reduceat(m['h'], starts)[full], 'l': np.minimum.reduceat(m['l'], starts)[full],
-            'c': m['c'][e - 1], 'i_last': e - 1}
-
-
-def ema(x, n):
-    out = np.empty(len(x))
-    a = 2.0 / (n + 1)
-    acc = x[0]
-    for i, v in enumerate(x):
-        acc = v if i == 0 else acc + a * (v - acc)
-        out[i] = acc
-    return out
-
-
-def wilder_atr(h, l, c, n=14):
-    tr = np.maximum(h - l, np.maximum(np.abs(h - np.r_[c[0], c[:-1]]), np.abs(l - np.r_[c[0], c[:-1]])))
-    out = np.full(len(c), np.nan)
-    if len(c) < n:
-        return out
-    a = tr[:n].mean()
-    out[n - 1] = a
-    for i in range(n, len(c)):
-        a = (a * (n - 1) + tr[i]) / n
-        out[i] = a
-    return out
-
-
-def wilder_adx(h, l, c, n=14):
-    up, dn = h[1:] - h[:-1], l[:-1] - l[1:]
-    pdm = np.where((up > dn) & (up > 0), up, 0.0)
-    ndm = np.where((dn > up) & (dn > 0), dn, 0.0)
-    tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
-    out = np.full(len(c), np.nan)
-    if len(tr) < 2 * n:
-        return out
-    a, p, q = tr[:n].sum(), pdm[:n].sum(), ndm[:n].sum()
-    dx = []
-    for k in range(n - 1, len(tr)):
-        if k >= n:
-            a, p, q = a - a / n + tr[k], p - p / n + pdm[k], q - q / n + ndm[k]
-        pdi, ndi = (100 * p / a, 100 * q / a) if a else (0.0, 0.0)
-        dx.append(100 * abs(pdi - ndi) / (pdi + ndi) if pdi + ndi else 0.0)
-    adx = sum(dx[:n]) / n
-    out[2 * n - 1] = adx
-    for j in range(n, len(dx)):
-        adx = (adx * (n - 1) + dx[j]) / n
-        out[j + n] = adx
-    return out
-
-
-def vwap_bands(m: dict, kind: str):
-    """Per 1m bar (value known at that bar's CLOSE): VWAP and sigma, ROLL100 or SESSION."""
-    tp = (m['h'] + m['l'] + m['c']) / 3.0
-    v = m['v']
-    if kind == 'ROLL100':
-        n = P['vwap_roll']
-        cv, cpv, cp2v = (np.r_[0.0, np.cumsum(x)] for x in (v, tp * v, tp * tp * v))
-        i = np.arange(len(v))
-        lo = np.maximum(i + 1 - n, 0)
-        sv, spv, sp2v = cv[i + 1] - cv[lo], cpv[i + 1] - cpv[lo], cp2v[i + 1] - cp2v[lo]
-        ok = (i + 1 >= n) & (sv > 0)
-    else:
-        day = (m['t'] // 86400).astype(np.int64)
-        start = np.r_[True, day[1:] != day[:-1]]
-        grp = np.cumsum(start) - 1
-        sv, spv, sp2v = (np.zeros(len(v)) for _ in range(3))
-        for arr, src in ((sv, v), (spv, tp * v), (sp2v, tp * tp * v)):
-            cs = np.cumsum(src)
-            base = np.r_[0.0, cs][np.flatnonzero(start)][grp]
-            arr[:] = cs - base
-        mins = np.arange(len(v)) - np.flatnonzero(start)[grp] + 1
-        ok = (mins >= P['session_min']) & (sv > 0)
-    vw = np.where(ok, spv / np.where(sv > 0, sv, 1.0), np.nan)
-    var = np.where(ok, sp2v / np.where(sv > 0, sv, 1.0) - vw * vw, np.nan)
-    return vw, np.sqrt(np.maximum(var, 0.0))
-
-
-# ------------------------------------------------------------------ features at the 5m closes
-def features(m: dict) -> dict:
-    b5 = resample(m, 300)
-    b15 = resample(m, 900)
-    e20 = ema(b5['c'], 20)
-    slope1 = np.r_[np.nan, (e20[1:] / e20[:-1] - 1) * 100]
-    slope3 = np.r_[np.full(3, np.nan), (e20[3:] / e20[:-3] - 1) * 100]
-    atr5 = wilder_atr(b5['h'], b5['l'], b5['c'])
-    adx15 = wilder_adx(b15['h'], b15['l'], b15['c'])
-    j = np.searchsorted(b15['t_close'], b5['t_close'], side='right') - 1          # last 15m bar CLOSED by then
-    adx_at = np.where(j >= 0, adx15[np.maximum(j, 0)], np.nan)
-    il = b5['i_last']
-    cvd60 = 2 * m['tbq'][il] - m['qv'][il]
-    out = {'b5': b5, 'ema20': e20, 'slope1': slope1, 'slope3': slope3, 'atr5': atr5, 'adx15': adx_at,
-           'cvd60': cvd60}
-    for kind in ('ROLL100', 'SESSION'):
-        vw, sd = vwap_bands(m, kind)
-        out[f'vwap_{kind}'], out[f'sd_{kind}'] = vw[il], sd[il]
-    return out
 
 
 # ------------------------------------------------------------------ simulation
@@ -237,29 +127,16 @@ def run_symbol(m: dict, f: dict, var: dict):
         if i_next >= len(t1) or t1[i_next] != tc:
             k += 1
             continue
-        c, atr = b5['c'][k], f['atr5'][k]
+        atr = f['atr5'][k]
         if not np.isfinite(atr) or atr <= 0:
             k += 1
             continue
         if var['kind'] == 'S1':
-            vw, sd = f[f'vwap_{var["vwap"]}'][k], f[f'sd_{var["vwap"]}'][k]
-            sl1 = f['slope1'][k]
-            if not (np.isfinite(vw) and np.isfinite(sd) and sd > 0 and np.isfinite(sl1)) or abs(sl1) >= P['mr_slope_max']:
+            sig = s1_signal(f, k, var['vwap'])                # shared with core/intraday_lane.py
+            if not sig:
                 k += 1
                 continue
-            side = 0
-            if b5['l'][k] <= vw - P['band_k'] * sd and f['cvd60'][k] > 0 and c < vw:
-                side = 1
-            elif b5['h'][k] >= vw + P['band_k'] * sd and f['cvd60'][k] < 0 and c > vw:
-                side = -1
-            if not side:
-                k += 1
-                continue
-            entry, tp = c, vw
-            sl = entry - side * P['sl_atr'] * atr
-            if side * (tp - entry) < P['rr_min'] * side * (entry - sl):
-                k += 1
-                continue
+            side, entry, tp, sl = sig
             i = i_next                                    # one minute to get filled through
             filled = (m['l'][i] < entry) if side > 0 else (m['h'][i] > entry)
             if not filled:
@@ -269,17 +146,13 @@ def run_symbol(m: dict, f: dict, var: dict):
             px, how, ix, mk = _exit_scan(m, i, side, entry, tp, sl)
             fill_i = i
         else:
-            sl_key = 'slope3' if var['slope'] == 3 else 'slope1'
             fill_i, side, entry = None, 0, None
             kk = k
             while kk < n5:                                # re-anchored at each 5m close while the trend holds
-                s_, adx, e20, cc = f[sl_key][kk], f['adx15'][kk], f['ema20'][kk], b5['c'][kk]
-                up = np.isfinite(s_) and np.isfinite(adx) and s_ >= P['trend_slope'] and adx > P['adx_min'] and cc > e20
-                dn = np.isfinite(s_) and np.isfinite(adx) and s_ <= -P['trend_slope'] and adx > P['adx_min'] and cc < e20
-                sd = 1 if up else (-1 if dn else 0)
+                sd = s2_trend(f, kk, var['slope'])            # shared with core/intraday_lane.py
                 if not sd or (side and sd != side):
                     break
-                side, lim = sd, e20
+                side, lim = sd, f['ema20'][kk]
                 a, z = b5['i_last'][kk] + 1, b5['i_last'][kk] + 6           # the 5 minutes until the next 5m close
                 for i in range(a, min(z, len(t1))):
                     if (side > 0 and m['l'][i] < lim) or (side < 0 and m['h'][i] > lim):
@@ -292,11 +165,7 @@ def run_symbol(m: dict, f: dict, var: dict):
                 k = kk if kk > k else k + 1
                 continue
             last_k = int(np.searchsorted(b5['t_close'], t1[fill_i], side='right')) - 1   # last 5m bar closed
-            lows = b5['l'][max(0, last_k - 1):last_k + 1]
-            highs = b5['h'][max(0, last_k - 1):last_k + 1]
-            sl = lows.min() if side > 0 else highs.max()
-            if side * (entry - sl) / entry * 1e4 < P['sl_min_bps']:
-                sl = entry - side * P['sl_atr'] * f['atr5'][last_k]
+            sl = s2_stop(f, last_k, side, entry)
             tp = entry * (1 + side * var['tp'] / 1e4)
 
             def trail(i, s, side=side):
@@ -339,7 +208,7 @@ def summarize(trades, lo, hi):
     daily = np.zeros(days)
     for r in tr:
         daily[int(r['t'] // 86400) - lo] += r['net_bps'] / 1e4 * NOTIONAL / EQUITY
-    eq = np.cumsum(daily)
+    eq = np.r_[0.0, np.cumsum(daily)]                      # the curve starts at 0: a first-day loss is a drawdown
     ex = {}
     for r in tr:
         ex[r['exit']] = ex.get(r['exit'], 0) + 1
@@ -391,7 +260,7 @@ def main(argv=None):
     for s in syms:
         for kind, v in best.items():
             h = out['per_symbol'][s][v]['HOLDOUT'] if v else {}
-            ok = bool(h.get('n')) and h['ci95'][0] > 0 and h['win_rate'] > 0.5
+            ok = h.get('n', 0) >= MIN_HOLDOUT_N and h['ci95'][0] > 0 and h['win_rate'] > 0.5
             verdict.setdefault(s, {})[kind] = {'variant': v, 'verdict': 'ACTIVE-ELIGIBLE' if ok else 'SHADOW',
                                                'holdout_mean_net_bps': h.get('mean_net_bps'), 'holdout_ci95': h.get('ci95'),
                                                'holdout_win_rate': h.get('win_rate'), 'holdout_n': h.get('n')}
@@ -420,7 +289,7 @@ def main(argv=None):
         (ROOT / 'config').mkdir(exist_ok=True)
         (ROOT / 'config' / 'intraday_verdict.json').write_text(json.dumps(
             {**verdict, '_generated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-             '_rule': 'ACTIVE-ELIGIBLE iff HOLDOUT CI95 lower > 0 and win rate > 50 % (DEV-best variant)'},
+             '_rule': 'ACTIVE-ELIGIBLE iff HOLDOUT n >= 100, CI95 lower > 0 and win rate > 50 % (DEV-best variant)'},
             indent=1, default=float), encoding='utf-8')
     return 0
 

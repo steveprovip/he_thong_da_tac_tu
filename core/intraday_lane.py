@@ -32,7 +32,7 @@ import numpy as np
 
 VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'intraday_verdict.json'
 P = {'band_k': 2.0, 'mr_slope_max': 0.08, 'rr_min': 1.5, 'sl_atr': 1.0, 'trend_slope': 0.15, 'adx_min': 25.0,
-     'hold_min': 45, 'sl_min_bps': 5.0, 'vwap_roll': 100, 'session_min': 60}
+     'hold_min': 45, 'sl_min_bps': 5.0, 'vwap_roll': 100, 'session_min': 60}      # = tools/intraday_replay.py
 VARIANTS = {
     'S1_ROLL100': {'kind': 'S1', 'vwap': 'ROLL100'},
     'S1_SESSION': {'kind': 'S1', 'vwap': 'SESSION'},
