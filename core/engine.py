@@ -487,6 +487,19 @@ class Profile:
     burst_daily_kill_usdt: float = 10.0
     burst_trend_quiet_s: float = 600.0      # no new burst entry in the 10 min after a 4H close (trend lane's turn)
     burst_every_s: float = 0.25
+    # 10-10 b lane 3, intraday 5m / 15m micro-swing (core/intraday_lane.py): 'off' | 'shadow' | 'active'.  Active is
+    # refused unless config/intraday_verdict.json marks the (symbol, strategy) ACTIVE-ELIGIBLE (HOLDOUT CI95 > 0 and
+    # win rate > 50 %).  Replay tools/intraday_replay.py 10-10 b: every pre-registered variant negative -> shadow.
+    intraday_lane: str = 'off'
+    intraday_symbols: tuple = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')
+    intraday_variants: tuple = ('S1_ROLL100', 'S2_slope3_tp60')
+    intraday_notional_usdt: float = 150.0
+    intraday_budget_pct: float = 0.04
+    intraday_daily_kill_usdt: float = 25.0
+    intraday_hold_min: float = 45.0
+    intraday_slip_bps: float = 1.0
+    intraday_trend_quiet_s: float = 600.0
+    intraday_every_s: float = 10.0
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True
@@ -528,7 +541,8 @@ PROFILES = {
                     # of wallet, <= 2 % at the 8 ATR stop, <= $1 500); BTC shield logged only (enforced variants lost)
                     trend_be_pct=0.3, trend_conv_alloc_pct=0.30, trend_conv_risk_pct=0.02, trend_btc_align='shadow',
                     trend_notional_max=1500.0,
-                    burst_lane='shadow'),  # 10-10 lane 2 runs virtual (replay: every variant negative after fees)
+                    burst_lane='shadow',   # 10-10 lane 2 runs virtual (replay: every variant negative after fees)
+                    intraday_lane='shadow'),  # 10-10 b lane 3 runs virtual (replay: every variant negative)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -3434,7 +3448,8 @@ def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: fl
     try:
         rows = get([f'{h}/fapi/v1/klines?{q}' for h in REST_HOSTS], timeout)
         out = [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0,
-                float(k[7]), float(k[10])) for k in rows if k[6] < now_ms]   # + quote volume, taker-buy quote
+                float(k[7]), float(k[10]), float(k[5])) for k in rows if k[6] < now_ms]
+        # + quote volume, taker-buy quote, base volume (10-10 b intraday VWAP)
         KLINE_CACHE[key] = out
         KLINE_SOURCE[key[:2]] = 'fapi'
         return out
@@ -3675,6 +3690,7 @@ class Runner:
                 snap['scanner'] = self.scanner_view(e)
                 snap['trend_lane'] = getattr(self, 'trend_state', None)
                 snap['burst_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'burst', None) or {}).items()}
+                snap['intraday_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'intraday', None) or {}).items()}
                 snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
@@ -3742,6 +3758,12 @@ class Runner:
                 from core.burst_lane import BurstLane
                 self.burst[s_] = BurstLane(x, ROOT / 'data')
                 self.tasks.append(asyncio.create_task(self.burst_loop(self.burst[s_])))
+        self.intraday = {}
+        for s_, x in self.engines.items():                    # 10-10 b lane 3: intraday 5m / 15m micro-swing
+            if x.p.intraday_lane != 'off' and s_ in x.p.intraday_symbols:
+                from core.intraday_lane import IntradayLane
+                self.intraday[s_] = IntradayLane(x, ROOT / 'data')
+                self.tasks.append(asyncio.create_task(self.intraday_loop(self.intraday[s_])))
         if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
             from core.autonomy import Autonomy
             self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
@@ -3765,6 +3787,17 @@ class Runner:
             if once:
                 return lane.last
             await asyncio.sleep(lane.e.p.burst_every_s)
+
+    async def intraday_loop(self, lane, once: bool = False) -> dict:
+        """10-10 b lane 3: one IntradayLane pass every intraday_every_s (it fetches only after a new 1m close)."""
+        while True:
+            try:
+                await lane.step()
+            except Exception as exc:
+                lane.e.event(f'INTRADAY error {type(exc).__name__}: {exc}'[:200])
+            if once:
+                return lane.last
+            await asyncio.sleep(lane.e.p.intraday_every_s)
 
     async def autonomy_loop(self, every_s: float = 5.0, threaded: bool = True) -> None:
         """10-09 (cc): every 5 s poll config/live_tunables.json (mtime), run the capital router; every 15 min or

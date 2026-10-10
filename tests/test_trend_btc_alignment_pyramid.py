@@ -234,7 +234,7 @@ def test_fetch_klines_falls_back_to_cache_then_spot_proxy(monkeypatch):
     monkeypatch.setattr(eng, 'KLINE_SOURCE', {})
     rows = [kline_row(1000, 2000)]
     ok = eng.fetch_klines('SOLUSDT', '4h', 2, get=lambda urls, timeout: rows)
-    assert ok[0][6:] == (15.0, 9.0) and eng.KLINE_SOURCE[('SOLUSDT', '4h')] == 'fapi'
+    assert ok[0][6:] == (15.0, 9.0, 10.0) and eng.KLINE_SOURCE[('SOLUSDT', '4h')] == 'fapi'
 
     def down(urls, timeout):
         if 'fapi' in urls[0]:
