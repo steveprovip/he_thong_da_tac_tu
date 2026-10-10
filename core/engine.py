@@ -487,9 +487,9 @@ class Profile:
     burst_daily_kill_usdt: float = 10.0
     burst_trend_quiet_s: float = 600.0      # no new burst entry in the 10 min after a 4H close (trend lane's turn)
     burst_every_s: float = 0.25
-    # 10-10 b lane 3, intraday 5m / 15m micro-swing (core/intraday_lane.py): 'off' | 'shadow' | 'active'.  Active is
-    # refused unless config/intraday_verdict.json marks the (symbol, strategy) ACTIVE-ELIGIBLE (HOLDOUT CI95 > 0 and
-    # win rate > 50 %).  Replay tools/intraday_replay.py 10-10 b: every pre-registered variant negative -> shadow.
+    # 10-10 b lane 3, intraday 5m / 15m micro-swing (core/intraday_lane.py): 'off' | 'shadow' (one virtual book per
+    # variant = tools/intraday_replay.py).  'active' is refused: no variant is ACTIVE-ELIGIBLE in
+    # config/intraday_verdict.json (replay 10-10 b: every pre-registered variant negative) and no executor is built.
     intraday_lane: str = 'off'
     intraday_symbols: tuple = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')
     intraday_variants: tuple = ('S1_SESSION', 'S2_slope3_tp60')   # the replay's DEV-best per strategy
@@ -500,6 +500,7 @@ class Profile:
     intraday_slip_bps: float = 1.0
     intraday_trend_quiet_s: float = 600.0
     intraday_every_s: float = 10.0
+    intraday_close_margin_s: float = 5.0    # fetch / accept a 1m kline only 5 s after its close (clock skew)
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True

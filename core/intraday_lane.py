@@ -8,29 +8,30 @@ S2  15m momentum continuation: EMA20(5m) slope over 3 bars >= 0.15 % AND ADX(15m
     of the last 2 closed 5m bars (1 ATR if within 5 bps), trailed to each new 5m bar.
 Both: 45 min time barrier (taker), one position per symbol, the stop before the target inside a minute.
 
-Modes (Profile.intraday_lane): 'off' | 'shadow' | 'active'.
-  shadow  re-plays each newly CLOSED mainnet 1m kline (public REST) through exactly the replay's rules (fills only
-          when a later bar trades THROUGH the limit) -> data/intraday_trades_shadow.jsonl.  No venue call.
-  active  DEMO venue orders (post-only entry / TP, exchange closePosition stop, IOC time exit) ->
-          data/intraday_trades.jsonl.  Refused (-> shadow) unless config/intraday_verdict.json marks the
-          (symbol, strategy) ACTIVE-ELIGIBLE: HOLDOUT CI95 lower bound > 0 AND win rate > 50 % (replay 10-10 b:
-          none qualifies).  Live venues / profiles are refused.
-Coexistence (one-way mode = one net position per symbol): an active lane order / position sets e.busy so the trend
-lane waits; no new entry while the symbol holds a trend / micro position or in the 10 min after a 4H close;
-daily loss breaker intraday_daily_kill_usdt.
+Modes (Profile.intraday_lane): 'off' | 'shadow'.
+  shadow  one independent VIRTUAL book per variant (exactly the replay's per-variant books) fed with each newly
+          CLOSED mainnet 1m kline (public REST, with the retry / cache / spot-proxy layer of core/engine.py):
+          fills only when a later bar trades THROUGH the limit -> data/intraday_trades_shadow.jsonl.  No venue call.
+          Each row also records `would_block`: why a real entry on the shared account would have been refused at
+          the signal (trend / micro position, the 10 min after a 4H close, the daily loss breaker) - measured, not
+          applied, so the rows stay comparable with the replay and with config/intraday_verdict.json.
+  'active' is NOT implemented on purpose: no (symbol, strategy) is ACTIVE-ELIGIBLE (replay 10-10 b: every variant
+          negative), and the 10-10 b review of a first active path found safety defects (non reduce-only TP able to
+          open the opposite position, unprotected remainders after partial fills / rejected stops, no state
+          persistence, the 4H trend lane blocked up to 45 min).  Requesting it logs a refusal and runs shadow.
+          A future executor must reuse the trend lane's persisted, reduce-only order path.
 """
 from __future__ import annotations
 
 import json
 import math
 import time
-import uuid
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'intraday_verdict.json'
+VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'intraday_verdict.json'     # written by the replay
 P = {'band_k': 2.0, 'mr_slope_max': 0.08, 'rr_min': 1.5, 'sl_atr': 1.0, 'trend_slope': 0.15, 'adx_min': 25.0,
      'hold_min': 45, 'sl_min_bps': 5.0, 'vwap_roll': 100, 'session_min': 60}      # = tools/intraday_replay.py
 VARIANTS = {
@@ -199,53 +200,32 @@ def rows_to_m(rows) -> Optional[dict]:
             'tbq': a[:, 7]}
 
 
-def _fmt(x: float, step: float) -> str:
-    n = max(0, -int(math.floor(math.log10(step)))) if step < 1 else 0
-    return f'{round(x / step) * step:.{n}f}'
-
-
-# ------------------------------------------------------------------ the lane
 class IntradayLane:
     def __init__(self, e, ledger_dir: Path, fetch=None, clock=time.time, verdict_path: Path = VERDICT):
         p = e.p
         self.e, self.clock, self.fetch = e, clock, fetch
         self.variants = [v for v in p.intraday_variants if v in VARIANTS]
-        self.mode = self._mode(p.intraday_lane, verdict_path)
-        name = 'intraday_trades.jsonl' if self.mode == 'active' else 'intraday_trades_shadow.jsonl'
-        self.ledger = Path(ledger_dir) / name
+        self.mode = 'off' if p.intraday_lane == 'off' else 'shadow'
+        if p.intraday_lane == 'active':
+            try:
+                v = json.loads(Path(verdict_path).read_text(encoding='utf-8')).get(p.symbol, {})
+            except (OSError, ValueError):
+                v = {}
+            elig = [k for k, x in v.items() if isinstance(x, dict) and x.get('verdict') == 'ACTIVE-ELIGIBLE']
+            e.event(f'INTRADAY active refused for {p.symbol}: '
+                    + (f'{elig} eligible but no active executor is built yet' if elig else 'no ACTIVE-ELIGIBLE verdict')
+                    + ' -> shadow')
+        self.ledger = Path(ledger_dir) / 'intraday_trades_shadow.jsonl'
+        self.books = {name: {'order': None, 'pos': None} for name in self.variants}
         self.last_t = None          # open time of the last processed 1m bar
-        self.order = None           # {'var','side','px','sl','tp','expire_i'/'kind','cid'}
-        self.pos = None             # {'var','side','entry','sl','tp','t','fill_t','qty','sl_cid','tp_cid'}
         self.day, self.day_pnl, self.n = None, 0.0, 0
         self.last = {'mode': self.mode}
 
-    # ------------------------------------------------------------------ guards
-    def _mode(self, want: str, verdict_path: Path) -> str:
-        if want != 'active':
-            return want
-        e = self.e
-        why = None
-        if e.p.mode != 'demo' or 'MAINNET' in str(getattr(e.venue, 'label', '')):
-            why = 'active intraday lane is demo-only'
-        else:
-            try:
-                v = json.loads(Path(verdict_path).read_text(encoding='utf-8')).get(e.p.symbol, {})
-            except (OSError, ValueError):
-                v = {}
-            ok = [x for x in self.variants if (v.get(VARIANTS[x]['kind']) or {}).get('variant') == x
-                  and (v.get(VARIANTS[x]['kind']) or {}).get('verdict') == 'ACTIVE-ELIGIBLE']
-            if not ok:
-                why = f'no ACTIVE-ELIGIBLE replay verdict for {e.p.symbol} {self.variants}'
-            else:
-                self.variants = ok
-        if why:
-            e.event(f'INTRADAY lane active refused ({why}) -> shadow')
-            return 'shadow'
-        return 'active'
-
-    def _free(self, t: float) -> Optional[str]:
+    # ------------------------------------------------------------------ the shared account (measured only)
+    def would_block(self, t: float) -> Optional[str]:
+        """Why a REAL entry on the shared one-way account would be refused now (recorded on shadow rows)."""
         e, p = self.e, self.e.p
-        if e.trend_owned or e.pos or (e.busy and not self._holding()):
+        if e.trend_owned or e.pos or e.busy:
             return 'symbol held by another lane'
         if t % 14400 < p.intraday_trend_quiet_s:
             return '4H close window reserved for the trend lane'
@@ -253,33 +233,28 @@ class IntradayLane:
             return f'daily loss breaker {self.day_pnl:+.2f} U'
         return None
 
-    def _holding(self) -> bool:
-        return self.mode == 'active' and (self.order is not None or self.pos is not None)
-
     # ------------------------------------------------------------------ ledger
-    def _close(self, px: float, how: str, t: float, maker: bool) -> None:
-        p, ps = self.e.p, self.pos
+    def _close(self, bk: dict, px: float, how: str, t: float, maker: bool) -> None:
+        p, ps = self.e.p, bk['pos']
         gross = ps['side'] * (px - ps['entry']) / ps['entry'] * 1e4
         net = gross - p.maker_bps - (p.maker_bps if maker else p.taker_bps + p.intraday_slip_bps)
         usd = net / 1e4 * ps['qty'] * ps['entry']
         self.day_pnl += usd
         self.n += 1
-        row = {'t': t, 'lane': 'INTRADAY', 'mode': self.mode, 'symbol': p.symbol, 'variant': ps['var'],
-               'side': 'BUY' if ps['side'] > 0 else 'SELL', 'qty': ps['qty'], 'entry': ps['entry'], 'exit': px,
-               'exit_how': how, 'hold_min': (t - ps['fill_t']) / 60, 'tp': ps['tp'], 'sl0': ps['sl0'],
-               'gross_bps': gross, 'net_bps': net, 'net_usd': usd,
+        row = {'t': float(t), 'lane': 'INTRADAY', 'mode': self.mode, 'symbol': p.symbol, 'variant': ps['var'],
+               'side': 'BUY' if ps['side'] > 0 else 'SELL', 'qty': float(ps['qty']), 'entry': float(ps['entry']),
+               'exit': float(px), 'exit_how': how, 'hold_min': float((t - ps['fill_t']) / 60), 'tp': float(ps['tp']),
+               'sl0': float(ps['sl0']), 'gross_bps': float(gross), 'net_bps': float(net), 'net_usd': float(usd),
+               'would_block': ps.get('would_block'),
                'fees_model': f'maker {p.maker_bps:g} / taker {p.taker_bps:g} + {p.intraday_slip_bps:g} bps'}
         try:
             self.ledger.parent.mkdir(parents=True, exist_ok=True)
             with open(self.ledger, 'a', encoding='utf-8') as fh:
-                fh.write(json.dumps(row, default=float) + '\n')
+                fh.write(json.dumps(row) + '\n')
         except OSError:
             pass
-        self.e.event(f'INTRADAY {"SHADOW " if self.mode == "shadow" else ""}{row["side"]} {p.symbol} {ps["var"]} '
-                     f'{how} {net:+.1f} bps ({usd:+.3f} U)')
-        self.pos = None
-        if self.mode == 'active':
-            self.e.busy = False
+        self.e.event(f'INTRADAY SHADOW {row["side"]} {p.symbol} {ps["var"]} {how} {net:+.1f} bps ({usd:+.3f} U)')
+        bk['pos'] = None
 
     def _qty(self, px: float) -> float:
         e, p = self.e, self.e.p
@@ -289,288 +264,106 @@ class IntradayLane:
         q = math.floor(notional / px / step + 1e-9) * step
         return q if q * px >= (e.spec or {}).get('min_notional', 5.0) else 0.0
 
-    # ------------------------------------------------------------------ bar-by-bar engine (shadow == replay)
+    # ------------------------------------------------------------------ bar-by-bar engine (each book == the replay)
     def on_bar(self, m: dict, f: dict, i: int) -> None:
-        """Process CLOSED 1m bar i: exits, then the resting entry, then signals if it closes a 5m bar."""
-        t = m['t'][i]
+        for name, bk in self.books.items():
+            self._bar(bk, name, m, f, i)
+
+    def _bar(self, bk: dict, name: str, m: dict, f: dict, i: int) -> None:
+        """Process CLOSED 1m bar i for one variant: exits, then the resting entry, then a signal at a 5m close."""
+        t = float(m['t'][i])
         o, h, l, c = m['o'][i], m['h'][i], m['l'][i], m['c'][i]
         b5 = f['b5']
+        v = VARIANTS[name]
         k5 = int(np.searchsorted(b5['i_last'], i))
         closes5 = k5 < len(b5['i_last']) and b5['i_last'][k5] == i
-        if self.pos is not None:
-            ps = self.pos
-            first = ps['fill_i_t'] == t
+        ps = bk['pos']
+        if ps is not None:
+            first = ps['fill_t'] == t
             d = ps['side']
             if (d > 0 and l <= ps['sl']) or (d < 0 and h >= ps['sl']):
-                self._close(ps['sl'] if first else (min(o, ps['sl']) if d > 0 else max(o, ps['sl'])), 'SL', t + 60, False)
+                self._close(bk, ps['sl'] if first else (min(o, ps['sl']) if d > 0 else max(o, ps['sl'])), 'SL', t + 60, False)
             elif not first and ((d > 0 and h > ps['tp']) or (d < 0 and l < ps['tp'])):
-                self._close(ps['tp'], 'TP', t + 60, True)
-            elif t + 60 >= ps['fill_i_t'] + self.e.p.intraday_hold_min * 60:
-                self._close(c, 'TIME', t + 60, False)
-            elif closes5 and VARIANTS[ps['var']]['kind'] == 'S2':
+                self._close(bk, ps['tp'], 'TP', t + 60, True)
+            elif t + 60 >= ps['fill_t'] + self.e.p.intraday_hold_min * 60:
+                self._close(bk, c, 'TIME', t + 60, False)
+            elif closes5 and v['kind'] == 'S2':
                 nb = b5['l'][k5] if d > 0 else b5['h'][k5]
                 ps['sl'] = max(ps['sl'], nb) if d > 0 else min(ps['sl'], nb)
             return
-        od = self.order
+        od = bk['order']
         if od is not None:
             if (od['side'] > 0 and l < od['px']) or (od['side'] < 0 and h > od['px']):
-                self.order = None
-                v = VARIANTS[od['var']]
+                bk['order'] = None
                 if v['kind'] == 'S2':
                     last_k = int(np.searchsorted(b5['t_close'], t, side='right')) - 1
                     sl = s2_stop(f, last_k, od['side'], od['px'])
                     tp = od['px'] * (1 + od['side'] * v['tp'] / 1e4)
                 else:
                     sl, tp = od['sl'], od['tp']
-                self.pos = {'var': od['var'], 'side': od['side'], 'entry': od['px'], 'sl': sl, 'sl0': sl, 'tp': tp,
-                            'fill_t': t, 'fill_i_t': t, 'qty': od['qty']}
-                self.on_bar(m, f, i)                      # the fill minute: only the stop can trigger
+                bk['pos'] = {'var': name, 'side': od['side'], 'entry': od['px'], 'sl': sl, 'sl0': sl, 'tp': tp,
+                             'fill_t': t, 'qty': od['qty'], 'would_block': od.get('would_block')}
+                self._bar(bk, name, m, f, i)              # the fill minute: only the stop can trigger
                 return
-            if VARIANTS[od['var']]['kind'] == 'S1' and t >= od['expire_t']:
-                self.order = None                         # S1: one minute to fill, no chase
-            elif VARIANTS[od['var']]['kind'] == 'S2' and closes5:
-                sd = s2_trend(f, k5, VARIANTS[od['var']]['slope'])
-                if sd != od['side']:
-                    self.order = None
+            if v['kind'] == 'S1' and t >= od['expire_t']:
+                bk['order'] = None                        # S1: one minute to fill, no chase
+            elif v['kind'] == 'S2' and closes5:
+                if s2_trend(f, k5, v['slope']) != od['side']:
+                    bk['order'] = None
                 else:
                     od['px'] = float(f['ema20'][k5])      # re-anchor at the new EMA20
-            if self.order is not None or not closes5:
+            if bk['order'] is not None or not closes5:
                 return
-        if not closes5 or self._free(t + 60):
+        if not closes5:
             return
-        for name in self.variants:
-            v = VARIANTS[name]
-            if v['kind'] == 'S1':
-                sig = s1_signal(f, k5, v['vwap'])
-                if sig:
-                    side, entry, tp, sl = sig
-                    self.order = {'var': name, 'side': side, 'px': float(entry), 'tp': float(tp), 'sl': float(sl),
-                                  'expire_t': t + 60, 'qty': self._qty(entry)}
-            else:
-                sd = s2_trend(f, k5, v['slope'])
-                if sd:
-                    px = float(f['ema20'][k5])
-                    self.order = {'var': name, 'side': sd, 'px': px, 'qty': self._qty(px)}
-            if self.order is not None:
-                if not self.order['qty']:
-                    self.order = None
-                    continue
-                break
+        od = None
+        if v['kind'] == 'S1':
+            sig = s1_signal(f, k5, v['vwap'])
+            if sig:
+                side, entry, tp, sl = sig
+                od = {'side': side, 'px': float(entry), 'tp': float(tp), 'sl': float(sl), 'expire_t': t + 60}
+        else:
+            sd = s2_trend(f, k5, v['slope'])
+            if sd:
+                od = {'side': sd, 'px': float(f['ema20'][k5])}
+        if od is not None:
+            od['qty'] = self._qty(od['px'])
+            od['would_block'] = self.would_block(t + 60)
+            bk['order'] = od if od['qty'] else None
 
     # ------------------------------------------------------------------ one pass
     async def step(self) -> dict:
         import asyncio
-        e = self.e
+        p = self.e.p
         now = self.clock()
-        d = time.strftime('%Y-%m-%d', time.localtime(now))
+        d = time.strftime('%Y-%m-%d', time.gmtime(now))           # UTC day, like the replay and the 4H clock
         if d != self.day:
             self.day, self.day_pnl = d, 0.0
-        if self.last_t is not None and now < self.last_t + 120 + 2:      # next 1m bar not closed yet
-            if self.mode == 'active':
-                await self._venue_sync()
-            return self.last
+        margin = p.intraday_close_margin_s
+        if self.mode == 'off' or (self.last_t is not None and now < self.last_t + 120 + margin):
+            return self.last                                       # the next 1m bar has not closed (+ margin)
         fetch = self.fetch
         if fetch is None:
             from core.engine import fetch_klines
             fetch = fetch_klines
-        rows = await asyncio.to_thread(fetch, e.p.symbol, '1m', 1500)
-        m = rows_to_m([r for r in rows if r[5] <= now])
+        rows = await asyncio.to_thread(fetch, p.symbol, '1m', 1500)
+        m = rows_to_m([r for r in rows if r[5] <= now - margin])  # a fast local clock must not admit the open bar
         if m is None or len(m['t']) < 600:
             self.last = {**self.last, 'status': 'volume UNKNOWN / warming up'}
             return self.last
         f = features(m)
         new = np.flatnonzero(m['t'] > (self.last_t if self.last_t is not None else m['t'][-2]))
-        if self.mode == 'shadow':
-            for i in new:
-                self.on_bar(m, f, int(i))
-        else:
-            await self._active_bars(m, f, new)
+        for i in new:
+            self.on_bar(m, f, int(i))
         self.last_t = float(m['t'][-1])
         k = len(f['b5']['c']) - 1
-        self.last = {'mode': self.mode, 'variants': self.variants, 'order': self.order, 'pos': self.pos,
-                     'day_pnl': self.day_pnl, 'n': self.n, 'bar_t': self.last_t,
-                     'vwap': float(f['vwap_ROLL100'][k]) if k >= 0 and np.isfinite(f['vwap_ROLL100'][k]) else None,
-                     'slope3': float(f['slope3'][k]) if k >= 0 and np.isfinite(f['slope3'][k]) else None,
-                     'adx15': float(f['adx15'][k]) if k >= 0 and np.isfinite(f['adx15'][k]) else None}
+
+        def num(x):
+            return float(x) if k >= 0 and np.isfinite(x) else None
+        self.last = {'mode': self.mode, 'variants': self.variants, 'day_pnl': self.day_pnl, 'n': self.n,
+                     'bar_t': self.last_t, 'gap_bars': int(max(0, len(new) - 1)),
+                     'books': {n: {'order': bool(b['order']), 'pos': (b['pos'] or {}).get('side')}
+                               for n, b in self.books.items()},
+                     'vwap_session': num(f['vwap_SESSION'][k]), 'slope3': num(f['slope3'][k]),
+                     'adx15': num(f['adx15'][k])}
         return self.last
-
-    # ------------------------------------------------------------------ active venue path
-    async def _active_bars(self, m, f, new) -> None:
-        """Signals from the closed bars; orders, fills and stops on the DEMO venue."""
-        e = self.e
-        await self._venue_sync()
-        if self.pos is not None or not len(new):
-            if self.pos is not None and self.clock() >= self.pos['fill_t'] + e.p.intraday_hold_min * 60:
-                await self._exit_ioc('TIME')
-            elif self.pos is not None and VARIANTS[self.pos['var']]['kind'] == 'S2':
-                await self._trail(f, m)
-            return
-        i = int(new[-1])
-        b5 = f['b5']
-        k5 = int(np.searchsorted(b5['i_last'], i))
-        closes5 = k5 < len(b5['i_last']) and b5['i_last'][k5] == i
-        if self.order is not None:
-            v = VARIANTS[self.order['var']]
-            if (v['kind'] == 'S1' and self.clock() >= self.order['expire_t']) or \
-                    (v['kind'] == 'S2' and closes5 and s2_trend(f, k5, v['slope']) != self.order['side']):
-                await self._cancel_entry()
-            elif v['kind'] == 'S2' and closes5:
-                await self._cancel_entry()
-                await self._post_entry(self.order_template(v, f, k5, self.order['side']))
-            return
-        if not closes5 or self._free(m['t'][i] + 60):
-            return
-        save, self.order = self.order, None
-        self.on_bar_signals(f, k5, m['t'][i])
-        od, self.order = self.order, save
-        if od:
-            od['expire_t'] = self.clock() + 60
-            await self._post_entry(od)
-
-    def order_template(self, v, f, k5, side):
-        """S2 entry at EMA20 with its stop / target fixed at posting time (the limit is the fill price)."""
-        name = next(n for n, x in VARIANTS.items() if x is v)
-        px = float(f['ema20'][k5])
-        return {'var': name, 'side': side, 'px': px, 'qty': self._qty(px), 'sl': s2_stop(f, k5, side, px),
-                'tp': px * (1 + side * v['tp'] / 1e4)}
-
-    def on_bar_signals(self, f, k5, t):
-        for name in self.variants:
-            v = VARIANTS[name]
-            if v['kind'] == 'S1':
-                sig = s1_signal(f, k5, v['vwap'])
-                if sig:
-                    side, entry, tp, sl = sig
-                    self.order = {'var': name, 'side': side, 'px': float(entry), 'tp': float(tp), 'sl': float(sl),
-                                  'qty': self._qty(entry)}
-            else:
-                sd = s2_trend(f, k5, v['slope'])
-                if sd:
-                    self.order = self.order_template(v, f, k5, sd)
-            if self.order is not None:
-                if not self.order['qty']:
-                    self.order = None
-                    continue
-                return
-
-    async def _post_entry(self, od) -> None:
-        e = self.e
-        od['cid'] = 'gI-' + uuid.uuid4().hex[:28]
-        try:
-            await e.venue.limit_gtx(e.p.symbol, 'BUY' if od['side'] > 0 else 'SELL', _fmt(od['qty'], e.spec['step']),
-                                    _fmt(od['px'], e.spec['tick']), od['cid'])
-        except Exception:
-            self.order = None
-            return
-        self.order = od
-        e.busy = True
-
-    async def _cancel_entry(self) -> float:
-        e, od = self.e, self.order
-        try:
-            await e.venue.cancel(e.p.symbol, od['cid'])
-        except Exception:
-            pass
-        st = await e.venue.order(e.p.symbol, od['cid'])
-        got = float(st.get('filled') or 0.0)
-        self.order = None
-        if got:
-            await self._on_fill(od, float(st.get('avg') or od['px']), got)
-        else:
-            e.busy = False
-        return got
-
-    async def _on_fill(self, od, px, qty) -> None:
-        e = self.e
-        sl, tp = od['sl'], od['tp']
-        self.pos = {'var': od['var'], 'side': od['side'], 'entry': px, 'sl': sl, 'sl0': sl, 'tp': tp,
-                    'fill_t': self.clock(), 'fill_i_t': None, 'qty': qty, 'sl_cid': None, 'tp_cid': None}
-        close_side = 'SELL' if od['side'] > 0 else 'BUY'
-        try:
-            cid = 'gIS-' + uuid.uuid4().hex[:26]
-            await e.venue.stop(e.p.symbol, close_side, _fmt(sl, e.spec['tick']), cid)
-            self.pos['sl_cid'] = cid
-        except Exception as exc:
-            e.event(f'INTRADAY stop rejected ({type(exc).__name__}) -> closing')
-            await self._exit_ioc('STOP-REJECTED')
-            return
-        try:
-            cid = 'gIT-' + uuid.uuid4().hex[:26]
-            await e.venue.limit_gtx(e.p.symbol, close_side, _fmt(qty, e.spec['step']), _fmt(tp, e.spec['tick']), cid)
-            self.pos['tp_cid'] = cid
-        except Exception:
-            pass                                          # TP not resting: stop / time exit still apply
-        e.busy = True
-
-    async def _venue_sync(self) -> None:
-        e = self.e
-        if self.order is not None and self.order.get('cid'):
-            st = await e.venue.order(e.p.symbol, self.order['cid'])
-            if st.get('status') == 'FILLED':
-                od, self.order = self.order, None
-                await self._on_fill(od, float(st.get('avg') or od['px']), float(st.get('filled') or od['qty']))
-        if self.pos is not None:
-            ps = self.pos
-            view = await e.venue.position_view(e.p.symbol)
-            if not float(view.get('amt') or 0.0):         # the exchange stop or the TP closed it
-                how = 'TP'
-                px, maker = ps['tp'], True
-                if ps.get('tp_cid'):
-                    st = await e.venue.order(e.p.symbol, ps['tp_cid'])
-                    if st.get('status') != 'FILLED':
-                        how, px, maker = 'SL', ps['sl'], False
-                        try:
-                            await e.venue.cancel(e.p.symbol, ps['tp_cid'])
-                        except Exception:
-                            pass
-                else:
-                    how, px, maker = 'SL', ps['sl'], False
-                if how == 'TP' and ps.get('sl_cid'):
-                    try:
-                        await e.venue.cancel_stop(ps['sl_cid'])
-                    except Exception:
-                        pass
-                self._close(px, how, self.clock(), maker)
-
-    async def _trail(self, f, m) -> None:
-        e, ps = self.e, self.pos
-        k = len(f['b5']['c']) - 1
-        nb = f['b5']['l'][k] if ps['side'] > 0 else f['b5']['h'][k]
-        better = (nb > ps['sl']) if ps['side'] > 0 else (nb < ps['sl'])
-        if not better or not ps.get('sl_cid'):
-            return
-        close_side = 'SELL' if ps['side'] > 0 else 'BUY'
-        try:
-            await e.venue.cancel_stop(ps['sl_cid'])
-        except Exception:
-            pass
-        cid = 'gIS-' + uuid.uuid4().hex[:26]
-        try:
-            await e.venue.stop(e.p.symbol, close_side, _fmt(nb, e.spec['tick']), cid)
-            ps.update(sl=float(nb), sl_cid=cid)
-        except Exception:
-            await e.venue.stop(e.p.symbol, close_side, _fmt(ps['sl'], e.spec['tick']), cid)
-            ps['sl_cid'] = cid
-
-    async def _exit_ioc(self, how: str) -> None:
-        e, ps = self.e, self.pos
-        for cid, kind in ((ps.get('tp_cid'), 'tp'), (ps.get('sl_cid'), 'sl')):
-            if not cid:
-                continue
-            try:
-                await (e.venue.cancel(e.p.symbol, cid) if kind == 'tp' else e.venue.cancel_stop(cid))
-            except Exception:
-                pass
-        view = await e.venue.position_view(e.p.symbol)
-        amt = abs(float(view.get('amt') or 0.0))
-        if not amt:
-            self._close(ps['tp'], 'TP', self.clock(), True)
-            return
-        bk = e.book()
-        ref = (bk.get('bid') if ps['side'] > 0 else bk.get('ask')) or ps['entry']
-        avg, got = await e.venue.ioc(e.p.symbol, 'SELL' if ps['side'] > 0 else 'BUY', _fmt(amt, e.spec['step']),
-                                     _fmt(ref * (1 - ps['side'] * 0.0015), e.spec['tick']), 'gI-' + uuid.uuid4().hex[:28])
-        if got:
-            self._close(avg, how, self.clock(), False)
-        else:
-            e.event(f'INTRADAY {e.p.symbol} IOC exit not filled -> retry next pass')
