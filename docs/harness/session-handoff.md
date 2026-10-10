@@ -114,3 +114,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Demo after restart: break-even stop at +2 % (event 'BREAK-EVEN'), conviction size up to min(30 %, 2 % risk) <= $1 500 when 1H+4H+1D agree ('CONVICTION'), BTC shield logs only ('(shadow) would hold back'). trend_trades rows carry conv / be.
 - Revert: demo trend_be_pct=None, trend_conv_alloc_pct=None, trend_btc_align='off', trend_notional_max=600.
 - Do not raise leverage for the 25-40 %/yr target without demo evidence (x3 = DD ~22 %). Re-check the shield on shadow logs after ~30 alt entries.
+
+## Handoff — 2026-10-10
+- After restart, lane 2 (burst scalper) runs SHADOW on SOL/DOGE: virtual rows in data/micro_trades_shadow.jsonl, events 'BURST SHADOW', telemetry burst_lane. Expect ~-7 bps per virtual trade (replay). Active needs config/burst_verdict.json ACTIVE-ELIGIBLE (re-run tools/burst_scalper_replay.py --write-verdict on new aggTrades); never live.
+- Run tools/fee_survey.py --quote USDC on the user's machine to read the real commission (0 % maker unconfirmed).
+- Revert: demo burst_lane='off'.

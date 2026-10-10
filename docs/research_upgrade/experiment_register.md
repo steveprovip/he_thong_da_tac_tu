@@ -203,3 +203,6 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | AB-18 | trend | P2 vs B0 = G6+L1+S10 (OOS 2025-01..2026-09) | 638 day net return | Δ +0.11 bps/day CI95 [-0.69, +0.96], SR +0.84 (B0 +0.83), DD 6.2 %, DSR 0.29 (159 trials) | NO DIFFERENCE DETECTED |
 | AB-19 | trend | C3 vs B0 = G6+L1+S10 (OOS 2025-01..2026-09) | 638 day net return | Δ +1.00 bps/day CI95 [-0.62, +2.91], SR +0.87 (B0 +0.83), DD 8.5 %, DSR 0.31 (159 trials) | NO DIFFERENCE DETECTED |
 | AB-20 | trend | FINAL vs B0 = G6+L1+S10 (OOS 2025-01..2026-09) | 638 day net return | Δ +1.08 bps/day CI95 [-0.35, +2.70], SR +1.06 (B0 +0.83), DD 7.5 %, DSR 0.41 (159 trials) | NO DIFFERENCE DETECTED |
+| HF1 | micro | Lane 2 sub-minute burst scalper (core/burst_lane.py), shadow on demo, active gated by config/burst_verdict.json | demo: burst_lane='shadow'; live 'off' | demo burst_lane='off' | replay 10-10: every variant negative -> SHADOW |
+| HF2 | research | tools/burst_scalper_replay.py (aggTrades 09-01..10-08, SOL/DOGE USDT+USDC, through/touch fills, lat 0.25/0.5 s) + tools/burst_lane_xcheck.py (live lane code vs replay) | — | — | lane shadow = replay (SOL 168 vs 167 trades, -8.04 vs -7.85 bps) |
+| HF3 | research | tools/fee_survey.py: USDC-M spreads + signed commissionRate (your account) | — | — | 0 % maker NOT confirmed (third-party: promo to 2026-02) |

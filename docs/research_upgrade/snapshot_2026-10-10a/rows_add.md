@@ -1,0 +1,3 @@
+| HF1 | micro | Lane 2 sub-minute burst scalper (core/burst_lane.py), shadow on demo, active gated by config/burst_verdict.json | demo: burst_lane='shadow'; live 'off' | demo burst_lane='off' | replay 10-10: every variant negative -> SHADOW |
+| HF2 | research | tools/burst_scalper_replay.py (aggTrades 09-01..10-08, SOL/DOGE USDT+USDC, through/touch fills, lat 0.25/0.5 s) + tools/burst_lane_xcheck.py (live lane code vs replay) | — | — | lane shadow = replay (SOL 168 vs 167 trades, -8.04 vs -7.85 bps) |
+| HF3 | research | tools/fee_survey.py: USDC-M spreads + signed commissionRate (your account) | — | — | 0 % maker NOT confirmed (third-party: promo to 2026-02) |

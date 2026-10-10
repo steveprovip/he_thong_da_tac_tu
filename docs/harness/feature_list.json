@@ -203,6 +203,16 @@
       ],
       "status": "done",
       "evidence": "Shield A1/A2/A1E/A2E all lower OOS SR (0.59-0.78 vs 0.83) -> shadow; P2 add rejected (DEV); FINAL P1+C3 OOS SR 1.06, +8.9 %/yr, DD 7.5 %, DSR 0.41; pytest 1454 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "burst-lane-sub-minute-20261010",
+      "name": "Lane 2: sub-minute volatility-burst scalper (shadow on demo), aggTrades replay, live-vs-replay cross-check, USDC fee survey",
+      "description": "core/burst_lane.py (BurstDetector, BurstLane off/shadow/active, verdict gate), core/micro_signals print_hooks, Profile burst_*, Runner.burst_loop + telemetry burst_lane; tools/burst_scalper_replay.py, tools/burst_lane_xcheck.py, tools/fee_survey.py; config/burst_verdict.json; tests/test_burst_lane.py (15)",
+      "dependencies": [
+        "trend-btc-align-pyramid-conviction-resilience-20261009ff"
+      ],
+      "status": "done",
+      "evidence": "Holdout SOL/DOGE USDT DEV-best MR30 -7.17/-7.69 bps per trade (CI < 0), USDC 0 % maker -3.98/-5.52, MM -2.2 to -7.4; 20-28 trades/h; pytest 1469 passed (2 pre-existing env failures)"
     }
   ]
 }

@@ -392,6 +392,7 @@ class MicroFeed:
         self.vb_closed: Deque[float] = deque(maxlen=max(cfg.vpin_buckets * 3, 30))   # (buy - sell) / V per bucket
         self.bar: Optional[list] = None                         # open 1 m bar [start, o, h, l, c]
         self.bars: Deque[tuple] = deque(maxlen=cfg.bars_keep)   # closed 1 m bars (4 h: ATR 15 m)
+        self.print_hooks: list = []                             # 10-10 burst lane: f(t, px, qty, buyer_is_maker)
 
     # ------------------------------------------------------------------ ingest
     def on_message(self, msg: dict, now: Optional[float] = None) -> None:
@@ -430,6 +431,8 @@ class MicroFeed:
             self._bucket(px * q, not d.get('m'))
             self._bar(now, px)
             self._expire(now)
+            for hook in self.print_hooks:
+                hook(now, px, q, bool(d.get('m')))
         elif '@depth' in stream:
             self.flow.on_depth(d, now)
             try:

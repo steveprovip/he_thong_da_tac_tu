@@ -467,6 +467,26 @@ class Profile:
     # 10-09 (ff) conviction: 1H + 4H + 1D agree -> min(conv alloc, conv risk / 8 ATR stop) x wallet.
     trend_conv_alloc_pct: Optional[float] = None
     trend_conv_risk_pct: float = 0.02
+    # 10-10 lane 2, sub-minute volatility-burst scalper (core/burst_lane.py): 'off' | 'shadow' | 'active'.  Active is
+    # refused unless config/burst_verdict.json says ACTIVE-ELIGIBLE for the symbol (replay 10-10: every variant on
+    # SOL/DOGE USDT + USDC negative, -4 to -8 bps/trade -> SHADOW).  Values = the replay's pre-registered DEV-best.
+    burst_lane: str = 'off'
+    burst_symbols: tuple = ('SOLUSDT', 'DOGEUSDT')
+    burst_signal: str = 'MR'                # 'MR' fade the 10 s move | 'MOM' follow the 10 s CVD
+    burst_tp_bps: float = 30.0
+    burst_sl_bps: float = 30.0
+    burst_sig1m_bps: float = 15.0
+    burst_ofi: float = 0.85
+    burst_surge: float = 3.0
+    burst_repeg_s: float = 4.0
+    burst_hold_s: float = 60.0
+    burst_exit_maker_s: float = 10.0
+    burst_lat_s: float = 0.25               # shadow fills: an order is live / cancelled one latency later
+    burst_notional_usdt: float = 75.0
+    burst_budget_pct: float = 0.05
+    burst_daily_kill_usdt: float = 10.0
+    burst_trend_quiet_s: float = 600.0      # no new burst entry in the 10 min after a 4H close (trend lane's turn)
+    burst_every_s: float = 0.25
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True
@@ -507,7 +527,8 @@ PROFILES = {
                     # 10-09 (ff) replay-adopted: break-even stop at +2 % (P1) and 1H+4H+1D conviction size C3 (<= 30 %
                     # of wallet, <= 2 % at the 8 ATR stop, <= $1 500); BTC shield logged only (enforced variants lost)
                     trend_be_pct=0.3, trend_conv_alloc_pct=0.30, trend_conv_risk_pct=0.02, trend_btc_align='shadow',
-                    trend_notional_max=1500.0),
+                    trend_notional_max=1500.0,
+                    burst_lane='shadow'),  # 10-10 lane 2 runs virtual (replay: every variant negative after fees)
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -3653,6 +3674,7 @@ class Runner:
                 snap = e.snapshot()
                 snap['scanner'] = self.scanner_view(e)
                 snap['trend_lane'] = getattr(self, 'trend_state', None)
+                snap['burst_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'burst', None) or {}).items()}
                 snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
@@ -3714,6 +3736,12 @@ class Runner:
             self.tasks.append(asyncio.create_task(self.trend_active_loop()))
         else:
             self.trend_exec = None
+        self.burst = {}
+        for s_, x in self.engines.items():                    # 10-10 lane 2: sub-minute burst scalper
+            if x.p.burst_lane != 'off' and s_ in x.p.burst_symbols:
+                from core.burst_lane import BurstLane
+                self.burst[s_] = BurstLane(x, ROOT / 'data')
+                self.tasks.append(asyncio.create_task(self.burst_loop(self.burst[s_])))
         if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
             from core.autonomy import Autonomy
             self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
@@ -3726,6 +3754,17 @@ class Runner:
                            asyncio.create_task(self.sync_loop(x)),
                            asyncio.create_task(self.vbook_loop(x)), asyncio.create_task(self.decide_loop(x))]
         return e
+
+    async def burst_loop(self, lane, once: bool = False) -> dict:
+        """10-10 lane 2: one BurstLane pass every burst_every_s; errors are reported, never fatal."""
+        while True:
+            try:
+                await lane.step()
+            except Exception as exc:
+                lane.e.event(f'BURST error {type(exc).__name__}: {exc}'[:200])
+            if once:
+                return lane.last
+            await asyncio.sleep(lane.e.p.burst_every_s)
 
     async def autonomy_loop(self, every_s: float = 5.0, threaded: bool = True) -> None:
         """10-09 (cc): every 5 s poll config/live_tunables.json (mtime), run the capital router; every 15 min or

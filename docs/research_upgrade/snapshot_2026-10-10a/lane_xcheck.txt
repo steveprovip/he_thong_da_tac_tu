@@ -1,0 +1,3 @@
+SOLUSDT {"replay": {"n": 167, "mean_net_bps": -7.845829014422645}, "lane_shadow": {"n": 168, "mean_net_bps": -8.039621160419665}}
+DOGEUSDT {"replay": {"n": 87, "mean_net_bps": -6.005041183345452}, "lane_shadow": {"n": 99, "mean_net_bps": -5.979196760228853}}
+SOLUSDC {"replay": {"n": 26, "mean_net_bps": -5.852835636701979}, "lane_shadow": {"n": 25, "mean_net_bps": -4.368539341802103}}

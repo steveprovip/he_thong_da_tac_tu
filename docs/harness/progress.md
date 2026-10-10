@@ -245,3 +245,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - tools/trend_regime_replay.py --stage ff (pre-registered, 159 trials): BTC shield A1/A2/A1E/A2E all lower OOS SR (0.59-0.78 vs B0 0.83; blocked alt trades were +2.3 % equity) -> trend_btc_align='shadow'; P1 break-even adopted (win 64 %, median +18 bps); P2 0.5x add rejected (DEV SR 1.25 < 1.27); C3 conviction adopted. FINAL P1+C3: OOS SR 1.06, +8.9 %/yr, DD 7.5 %, DSR 0.41; 25-40 %/yr needs x3-x5 leverage (DD 22-37 %) - not done.
 - core/engine: rest_json (12 s, retry 0.5/1/2 s, no retry on 4xx), KLINE_CACHE, spot proxy without volume; fapi.binance.vision not resolvable / fapi1-3 redirect to the website -> REST_HOSTS = fapi.binance.com only.
 - Checks: python -m pytest -q 1454 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
+
+## 2026-10-10 Dual-engine & sub-minute burst scalper (lane 2, shadow)
+- tools/burst_scalper_replay.py: 152 symbol-days aggTrades (SOL/DOGE USDT + USDC, 09-01..10-08), pre-registered burst (sigma_1m >= 15 bps | TFI 10 s > 0.85 | volume 3x), MOM/MR x TP 15/30, MM touch; fills through/touch, latency 0.25/0.5 s. Holdout DEV-best: SOLUSDT MR30 -7.17 [-7.36,-6.97], DOGEUSDT MR30 -7.69, SOLUSDC (0 % maker scenario) -3.98, DOGEUSDC -5.52 bps/trade; gross already negative (adverse selection); 20-28 trades/h, 90-200 per burst hour. Verdict SHADOW everywhere.
+- core/burst_lane.py + Runner.burst_loop: shadow on demo (data/micro_trades_shadow.jsonl), active gated by config/burst_verdict.json, demo-only; coexists with the trend lane (one-way mode: only on a free symbol, 10 min quiet after each 4H close). tools/burst_lane_xcheck.py: live lane code = replay (SOL 168 vs 167 trades, -8.04 vs -7.85 bps).
+- tools/fee_survey.py (signed commissionRate); 0 % USDC maker not confirmed (third-party: to 2026-02).
+- Checks: python -m pytest -q 1469 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.

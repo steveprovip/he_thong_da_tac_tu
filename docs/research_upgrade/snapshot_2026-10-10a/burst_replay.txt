@@ -1,0 +1,129 @@
+burst replay | 152 symbol-days | 104s
+
+SOLUSDT: days 38 burst share 20.3% tick 0.78 bps | DEV-best MR30|through -> SHADOW
+  DEV (20 d, burst 101 h)
+    MOM15|through            n  10047 ( 20.9/h,  99.2/burst-h) net  -7.66 [ -7.85,  -7.47] gross  -2.13 win 19% hold~66s {'MAKER-EXIT': 4033, 'TIME-TAKER': 3561, 'SL': 1556, 'TP': 897}
+    MOM15|touch              n  18696 ( 39.0/h, 184.6/burst-h) net  -4.09 [ -4.25,  -3.95] gross  +0.21 win 27% hold~61s {'MAKER-EXIT': 15358, 'TIME-TAKER': 303, 'TP': 1453, 'SL': 1582}
+    MOM30|through            n   9044 ( 18.8/h,  89.3/burst-h) net  -7.59 [ -7.82,  -7.34] gross  -2.24 win 17% hold~68s {'MAKER-EXIT': 4774, 'TIME-TAKER': 3869, 'TP': 184, 'SL': 217}
+    MOM30|touch              n  17447 ( 36.3/h, 172.2/burst-h) net  -3.79 [ -3.92,  -3.67] gross  +0.30 win 26% hold~62s {'MAKER-EXIT': 16683, 'TIME-TAKER': 333, 'TP': 240, 'SL': 191}
+    MR15|through             n  12728 ( 26.5/h, 125.6/burst-h) net  -7.41 [ -7.58,  -7.23] gross  -1.82 win 19% hold~67s {'MAKER-EXIT': 5028, 'TIME-TAKER': 4964, 'TP': 962, 'SL': 1774}
+    MR15|touch               n  19331 ( 40.3/h, 190.8/burst-h) net  -4.16 [ -4.32,  -4.00] gross  +0.17 win 27% hold~61s {'MAKER-EXIT': 15741, 'TIME-TAKER': 401, 'TP': 1485, 'SL': 1704}
+    MR30|through             n  11599 ( 24.2/h, 114.5/burst-h) net  -7.35 [ -7.53,  -7.16] gross  -1.91 win 17% hold~69s {'MAKER-EXIT': 5923, 'TIME-TAKER': 5242, 'SL': 294, 'TP': 140}
+    MR30|touch               n  17996 ( 37.5/h, 177.7/burst-h) net  -3.92 [ -4.07,  -3.77] gross  +0.20 win 26% hold~62s {'MAKER-EXIT': 17120, 'TIME-TAKER': 431, 'SL': 275, 'TP': 170}
+    MM|through               n  90344 (188.2/h, 891.9/burst-h) net  -6.86 [ -6.91,  -6.81] gross  -2.76 win 0% hold~7s {'MAKER-EXIT': 87514, 'TIME-TAKER': 2830}
+    MM|touch                 n 482047 (1004.3/h, 4758.6/burst-h) net  -3.74 [ -3.78,  -3.70] gross  +0.26 win 0% hold~1s {'MAKER-EXIT': 482047}
+    MOM15|through|lat0.5     n  10292 ( 21.4/h, 101.6/burst-h) net  -7.77 [ -7.97,  -7.58] gross  -2.22 win 19% hold~66s {'MAKER-EXIT': 4081, 'TIME-TAKER': 3738, 'SL': 1589, 'TP': 884}
+    MOM30|through|lat0.5     n   9289 ( 19.4/h,  91.7/burst-h) net  -7.67 [ -7.90,  -7.45] gross  -2.29 win 16% hold~69s {'MAKER-EXIT': 4828, 'TIME-TAKER': 4059, 'SL': 227, 'TP': 175}
+    MR15|through|lat0.5      n  12766 ( 26.6/h, 126.0/burst-h) net  -7.55 [ -7.74,  -7.36] gross  -1.95 win 18% hold~67s {'MAKER-EXIT': 5029, 'TIME-TAKER': 5032, 'TP': 911, 'SL': 1794}
+    MR30|through|lat0.5      n  11671 ( 24.3/h, 115.2/burst-h) net  -7.43 [ -7.63,  -7.24] gross  -1.98 win 17% hold~69s {'MAKER-EXIT': 5909, 'TIME-TAKER': 5324, 'SL': 304, 'TP': 134}
+  HOLDOUT (18 d, burst 84 h)
+    MOM15|through            n   9044 ( 20.9/h, 107.5/burst-h) net  -7.39 [ -7.61,  -7.17] gross  -1.98 win 21% hold~65s {'SL': 1392, 'TP': 846, 'MAKER-EXIT': 3930, 'TIME-TAKER': 2876}
+    MOM15|touch              n  16466 ( 38.1/h, 195.8/burst-h) net  -4.02 [ -4.16,  -3.89] gross  +0.28 win 30% hold~61s {'SL': 1440, 'MAKER-EXIT': 13411, 'TP': 1393, 'TIME-TAKER': 222}
+    MOM30|through            n   8171 ( 18.9/h,  97.2/burst-h) net  -7.44 [ -7.70,  -7.18] gross  -2.24 win 18% hold~67s {'TIME-TAKER': 3092, 'SL': 196, 'MAKER-EXIT': 4727, 'TP': 156}
+    MOM30|touch              n  15353 ( 35.5/h, 182.6/burst-h) net  -3.89 [ -4.03,  -3.75] gross  +0.20 win 28% hold~61s {'MAKER-EXIT': 14698, 'SL': 189, 'TP': 205, 'TIME-TAKER': 261}
+    MR15|through             n  11776 ( 27.3/h, 140.0/burst-h) net  -7.29 [ -7.45,  -7.12] gross  -1.80 win 20% hold~66s {'SL': 1658, 'MAKER-EXIT': 5008, 'TP': 930, 'TIME-TAKER': 4180}
+    MR15|touch               n  17203 ( 39.8/h, 204.6/burst-h) net  -4.40 [ -4.57,  -4.25] gross  -0.07 win 28% hold~61s {'TP': 1359, 'MAKER-EXIT': 13904, 'SL': 1621, 'TIME-TAKER': 319}
+    MR30|through             n  10765 ( 24.9/h, 128.0/burst-h) net  -7.17 [ -7.36,  -6.97] gross  -1.86 win 19% hold~68s {'SL': 264, 'MAKER-EXIT': 5958, 'TIME-TAKER': 4424, 'TP': 119}
+    MR30|touch               n  16015 ( 37.1/h, 190.4/burst-h) net  -4.08 [ -4.23,  -3.95] gross  +0.03 win 27% hold~62s {'MAKER-EXIT': 15241, 'TP': 173, 'TIME-TAKER': 363, 'SL': 238}
+    MM|through               n  97784 (226.4/h, 1162.7/burst-h) net  -6.86 [ -6.89,  -6.82] gross  -2.79 win 0% hold~6s {'MAKER-EXIT': 95633, 'TIME-TAKER': 2151}
+    MM|touch                 n 457815 (1059.8/h, 5443.7/burst-h) net  -3.93 [ -3.97,  -3.88] gross  +0.07 win 0% hold~1s {'MAKER-EXIT': 457815}
+    MOM15|through|lat0.5     n   9270 ( 21.5/h, 110.2/burst-h) net  -7.56 [ -7.78,  -7.34] gross  -2.13 win 20% hold~65s {'SL': 1429, 'TP': 809, 'MAKER-EXIT': 4031, 'TIME-TAKER': 3001}
+    MOM30|through|lat0.5     n   8400 ( 19.4/h,  99.9/burst-h) net  -7.61 [ -7.85,  -7.37] gross  -2.38 win 18% hold~67s {'TIME-TAKER': 3227, 'SL': 208, 'MAKER-EXIT': 4810, 'TP': 155}
+    MR15|through|lat0.5      n  11820 ( 27.4/h, 140.5/burst-h) net  -7.36 [ -7.55,  -7.19] gross  -1.86 win 20% hold~66s {'SL': 1674, 'MAKER-EXIT': 4997, 'TP': 903, 'TIME-TAKER': 4246}
+    MR30|through|lat0.5      n  10829 ( 25.1/h, 128.8/burst-h) net  -7.18 [ -7.36,  -7.00] gross  -1.87 win 19% hold~68s {'SL': 258, 'MAKER-EXIT': 5957, 'TIME-TAKER': 4489, 'TP': 125}
+
+DOGEUSDT: days 38 burst share 18.1% tick 1.12 bps | DEV-best MR30|through -> SHADOW
+  DEV (20 d, burst 79 h)
+    MOM15|through            n   8183 ( 17.0/h, 103.3/burst-h) net  -7.98 [ -8.22,  -7.73] gross  -2.40 win 23% hold~63s {'TIME-TAKER': 2383, 'MAKER-EXIT': 2789, 'TP': 1089, 'SL': 1922}
+    MOM15|touch              n  12213 ( 25.4/h, 154.1/burst-h) net  -4.98 [ -5.22,  -4.75] gross  -0.36 win 31% hold~61s {'MAKER-EXIT': 8065, 'TIME-TAKER': 588, 'TP': 1586, 'SL': 1974}
+    MOM30|through            n   6869 ( 14.3/h,  86.7/burst-h) net  -8.00 [ -8.29,  -7.74] gross  -2.65 win 20% hold~68s {'TIME-TAKER': 2721, 'MAKER-EXIT': 3503, 'TP': 259, 'SL': 386}
+    MOM30|touch              n  10687 ( 22.3/h, 134.9/burst-h) net  -4.52 [ -4.75,  -4.31] gross  -0.24 win 29% hold~62s {'MAKER-EXIT': 9311, 'TIME-TAKER': 670, 'TP': 359, 'SL': 347}
+    MR15|through             n   9412 ( 19.6/h, 118.8/burst-h) net  -8.07 [ -8.35,  -7.81] gross  -2.43 win 22% hold~64s {'TIME-TAKER': 2936, 'MAKER-EXIT': 3167, 'SL': 2230, 'TP': 1079}
+    MR15|touch               n  13220 ( 27.5/h, 166.8/burst-h) net  -5.15 [ -5.43,  -4.87] gross  -0.48 win 30% hold~62s {'MAKER-EXIT': 8663, 'TIME-TAKER': 723, 'SL': 2237, 'TP': 1597}
+    MR30|through             n   7953 ( 16.6/h, 100.4/burst-h) net  -7.83 [ -8.15,  -7.52] gross  -2.42 win 21% hold~68s {'TIME-TAKER': 3267, 'MAKER-EXIT': 4011, 'SL': 453, 'TP': 222}
+    MR30|touch               n  11554 ( 24.1/h, 145.8/burst-h) net  -4.65 [ -4.89,  -4.42] gross  -0.31 win 28% hold~62s {'MAKER-EXIT': 9993, 'TIME-TAKER': 840, 'TP': 261, 'SL': 460}
+    MM|through               n  78098 (162.7/h, 985.6/burst-h) net  -7.23 [ -7.32,  -7.15] gross  -3.12 win 0% hold~9s {'MAKER-EXIT': 75204, 'TIME-TAKER': 2894}
+    MM|touch                 n 283710 (591.1/h, 3580.3/burst-h) net  -4.06 [ -4.14,  -3.99] gross  -0.06 win 0% hold~3s {'MAKER-EXIT': 283709, 'TIME-TAKER': 1}
+    MOM15|through|lat0.5     n   8158 ( 17.0/h, 103.0/burst-h) net  -8.17 [ -8.44,  -7.92] gross  -2.55 win 23% hold~64s {'TIME-TAKER': 2443, 'MAKER-EXIT': 2743, 'TP': 1027, 'SL': 1945}
+    MOM30|through|lat0.5     n   6881 ( 14.3/h,  86.8/burst-h) net  -8.22 [ -8.51,  -7.95] gross  -2.83 win 20% hold~68s {'TIME-TAKER': 2810, 'MAKER-EXIT': 3426, 'TP': 254, 'SL': 391}
+    MR15|through|lat0.5      n   9380 ( 19.5/h, 118.4/burst-h) net  -8.08 [ -8.35,  -7.81] gross  -2.42 win 22% hold~64s {'TIME-TAKER': 2983, 'MAKER-EXIT': 3133, 'TP': 1060, 'SL': 2204}
+    MR30|through|lat0.5      n   7961 ( 16.6/h, 100.5/burst-h) net  -7.77 [ -8.08,  -7.45] gross  -2.35 win 21% hold~68s {'TIME-TAKER': 3301, 'MAKER-EXIT': 3983, 'SL': 454, 'TP': 223}
+  HOLDOUT (18 d, burst 86 h)
+    MOM15|through            n  10599 ( 24.5/h, 123.2/burst-h) net  -7.93 [ -8.20,  -7.69] gross  -2.46 win 30% hold~54s {'MAKER-EXIT': 3143, 'TP': 2262, 'SL': 3555, 'TIME-TAKER': 1639}
+    MOM15|touch              n  14104 ( 32.6/h, 164.0/burst-h) net  -5.63 [ -5.88,  -5.39] gross  -0.77 win 35% hold~61s {'MAKER-EXIT': 7165, 'TP': 2887, 'SL': 3563, 'TIME-TAKER': 489}
+    MOM30|through            n   7893 ( 18.3/h,  91.8/burst-h) net  -7.72 [ -8.13,  -7.31] gross  -2.67 win 27% hold~64s {'MAKER-EXIT': 4607, 'TIME-TAKER': 2020, 'SL': 737, 'TP': 529}
+    MOM30|touch              n  11149 ( 25.8/h, 129.6/burst-h) net  -5.08 [ -5.44,  -4.73] gross  -0.71 win 31% hold~62s {'MAKER-EXIT': 9178, 'SL': 719, 'TIME-TAKER': 631, 'TP': 621}
+    MR15|through             n  12200 ( 28.2/h, 141.9/burst-h) net  -7.85 [ -8.12,  -7.56] gross  -2.34 win 30% hold~59s {'SL': 3975, 'MAKER-EXIT': 3644, 'TP': 2409, 'TIME-TAKER': 2172}
+    MR15|touch               n  15321 ( 35.5/h, 178.2/burst-h) net  -5.72 [ -5.97,  -5.46] gross  -0.82 win 34% hold~61s {'SL': 3957, 'MAKER-EXIT': 7694, 'TP': 3033, 'TIME-TAKER': 637}
+    MR30|through             n   9198 ( 21.3/h, 107.0/burst-h) net  -7.69 [ -7.99,  -7.35] gross  -2.57 win 26% hold~65s {'SL': 867, 'MAKER-EXIT': 5249, 'TIME-TAKER': 2586, 'TP': 496}
+    MR30|touch               n  12034 ( 27.9/h, 139.9/burst-h) net  -5.09 [ -5.39,  -4.80] gross  -0.69 win 32% hold~62s {'SL': 834, 'MAKER-EXIT': 9841, 'TP': 575, 'TIME-TAKER': 784}
+    MM|through               n 106324 (246.1/h, 1236.3/burst-h) net  -7.40 [ -7.48,  -7.33] gross  -3.35 win 0% hold~5s {'MAKER-EXIT': 104550, 'TIME-TAKER': 1774}
+    MM|touch                 n 277438 (642.2/h, 3226.0/burst-h) net  -4.65 [ -4.74,  -4.54] gross  -0.65 win 0% hold~2s {'MAKER-EXIT': 277438}
+    MOM15|through|lat0.5     n  10582 ( 24.5/h, 123.0/burst-h) net  -8.09 [ -8.36,  -7.84] gross  -2.59 win 30% hold~54s {'MAKER-EXIT': 3086, 'TP': 2210, 'SL': 3575, 'TIME-TAKER': 1711}
+    MOM30|through|lat0.5     n   7908 ( 18.3/h,  92.0/burst-h) net  -8.07 [ -8.54,  -7.63] gross  -2.98 win 26% hold~65s {'MAKER-EXIT': 4528, 'TIME-TAKER': 2110, 'SL': 770, 'TP': 500}
+    MR15|through|lat0.5      n  12114 ( 28.0/h, 140.9/burst-h) net  -8.06 [ -8.34,  -7.76] gross  -2.52 win 29% hold~60s {'SL': 3981, 'MAKER-EXIT': 3570, 'TP': 2329, 'TIME-TAKER': 2234}
+    MR30|through|lat0.5      n   9170 ( 21.2/h, 106.6/burst-h) net  -7.98 [ -8.31,  -7.62] gross  -2.81 win 26% hold~65s {'SL': 878, 'MAKER-EXIT': 5168, 'TIME-TAKER': 2672, 'TP': 452}
+
+SOLUSDC: days 38 burst share 9.7% tick 0.91 bps | DEV-best MOM30|through -> SHADOW
+  DEV (20 d, burst 50 h)
+    MOM15|through            n   4470 (  9.3/h,  89.7/burst-h) net  -4.53 [ -4.88,  -4.20] gross  -2.28 win 32% hold~64s {'TIME-TAKER': 1438, 'MAKER-EXIT': 1307, 'SL': 1074, 'TP': 651}
+    MOM15|touch              n   4987 ( 10.4/h, 100.1/burst-h) net  -3.22 [ -3.53,  -2.90] gross  -1.43 win 37% hold~63s {'TIME-TAKER': 1150, 'MAKER-EXIT': 1958, 'TP': 798, 'SL': 1081}
+    MOM30|through            n   3710 (  7.7/h,  74.5/burst-h) net  -4.47 [ -4.89,  -4.06] gross  -2.50 win 30% hold~69s {'TIME-TAKER': 1625, 'MAKER-EXIT': 1719, 'SL': 208, 'TP': 158}
+    MOM30|touch              n   4146 (  8.6/h,  83.2/burst-h) net  -3.07 [ -3.47,  -2.68] gross  -1.62 win 36% hold~66s {'TIME-TAKER': 1305, 'MAKER-EXIT': 2461, 'SL': 204, 'TP': 176}
+    MR15|through             n   4883 ( 10.2/h,  98.0/burst-h) net  -4.74 [ -5.04,  -4.41] gross  -2.46 win 32% hold~64s {'TIME-TAKER': 1528, 'MAKER-EXIT': 1448, 'SL': 1254, 'TP': 653}
+    MR15|touch               n   5434 ( 11.3/h, 109.1/burst-h) net  -3.51 [ -3.81,  -3.19] gross  -1.66 win 37% hold~63s {'MAKER-EXIT': 2134, 'TP': 790, 'SL': 1266, 'TIME-TAKER': 1244}
+    MR30|through             n   4001 (  8.3/h,  80.3/burst-h) net  -4.59 [ -5.04,  -4.16] gross  -2.63 win 31% hold~69s {'TIME-TAKER': 1689, 'MAKER-EXIT': 1929, 'SL': 268, 'TP': 115}
+    MR30|touch               n   4467 (  9.3/h,  89.7/burst-h) net  -3.24 [ -3.65,  -2.84] gross  -1.78 win 36% hold~66s {'MAKER-EXIT': 2707, 'TIME-TAKER': 1364, 'SL': 267, 'TP': 129}
+    MM|through               n  59979 (125.0/h, 1203.8/burst-h) net  -3.77 [ -3.84,  -3.70] gross  -3.48 win 13% hold~13s {'MAKER-EXIT': 55698, 'TIME-TAKER': 4281}
+    MM|touch                 n  87570 (182.4/h, 1757.5/burst-h) net  -2.20 [ -2.29,  -2.12] gross  -2.11 win 27% hold~9s {'MAKER-EXIT': 85507, 'TIME-TAKER': 2063}
+    MOM15|through|lat0.5     n   4448 (  9.3/h,  89.3/burst-h) net  -4.66 [ -4.99,  -4.33] gross  -2.39 win 31% hold~64s {'TIME-TAKER': 1441, 'MAKER-EXIT': 1297, 'SL': 1078, 'TP': 632}
+    MOM30|through|lat0.5     n   3693 (  7.7/h,  74.1/burst-h) net  -4.67 [ -5.09,  -4.27] gross  -2.65 win 30% hold~70s {'TIME-TAKER': 1653, 'MAKER-EXIT': 1672, 'SL': 216, 'TP': 152}
+    MR15|through|lat0.5      n   4846 ( 10.1/h,  97.3/burst-h) net  -4.84 [ -5.16,  -4.52] gross  -2.51 win 32% hold~64s {'TIME-TAKER': 1561, 'MAKER-EXIT': 1382, 'SL': 1262, 'TP': 641}
+    MR30|through|lat0.5      n   3984 (  8.3/h,  80.0/burst-h) net  -4.73 [ -5.19,  -4.27] gross  -2.71 win 31% hold~69s {'TIME-TAKER': 1733, 'MAKER-EXIT': 1862, 'SL': 273, 'TP': 116}
+  HOLDOUT (18 d, burst 39 h)
+    MOM15|through            n   3962 (  9.2/h, 101.6/burst-h) net  -4.25 [ -4.65,  -3.84] gross  -2.26 win 35% hold~62s {'SL': 1054, 'MAKER-EXIT': 1315, 'TP': 681, 'TIME-TAKER': 912}
+    MOM15|touch              n   4481 ( 10.4/h, 114.9/burst-h) net  -2.86 [ -3.24,  -2.49] gross  -1.29 win 41% hold~61s {'MAKER-EXIT': 1862, 'SL': 1073, 'TP': 860, 'TIME-TAKER': 686}
+    MOM30|through            n   3253 (  7.5/h,  83.4/burst-h) net  -3.98 [ -4.48,  -3.53] gross  -2.44 win 34% hold~66s {'MAKER-EXIT': 1853, 'TIME-TAKER': 1080, 'SL': 176, 'TP': 144}
+    MOM30|touch              n   3674 (  8.5/h,  94.2/burst-h) net  -2.41 [ -2.85,  -1.98] gross  -1.34 win 40% hold~64s {'MAKER-EXIT': 2525, 'SL': 164, 'TIME-TAKER': 813, 'TP': 172}
+    MR15|through             n   4528 ( 10.5/h, 116.1/burst-h) net  -4.57 [ -4.91,  -4.23] gross  -2.53 win 34% hold~62s {'SL': 1265, 'TIME-TAKER': 1040, 'TP': 650, 'MAKER-EXIT': 1573}
+    MR15|touch               n   5057 ( 11.7/h, 129.7/burst-h) net  -3.36 [ -3.72,  -2.96] gross  -1.68 win 39% hold~62s {'SL': 1279, 'TIME-TAKER': 845, 'TP': 827, 'MAKER-EXIT': 2106}
+    MR30|through             n   3698 (  8.6/h,  94.9/burst-h) net  -4.48 [ -4.99,  -3.97] gross  -2.93 win 34% hold~66s {'SL': 249, 'TIME-TAKER': 1189, 'MAKER-EXIT': 2161, 'TP': 99}
+    MR30|touch               n   4140 (  9.6/h, 106.2/burst-h) net  -3.25 [ -3.71,  -2.81] gross  -2.11 win 38% hold~65s {'SL': 241, 'TIME-TAKER': 940, 'MAKER-EXIT': 2843, 'TP': 116}
+    MM|through               n  70520 (163.2/h, 1808.8/burst-h) net  -3.50 [ -3.56,  -3.44] gross  -3.35 win 13% hold~9s {'MAKER-EXIT': 67897, 'TIME-TAKER': 2623}
+    MM|touch                 n  98355 (227.7/h, 2522.8/burst-h) net  -2.23 [ -2.30,  -2.16] gross  -2.18 win 25% hold~7s {'MAKER-EXIT': 97172, 'TIME-TAKER': 1183}
+    MOM15|through|lat0.5     n   3930 (  9.1/h, 100.8/burst-h) net  -4.47 [ -4.86,  -4.10] gross  -2.42 win 35% hold~62s {'SL': 1063, 'TP': 660, 'MAKER-EXIT': 1257, 'TIME-TAKER': 950}
+    MOM30|through|lat0.5     n   3225 (  7.5/h,  82.7/burst-h) net  -3.96 [ -4.46,  -3.49] gross  -2.34 win 33% hold~66s {'MAKER-EXIT': 1770, 'TIME-TAKER': 1128, 'SL': 175, 'TP': 152}
+    MR15|through|lat0.5      n   4476 ( 10.4/h, 114.8/burst-h) net  -4.73 [ -5.09,  -4.36] gross  -2.66 win 34% hold~62s {'SL': 1258, 'TIME-TAKER': 1062, 'TP': 635, 'MAKER-EXIT': 1521}
+    MR30|through|lat0.5      n   3671 (  8.5/h,  94.2/burst-h) net  -4.57 [ -5.07,  -4.09] gross  -2.96 win 33% hold~67s {'SL': 245, 'TIME-TAKER': 1235, 'MAKER-EXIT': 2087, 'TP': 104}
+
+DOGEUSDC: days 38 burst share 14.8% tick 1.12 bps | DEV-best MOM30|through -> SHADOW
+  DEV (20 d, burst 61 h)
+    MOM15|through            n   4834 ( 10.1/h,  79.3/burst-h) net  -5.38 [ -5.76,  -4.99] gross  -2.95 win 32% hold~63s {'MAKER-EXIT': 1131, 'TIME-TAKER': 1480, 'SL': 1454, 'TP': 769}
+    MOM15|touch              n   5279 ( 11.0/h,  86.6/burst-h) net  -4.13 [ -4.46,  -3.77] gross  -2.04 win 36% hold~63s {'MAKER-EXIT': 1587, 'TIME-TAKER': 1312, 'SL': 1441, 'TP': 939}
+    MOM30|through            n   3826 (  8.0/h,  62.7/burst-h) net  -5.16 [ -5.69,  -4.66] gross  -2.98 win 31% hold~70s {'MAKER-EXIT': 1508, 'TIME-TAKER': 1736, 'SL': 350, 'TP': 232}
+    MOM30|touch              n   4178 (  8.7/h,  68.5/burst-h) net  -3.84 [ -4.33,  -3.34] gross  -2.07 win 34% hold~68s {'MAKER-EXIT': 2079, 'TIME-TAKER': 1512, 'SL': 336, 'TP': 251}
+    MR15|through             n   5207 ( 10.8/h,  85.4/burst-h) net  -5.84 [ -6.25,  -5.45] gross  -3.31 win 30% hold~63s {'TIME-TAKER': 1648, 'MAKER-EXIT': 1144, 'SL': 1645, 'TP': 770}
+    MR15|touch               n   5591 ( 11.6/h,  91.7/burst-h) net  -4.61 [ -5.04,  -4.18] gross  -2.40 win 34% hold~63s {'TIME-TAKER': 1491, 'MAKER-EXIT': 1599, 'SL': 1595, 'TP': 906}
+    MR30|through             n   4067 (  8.5/h,  66.7/burst-h) net  -5.68 [ -6.27,  -5.08] gross  -3.41 win 30% hold~71s {'TIME-TAKER': 1902, 'MAKER-EXIT': 1573, 'SL': 409, 'TP': 183}
+    MR30|touch               n   4382 (  9.1/h,  71.9/burst-h) net  -4.26 [ -4.82,  -3.75] gross  -2.36 win 34% hold~68s {'TIME-TAKER': 1684, 'MAKER-EXIT': 2084, 'SL': 397, 'TP': 217}
+    MM|through               n  43479 ( 90.6/h, 713.0/burst-h) net  -4.83 [ -4.94,  -4.72] gross  -4.28 win 15% hold~20s {'MAKER-EXIT': 37559, 'TIME-TAKER': 5920}
+    MM|touch                 n  57562 (119.9/h, 943.9/burst-h) net  -3.19 [ -3.32,  -3.07] gross  -2.91 win 26% hold~15s {'MAKER-EXIT': 53563, 'TIME-TAKER': 3999}
+    MOM15|through|lat0.5     n   4791 ( 10.0/h,  78.6/burst-h) net  -5.50 [ -5.84,  -5.12] gross  -3.02 win 31% hold~63s {'TIME-TAKER': 1518, 'MAKER-EXIT': 1076, 'SL': 1450, 'TP': 747}
+    MOM30|through|lat0.5     n   3807 (  7.9/h,  62.4/burst-h) net  -5.11 [ -5.64,  -4.58] gross  -2.87 win 31% hold~71s {'TIME-TAKER': 1796, 'MAKER-EXIT': 1452, 'SL': 339, 'TP': 220}
+    MR15|through|lat0.5      n   5165 ( 10.8/h,  84.7/burst-h) net  -6.07 [ -6.46,  -5.68] gross  -3.48 win 29% hold~63s {'TIME-TAKER': 1691, 'MAKER-EXIT': 1091, 'SL': 1657, 'TP': 726}
+    MR30|through|lat0.5      n   4047 (  8.4/h,  66.4/burst-h) net  -5.79 [ -6.36,  -5.20] gross  -3.48 win 29% hold~71s {'TIME-TAKER': 1941, 'MAKER-EXIT': 1527, 'SL': 402, 'TP': 177}
+  HOLDOUT (18 d, burst 74 h)
+    MOM15|through            n   7211 ( 16.7/h,  97.0/burst-h) net  -5.57 [ -5.89,  -5.24] gross  -3.34 win 35% hold~40s {'SL': 2954, 'MAKER-EXIT': 1506, 'TP': 1691, 'TIME-TAKER': 1060}
+    MOM15|touch              n   7720 ( 17.9/h, 103.9/burst-h) net  -4.29 [ -4.62,  -3.95] gross  -2.32 win 39% hold~40s {'SL': 2883, 'MAKER-EXIT': 1927, 'TP': 1994, 'TIME-TAKER': 916}
+    MOM30|through            n   5107 ( 11.8/h,  68.7/burst-h) net  -5.52 [ -5.99,  -5.00] gross  -3.73 win 35% hold~65s {'MAKER-EXIT': 2414, 'SL': 720, 'TIME-TAKER': 1563, 'TP': 410}
+    MOM30|touch              n   5418 ( 12.5/h,  72.9/burst-h) net  -4.20 [ -4.67,  -3.75] gross  -2.71 win 38% hold~64s {'TIME-TAKER': 1312, 'MAKER-EXIT': 2928, 'SL': 703, 'TP': 475}
+    MR15|through             n   7958 ( 18.4/h, 107.1/burst-h) net  -5.63 [ -5.97,  -5.27] gross  -3.34 win 35% hold~37s {'SL': 3324, 'MAKER-EXIT': 1578, 'TP': 1815, 'TIME-TAKER': 1241}
+    MR15|touch               n   8410 ( 19.5/h, 113.2/burst-h) net  -4.63 [ -4.97,  -4.28] gross  -2.55 win 38% hold~38s {'SL': 3286, 'MAKER-EXIT': 1977, 'TP': 2071, 'TIME-TAKER': 1076}
+    MR30|through             n   5454 ( 12.6/h,  73.4/burst-h) net  -5.78 [ -6.24,  -5.32] gross  -3.91 win 34% hold~65s {'MAKER-EXIT': 2501, 'TP': 404, 'TIME-TAKER': 1719, 'SL': 830}
+    MR30|touch               n   5792 ( 13.4/h,  77.9/burst-h) net  -4.57 [ -5.04,  -4.10] gross  -3.01 win 37% hold~64s {'MAKER-EXIT': 3078, 'TP': 452, 'TIME-TAKER': 1444, 'SL': 818}
+    MM|through               n  57914 (134.1/h, 779.3/burst-h) net  -4.96 [ -5.08,  -4.83] gross  -4.70 win 15% hold~12s {'MAKER-EXIT': 54204, 'TIME-TAKER': 3710}
+    MM|touch                 n  73007 (169.0/h, 982.4/burst-h) net  -3.63 [ -3.75,  -3.50] gross  -3.50 win 24% hold~10s {'MAKER-EXIT': 70495, 'TIME-TAKER': 2512}
+    MOM15|through|lat0.5     n   7126 ( 16.5/h,  95.9/burst-h) net  -5.72 [ -6.05,  -5.36] gross  -3.46 win 35% hold~40s {'SL': 2924, 'MAKER-EXIT': 1472, 'TP': 1634, 'TIME-TAKER': 1096}
+    MOM30|through|lat0.5     n   5048 ( 11.7/h,  67.9/burst-h) net  -5.56 [ -6.02,  -5.11] gross  -3.70 win 35% hold~66s {'MAKER-EXIT': 2299, 'SL': 706, 'TIME-TAKER': 1639, 'TP': 404}
+    MR15|through|lat0.5      n   7858 ( 18.2/h, 105.7/burst-h) net  -5.81 [ -6.19,  -5.43] gross  -3.48 win 35% hold~37s {'SL': 3287, 'MAKER-EXIT': 1493, 'TP': 1784, 'TIME-TAKER': 1294}
+    MR30|through|lat0.5      n   5407 ( 12.5/h,  72.8/burst-h) net  -5.97 [ -6.47,  -5.48] gross  -4.05 win 34% hold~66s {'MAKER-EXIT': 2403, 'SL': 808, 'TIME-TAKER': 1799, 'TP': 397}

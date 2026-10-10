@@ -1,0 +1,50 @@
+{
+ "SOLUSDT": {
+  "verdict": "SHADOW",
+  "variant": "MR30|through",
+  "holdout_mean_net_bps": -7.165890081205189,
+  "holdout_ci95": [
+   -7.360572983406362,
+   -6.974343172245787
+  ],
+  "holdout_n": 10765,
+  "generated": "2026-10-10T02:11:37+00:00",
+  "rule": "ACTIVE-ELIGIBLE iff the DEV-best variant has HOLDOUT CI95 lower bound > 0 (through fills)"
+ },
+ "DOGEUSDT": {
+  "verdict": "SHADOW",
+  "variant": "MR30|through",
+  "holdout_mean_net_bps": -7.694417269963636,
+  "holdout_ci95": [
+   -7.992945463591354,
+   -7.354724197494511
+  ],
+  "holdout_n": 9198,
+  "generated": "2026-10-10T02:11:37+00:00",
+  "rule": "ACTIVE-ELIGIBLE iff the DEV-best variant has HOLDOUT CI95 lower bound > 0 (through fills)"
+ },
+ "SOLUSDC": {
+  "verdict": "SHADOW",
+  "variant": "MOM30|through",
+  "holdout_mean_net_bps": -3.9825707986119454,
+  "holdout_ci95": [
+   -4.4762465982041135,
+   -3.5250902213639836
+  ],
+  "holdout_n": 3253,
+  "generated": "2026-10-10T02:11:37+00:00",
+  "rule": "ACTIVE-ELIGIBLE iff the DEV-best variant has HOLDOUT CI95 lower bound > 0 (through fills)"
+ },
+ "DOGEUSDC": {
+  "verdict": "SHADOW",
+  "variant": "MOM30|through",
+  "holdout_mean_net_bps": -5.517145250039982,
+  "holdout_ci95": [
+   -5.994637067471334,
+   -5.004433640981705
+  ],
+  "holdout_n": 5107,
+  "generated": "2026-10-10T02:11:37+00:00",
+  "rule": "ACTIVE-ELIGIBLE iff the DEV-best variant has HOLDOUT CI95 lower bound > 0 (through fills)"
+ }
+}
