@@ -277,3 +277,10 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Funding (public API): Binance majors 1.2-6.8 % APR over 166 d, 7 d windows > 30 bps cost 0-3 %; Binance vs Hyperliquid spread 2.4-5.1 % APR, break-even ~3-4 weeks. Existing core/funding_carry + carry_runtime reused; phased plan (offline replay -> CarryVenue read-only -> shadow -> testnet) in report_log_autopsy_universe_funding_2026-10-10e.md.
 - Open: multi-coin P15_rr25atr replay needs 1m kline download (~2-4 GB, user approval) and a decision on the win > 50 % gate for R:R >= 2 variants.
 - Checks: python -m pytest -q 1533 passed before, 1540 passed after (+7 tests/test_universe.py). No restart, no order, ledgers untouched.
+
+## 2026-10-10 (f) R:R >= 2 gate, P15 universe replay, funding arb Phase 0 (research)
+- Gate (user decision): tools/intraday_replay.eligible - fixed-bracket planned R:R >= 2 -> HOLDOUT n >= 100 and CI95 lower > 0 (day bootstrap), no win-rate condition; others unchanged; venue_fee_replay uses it. No verdict file rewritten.
+- tools/universe_months.py (point-in-time top 20 / month, 2025-01..2026-09, 52-symbol union), tools/fetch_klines_1m.py (504 monthly 1m zips, 818 MB, SHA256 vs .CHECKSUM; data/klines_1m gitignored), intraday_replay --universe/--workers. Repro BTC/SOL/DOGE = report d exactly.
+- P15_rr25atr HOLDOUT on universe: n 11 673 (42.8/d) net -6.1 [-10.9,-1.2]; core 12: -6.6 [-12.4,-1.0]; 0/28 symbols CI > 0; 208/208 SHADOW. Universe not wired.
+- tools/funding_spread_replay.py (pre-registered; public BN/HL funding + 4h opens, data/funding_cache): XV BN<->HL DEV-best HEDGE|H28|k2 HOLDOUT n 153 +14.6 bps/28 d [+9.2,+19.9] (month CI [+9.7,+20.4]; 9/9 months > 0; all-taker+3 bp stress +7.5 [+1.8,+13.0]) = ~1.9 %/yr on notional, edge in alts (TAO/WLD/ZEC), 79 % short HL. SP spot/perp negative (spot fee 10 bps). Verdict: XV eligible for read-only/shadow phases only; capital gate still blocks live.
+- Checks: python -m pytest -q 1552 passed (1540 before, +12). No restart, no order, ledgers/Profile/verdicts untouched.

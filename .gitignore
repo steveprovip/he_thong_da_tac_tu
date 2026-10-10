@@ -101,3 +101,5 @@ config/live_tunables.json
 config/live_tunables.json.tmp
 config/dynamic_state.json
 config/dynamic_state.json.tmp
+data/klines_1m/
+data/funding_cache/

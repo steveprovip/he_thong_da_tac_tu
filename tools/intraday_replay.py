@@ -2,6 +2,7 @@
 
     python tools/intraday_replay.py --data <dir of SYMBOL-1m-YYYY-MM.zip> [--symbols BTCUSDT,SOLUSDT,DOGEUSDT]
                                     [--json out.json] [--write-verdict]
+    python tools/intraday_replay.py --data data/klines_1m --universe data/universe_months.json --workers 6
 
 Everything is simulated at 1-minute resolution; 5m / 15m bars are complete clock-aligned groups of 1m bars; every
 decision uses CLOSED bars only and acts from the NEXT minute.
@@ -38,6 +39,8 @@ PRE-REGISTERED (written before the first run; thresholds = the request's, window
   verdict    a (strategy, symbol) may trade the demo venue only if its HOLDOUT mean net bps/trade has a 95 % CI
              lower bound > 0 AND its win rate > 50 % (the user's two conditions) AND it has >= 100 HOLDOUT trades
              (floor added after the stats audit; it changes no current verdict); otherwise SHADOW.
+             10-10 f (user decision): a fixed-bracket variant with planned R:R >= 2 (P15_rr25, P15_rr25atr) drops the
+             win-rate condition (its break-even win rate is ~1 / (1 + R:R) before fees): n >= 100 and CI95 lower > 0.
   money      fixed $150 per trade (3 % of a $5 000 wallet); Sharpe from daily P&L / $5 000, x sqrt(365).
 """
 from __future__ import annotations
@@ -65,6 +68,23 @@ MIN_HOLDOUT_N = 100                                       # per (symbol, strateg
 NOTIONAL, EQUITY = 150.0, 5000.0
 DEV = ('2025-01-01', '2025-12-31')
 HOLD = ('2026-01-01', '2026-09-30')
+RR_GATE = 2.0                                             # 10-10 f: planned R:R >= 2 -> no win-rate condition
+
+
+def planned_rr(var) -> float | None:
+    """TP / SL distance of a fixed-bracket variant (bps or ATR units); None for TP1 / trailing / band exits."""
+    for tp, sl in (('tp_bps', 'sl_bps'), ('tp_atr', 'sl_atr')):
+        if var and tp in var and sl in var and var[sl] > 0:
+            return var[tp] / var[sl]
+    return None
+
+
+def eligible(h: dict, var) -> bool:
+    """Pre-registered verdict: HOLDOUT n >= 100 and CI95 lower > 0 (day bootstrap); win > 50 % only if R:R < 2."""
+    if h.get('n', 0) < MIN_HOLDOUT_N or h['ci95'][0] <= 0:
+        return False
+    rr = planned_rr(var)
+    return (rr is not None and rr >= RR_GATE) or h['win_rate'] > 0.5
 # ------------------------------------------------------------------ data
 def load_1m(data: Path, symbol: str):
     """-> dict of numpy arrays t (open, s), o, h, l, c, v, qv, tbq; sorted, de-duplicated."""
@@ -186,6 +206,12 @@ def run_symbol(m: dict, f: dict, var: dict):
     return trades
 
 
+def in_universe(trades, months_of_symbol) -> list:
+    """10-10 f: keep a trade only if its signal month (UTC) had the symbol in the point-in-time universe."""
+    return [x for x in trades
+            if datetime.fromtimestamp(x['t'], timezone.utc).strftime('%Y-%m') in months_of_symbol]
+
+
 def day_of(s):
     return int(datetime.strptime(s, '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp()) // 86400
 
@@ -260,18 +286,29 @@ def run_one(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--data', type=Path, required=True)
-    ap.add_argument('--symbols', default='BTCUSDT,SOLUSDT,DOGEUSDT')
+    ap.add_argument('--symbols', default=None, help='default BTCUSDT,SOLUSDT,DOGEUSDT, or the universe union')
+    ap.add_argument('--universe', type=Path, help='tools/universe_months.py output: trades outside it are dropped')
+    ap.add_argument('--workers', type=int, default=3)
     ap.add_argument('--json', type=Path)
     ap.add_argument('--write-verdict', action='store_true')
     a = ap.parse_args(argv)
     t0 = time.perf_counter()
-    syms = a.symbols.split(',')
-    with ProcessPoolExecutor(min(3, len(syms))) as ex:
+    uni = None
+    if a.universe:
+        uni = {}
+        for ym, ss in json.loads(a.universe.read_text())['months'].items():
+            for s in ss:
+                uni.setdefault(s, set()).add(ym)
+    syms = a.symbols.split(',') if a.symbols else (sorted(uni) if uni else ['BTCUSDT', 'SOLUSDT', 'DOGEUSDT'])
+    with ProcessPoolExecutor(min(a.workers, len(syms))) as ex:
         res = dict(ex.map(run_one, [(str(a.data), s) for s in syms]))
+    if uni:
+        res = {s: {v: in_universe(t, uni.get(s, set())) for v, t in r.items()} for s, r in res.items()}
     lo_d, hi_d = day_of(DEV[0]), day_of(DEV[1])
     lo_h, hi_h = day_of(HOLD[0]), day_of(HOLD[1])
     out = {'params': P, 'variants': VARIANTS, 'fees': {'maker': MAKER, 'taker_slip': TAKER}, 'splits': {'DEV': DEV, 'HOLDOUT': HOLD},
-           'per_symbol': {}, 'pooled': {}, 'seconds': None}
+           'per_symbol': {}, 'pooled': {}, 'seconds': None,
+           'universe': {s: sorted(m) for s, m in uni.items()} if uni else None}
     for s in syms:
         out['per_symbol'][s] = {v: {'DEV': summarize(res[s][v], lo_d, hi_d), 'HOLDOUT': summarize(res[s][v], lo_h, hi_h)}
                                 for v in VARIANTS}
@@ -288,7 +325,7 @@ def main(argv=None):
     for s in syms:
         for kind, v in best.items():
             h = out['per_symbol'][s][v]['HOLDOUT'] if v else {}
-            ok = h.get('n', 0) >= MIN_HOLDOUT_N and h['ci95'][0] > 0 and h['win_rate'] > 0.5
+            ok = eligible(h, VARIANTS.get(v))
             verdict.setdefault(s, {})[kind] = {'variant': v, 'verdict': 'ACTIVE-ELIGIBLE' if ok else 'SHADOW',
                                                'holdout_mean_net_bps': h.get('mean_net_bps'), 'holdout_ci95': h.get('ci95'),
                                                'holdout_win_rate': h.get('win_rate'), 'holdout_n': h.get('n')}
@@ -317,7 +354,8 @@ def main(argv=None):
         (ROOT / 'config').mkdir(exist_ok=True)
         (ROOT / 'config' / 'intraday_verdict.json').write_text(json.dumps(
             {**verdict, '_generated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-             '_rule': 'ACTIVE-ELIGIBLE iff HOLDOUT n >= 100, CI95 lower > 0 and win rate > 50 % (DEV-best variant)'},
+             '_rule': 'ACTIVE-ELIGIBLE iff HOLDOUT n >= 100, CI95 lower > 0 (day bootstrap) and, unless '
+                      'planned R:R >= 2, win rate > 50 % (DEV-best variant)'},
             indent=1, default=float), encoding='utf-8')
     return 0
 

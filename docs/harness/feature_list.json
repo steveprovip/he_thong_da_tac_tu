@@ -254,6 +254,16 @@
       ],
       "status": "done",
       "evidence": "Burst log 53 trades (not 40) gross -2.62 net -8.6 [-10.05,-7.01] = replay; universe 30/39 eligible live 10-10; funding majors 1.2-6.8 % APR, BN-HL spread 2.4-5.1 % APR; pytest 1540 passed (1533 before)"
+    },
+    {
+      "id": "universe-replay-funding-phase0-20261010f",
+      "name": "R:R >= 2 verdict gate, P15_rr25atr point-in-time universe replay, funding arb Phase 0 replay",
+      "description": "tools/intraday_replay.py (eligible, planned_rr, --universe), tools/universe_months.py, tools/fetch_klines_1m.py, tools/funding_spread_replay.py, tests/test_verdict_gate.py (4), tests/test_funding_spread_replay.py (8), snapshot_2026-10-10f, report_universe_replay_and_funding_phase0_2026-10-10f.md",
+      "dependencies": [
+        "log-autopsy-universe-funding-20261010e"
+      ],
+      "status": "done",
+      "evidence": "P15_rr25atr 52-symbol HOLDOUT n 11673 net -6.1 [-10.9,-1.2] -> SHADOW; funding XV BN<->HL H28 k2 HOLDOUT n 153 +14.6 bps [+9.2,+19.9] (~1.9 %/yr notional), SP negative; pytest 1552 passed"
     }
   ]
 }

@@ -1,0 +1,72 @@
+  BTC: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  ETH: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  SOL: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  XRP: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  DOGE: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  BNB: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  ADA: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  SUI: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  LINK: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  AVAX: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  ENA: bn 3953 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  AAVE: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  LTC: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  HYPE: bn 2984 hl 15816 px_bn 2987 px_hl 3955 px_spot 95
+  WLD: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  TAO: bn 3953 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+  ZEC: bn 1977 hl 8938 px_bn 3955 px_hl 3235 px_spot 3955
+  1000PEPE: bn 1977 hl 15816 px_bn 3955 px_hl 3955 px_spot 3955
+
+XV  DEV-best {'variant': 'HEDGE|H28|k2', 'verdict': 'ELIGIBLE'}
+  HEDGE|H7|k1    DEV n  548 (18 coins) net    +2.7 day[  +0.6,  +4.9] mon[  -1.1,  +7.3] win 52% fund  +15.9 basis   +1.9(sd 9) cost 15.0 APR  +1.4%
+                 HO  n  371 (18 coins) net    -1.9 day[  -3.5,  -0.3] mon[  -3.5,  -0.2] win 37% fund  +11.9 basis   +1.1(sd 7) cost 15.0 APR  -1.0%
+  HEDGE|H7|k2    DEV n  235 (18 coins) net   +10.2 day[  +6.0, +14.5] mon[  +4.2, +15.3] win 67% fund  +22.4 basis   +2.8(sd 8) cost 15.0 APR  +5.3%
+                 HO  n   86 (16 coins) net    +4.6 day[  +0.8,  +8.1] mon[  +2.0,  +7.3] win 57% fund  +18.7 basis   +0.8(sd 9) cost 15.0 APR  +2.4%
+  HEDGE|H14|k1   DEV n  401 (18 coins) net    +9.5 day[  +5.8, +13.5] mon[  +2.7, +18.0] win 63% fund  +23.4 basis   +1.2(sd 7) cost 15.0 APR  +2.5%
+                 HO  n  311 (18 coins) net    +1.3 day[  -1.0,  +3.7] mon[  -2.2,  +4.8] win 55% fund  +16.0 basis   +0.3(sd 6) cost 15.0 APR  +0.4%
+  HEDGE|H14|k2   DEV n  322 (18 coins) net   +14.2 day[ +10.7, +17.9] mon[  +7.9, +22.2] win 70% fund  +27.4 basis   +1.8(sd 8) cost 15.0 APR  +3.7%
+                 HO  n  223 (18 coins) net    +6.8 day[  +4.0,  +9.6] mon[  +3.2, +10.7] win 68% fund  +20.3 basis   +1.5(sd 7) cost 15.0 APR  +1.8%
+  HEDGE|H28|k1   DEV n  202 (18 coins) net   +25.2 day[ +16.4, +34.6] mon[ +15.9, +34.8] win 77% fund  +38.9 basis   +1.3(sd 11) cost 15.0 APR  +3.3%
+                 HO  n  160 (18 coins) net   +13.2 day[  +7.9, +18.4] mon[  +5.8, +20.2] win 67% fund  +28.3 basis   -0.1(sd 6) cost 15.0 APR  +1.7%
+  HEDGE|H28|k2   DEV n  196 (18 coins) net   +28.8 day[ +20.1, +38.4] mon[ +15.7, +45.0] win 77% fund  +42.1 basis   +1.6(sd 9) cost 15.0 APR  +3.7%
+                 HO  n  153 (18 coins) net   +14.6 day[  +9.2, +19.9] mon[  +9.7, +20.4] win 71% fund  +29.3 basis   +0.3(sd 7) cost 15.0 APR  +1.9%
+  MAKER|H7|k1    DEV n  772 (18 coins) net    +7.0 day[  +5.4,  +8.9] mon[  +3.7, +11.3] win 66% fund  +12.9 basis   +1.1(sd 8) cost 7.0 APR  +3.7%
+                 HO  n  602 (18 coins) net    +3.0 day[  +1.9,  +4.0] mon[  +1.8,  +4.2] win 59% fund   +9.4 basis   +0.6(sd 6) cost 7.0 APR  +1.5%
+  MAKER|H7|k2    DEV n  572 (18 coins) net   +10.7 day[  +8.6, +12.9] mon[  +6.9, +15.2] win 74% fund  +15.7 basis   +2.0(sd 9) cost 7.0 APR  +5.6%
+                 HO  n  399 (18 coins) net    +5.7 day[  +4.1,  +7.3] mon[  +3.7,  +7.8] win 65% fund  +11.6 basis   +1.1(sd 7) cost 7.0 APR  +3.0%
+  MAKER|H14|k1   DEV n  415 (18 coins) net   +15.5 day[ +12.1, +19.2] mon[  +9.6, +22.4] win 73% fund  +21.2 basis   +1.4(sd 8) cost 7.0 APR  +4.0%
+                 HO  n  336 (18 coins) net    +7.7 day[  +5.3, +10.1] mon[  +5.2, +10.5] win 69% fund  +14.7 basis   -0.0(sd 7) cost 7.0 APR  +2.0%
+  MAKER|H14|k2   DEV n  404 (18 coins) net   +17.6 day[ +14.1, +21.3] mon[ +11.0, +25.5] win 76% fund  +23.6 basis   +1.0(sd 7) cost 7.0 APR  +4.6%
+                 HO  n  316 (18 coins) net    +9.2 day[  +6.8, +11.5] mon[  +6.3, +12.0] win 71% fund  +15.8 basis   +0.4(sd 6) cost 7.0 APR  +2.4%
+  MAKER|H28|k1   DEV n  202 (18 coins) net   +33.9 day[ +25.5, +43.1] mon[ +23.6, +45.5] win 82% fund  +39.2 basis   +1.7(sd 9) cost 7.0 APR  +4.4%
+                 HO  n  162 (18 coins) net   +20.6 day[ +14.0, +27.4] mon[ +12.9, +28.0] win 74% fund  +27.2 basis   +0.3(sd 7) cost 7.0 APR  +2.7%
+  MAKER|H28|k2   DEV n  202 (18 coins) net   +32.7 day[ +22.5, +43.2] mon[ +23.1, +43.4] win 82% fund  +38.4 basis   +1.3(sd 11) cost 7.0 APR  +4.3%
+                 HO  n  161 (18 coins) net   +20.2 day[ +14.8, +26.0] mon[ +13.2, +26.9] win 75% fund  +27.2 basis   +0.0(sd 6) cost 7.0 APR  +2.6%
+
+SP  DEV-best {'variant': 'HEDGE|H28|k2', 'verdict': 'RESEARCH_ONLY'}
+  HEDGE|H7|k1    DEV n    6 ( 6 coins) net   -22.2 day[ -38.3,  +7.5] mon[ -45.6, -10.5] win 50% fund   +6.5 basis   -2.8(sd 15) cost 26.0 APR -11.6%
+                 HO  n    4 ( 3 coins) net    +8.0 day[  +7.4,  +9.6] mon[  +7.4,  +9.6] win 75% fund  +18.6 basis  +15.4(sd 7) cost 26.0 APR  +4.1%
+  HEDGE|H7|k2    DEV n 0
+                 HO  n    1 ( 1 coins) net   +10.2 day[ +10.2, +10.2] mon[ +10.2, +10.2] win 100% fund  +17.5 basis  +18.6(sd 0) cost 26.0 APR  +5.3%
+  HEDGE|H14|k1   DEV n  273 (17 coins) net    -8.9 day[ -12.8,  -5.6] mon[ -17.3,  -3.1] win 34% fund  +16.7 basis   +0.4(sd 6) cost 26.0 APR  -2.3%
+                 HO  n  149 (18 coins) net   -10.8 day[ -15.9,  -6.0] mon[ -21.4,  -3.5] win 21% fund  +13.6 basis   +1.6(sd 17) cost 26.0 APR  -2.8%
+  HEDGE|H14|k2   DEV n    6 ( 6 coins) net   -30.5 day[ -59.9, +19.6] mon[ -38.5, -26.5] win 50% fund   -5.4 basis   +0.9(sd 14) cost 26.0 APR  -8.0%
+                 HO  n    4 ( 3 coins) net    +7.1 day[ -19.5, +16.0] mon[ -19.5, +16.0] win 50% fund  +26.3 basis   +6.8(sd 13) cost 26.0 APR  +1.9%
+  HEDGE|H28|k1   DEV n  178 (17 coins) net   -11.3 day[ -32.1,  +2.3] mon[ -36.2,  +8.5] win 61% fund  +13.6 basis   +1.2(sd 10) cost 26.0 APR  -1.5%
+                 HO  n  131 (17 coins) net   -11.7 day[ -19.4,  -4.4] mon[ -24.1,  +1.1] win 45% fund  +13.6 basis   +0.7(sd 7) cost 26.0 APR  -1.5%
+  HEDGE|H28|k2   DEV n  150 (17 coins) net    -8.3 day[ -32.9,  +7.0] mon[ -39.1, +12.9] win 64% fund  +17.1 basis   +0.7(sd 6) cost 26.0 APR  -1.1%
+                 HO  n   87 (17 coins) net    -2.7 day[ -11.5,  +4.4] mon[ -18.9,  +9.2] win 55% fund  +22.7 basis   +0.6(sd 6) cost 26.0 APR  -0.3%
+  MAKER|H7|k1    DEV n    9 ( 6 coins) net   -15.3 day[ -36.5,  +5.9] mon[ -43.6,  -4.8] win 44% fund   +8.4 basis   +0.3(sd 14) cost 24.0 APR  -8.0%
+                 HO  n    4 ( 3 coins) net    +8.0 day[  -0.8, +20.3] mon[  +3.8, +20.3] win 75% fund  +19.8 basis  +12.2(sd 9) cost 24.0 APR  +4.1%
+  MAKER|H7|k2    DEV n 0
+                 HO  n    1 ( 1 coins) net   +34.8 day[ +34.8, +34.8] mon[ +34.8, +34.8] win 100% fund  +21.1 basis  +37.6(sd 0) cost 24.0 APR +18.1%
+  MAKER|H14|k1   DEV n  290 (17 coins) net    -7.4 day[ -10.7,  -4.3] mon[ -14.7,  -1.8] win 37% fund  +16.2 basis   +0.4(sd 6) cost 24.0 APR  -1.9%
+                 HO  n  167 (18 coins) net    -9.9 day[ -14.7,  -5.5] mon[ -19.9,  -2.3] win 25% fund  +12.6 basis   +1.5(sd 16) cost 24.0 APR  -2.6%
+  MAKER|H14|k2   DEV n    8 ( 6 coins) net   -23.8 day[ -74.9, +12.1] mon[ -36.5, -17.8] win 50% fund   -0.9 basis   +1.1(sd 12) cost 24.0 APR  -6.2%
+                 HO  n    4 ( 3 coins) net   +12.5 day[  +4.1, +30.0] mon[ +11.6, +12.7] win 75% fund  +28.6 basis   +7.9(sd 6) cost 24.0 APR  +3.2%
+  MAKER|H28|k1   DEV n  180 (17 coins) net    -8.0 day[ -28.1,  +4.9] mon[ -32.2, +10.9] win 63% fund  +15.3 basis   +0.8(sd 5) cost 24.0 APR  -1.0%
+                 HO  n  131 (17 coins) net   -10.9 day[ -18.4,  -3.3] mon[ -23.3,  +3.3] win 45% fund  +12.4 basis   +0.7(sd 7) cost 24.0 APR  -1.4%
+  MAKER|H28|k2   DEV n  158 (17 coins) net    -5.4 day[ -28.1,  +9.0] mon[ -34.2, +14.0] win 70% fund  +17.9 basis   +0.7(sd 6) cost 24.0 APR  -0.7%
+                 HO  n   95 (17 coins) net    -3.3 day[ -13.3,  +5.1] mon[ -18.9, +10.0] win 55% fund  +19.9 basis   +0.7(sd 6) cost 24.0 APR  -0.4%
+
+[exited with code 0]

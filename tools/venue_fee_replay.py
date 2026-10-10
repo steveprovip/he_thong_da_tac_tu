@@ -16,7 +16,7 @@ the next print after the latency.  Averaging over trades gives the closed form u
 Caveats: the fills are Binance USD-M fills (Binance prices, Binance queue).  Another venue has its own book, depth,
 queue and basis; this measures the fee effect only, NOT a replay on that venue.  Selection is pre-registered: per
 scenario, per strategy group, the DEV-best variant (mean net) is reported on HOLDOUT; rule as before (n >= 100,
-CI95 lower > 0, win > 50 %).
+CI95 lower > 0, win > 50 % unless planned R:R >= 2: ir.eligible).
 """
 from __future__ import annotations
 
@@ -50,7 +50,6 @@ SCENARIOS = {
 }
 INTRA_SLIP = 1.0
 GROUPS = {'S1': ('S1',), 'S2': ('S2',), 'R1': ('R1',), 'P': ('P5', 'P15')}
-MIN_N = 100
 
 
 def fees_for(sc: dict, symbol: str) -> tuple:
@@ -133,10 +132,9 @@ def evaluate(trades: dict, dev: tuple, hold: tuple, cluster_s: int, slip: float,
                 continue
             b = max(c, key=lambda v: r['variants'][v]['DEV']['mean_net_bps'])
             h = r['variants'][b]['HOLDOUT']
-            ok = h.get('n', 0) >= MIN_N and h['ci95'][0] > 0 and h['win_rate'] > 0.5
-            r['best'][g] = {'variant': b, 'verdict': 'ACTIVE-ELIGIBLE' if ok else 'SHADOW',
-                            'per_symbol': {s: ('ACTIVE-ELIGIBLE' if x.get('n', 0) >= MIN_N and x['ci95'][0] > 0
-                                               and x['win_rate'] > 0.5 else 'SHADOW')
+            var = ir.VARIANTS.get(b)
+            r['best'][g] = {'variant': b, 'verdict': 'ACTIVE-ELIGIBLE' if ir.eligible(h, var) else 'SHADOW',
+                            'per_symbol': {s: ('ACTIVE-ELIGIBLE' if ir.eligible(x, var) else 'SHADOW')
                                            for s, x in r['variants'][b]['per_symbol'].items()}}
     return res
 
