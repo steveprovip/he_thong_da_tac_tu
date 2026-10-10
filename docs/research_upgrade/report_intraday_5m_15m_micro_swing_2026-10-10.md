@@ -24,7 +24,7 @@
 
 Theo quy tắc đã đăng ký trước, không (symbol, chiến lược) nào được bật active. Điều kiện để bật: CI hold-out > 0, tỷ lệ thắng > 50 % và ít nhất 100 lệnh.
 
-Làn 3 đã có đủ code và chạy **shadow trên demo**. Shadow ở đây là chính quy tắc replay, áp lên từng nến 1m mainnet vừa đóng. Phần active bị khoá bằng `config/intraday_verdict.json`.
+Làn 3 đã có đủ code và chạy **shadow trên demo**. Shadow ở đây là chính quy tắc replay, áp lên từng nến 1m mainnet vừa đóng, với một sổ ảo cho mỗi biến thể. Không có đường đặt lệnh thật (mục 4).
 
 Chuyện 14 lệnh `BURST SHADOW` sáng 10/10: đó là **lệnh ảo** của làn 2 shadow, không phải tiền thật. Kết quả −7 bps/lệnh khớp đúng replay của vòng trước. Shadow đã làm đúng việc của nó: đo chiến lược mà không mất tiền.
 
@@ -114,41 +114,42 @@ Tổng cộng 6 họ, 26 biến thể, 3 coin. Ở khung 5 phút đến 4 giờ,
 
 ## 4. Làn 3 trong engine (`core/intraday_lane.py`)
 
-**Một nguồn logic duy nhất.** Chỉ báo, `s1_signal`, `s2_trend`, `s2_stop` nằm trong `core/intraday_lane.py`, và `tools/intraday_replay.py` import lại chúng. Test `test_shadow_lane_reproduces_the_replay_trade_by_trade` chứng minh lane shadow (chạy từng nến) cho **đúng từng lệnh** như replay, cho cả S1 và S2.
+**Một nguồn logic duy nhất.** Chỉ báo, `s1_signal`, `s2_trend`, `s2_stop` nằm trong `core/intraday_lane.py`, và `tools/intraday_replay.py` import lại chúng. Test `test_shadow_lane_reproduces_the_replay_trade_by_trade` chứng minh lane shadow cho **đúng từng lệnh** như replay. Test dùng đúng cấu hình production và 4 biến thể chạy chung một lane.
 
 **Chế độ** (`Profile.intraday_lane`):
-- **shadow:** mỗi khi một nến 1m mainnet đóng, engine lấy lại 1500 nến 1m qua REST (có retry, cache và spot proxy từ vòng ff), rồi áp đúng quy tắc replay. Kết quả ghi vào `data/intraday_trades_shadow.jsonl`, kèm event `INTRADAY SHADOW …`.
+- **`shadow`:** mỗi biến thể có **một sổ ảo độc lập**, giống hệt sổ của replay.
+  - Mỗi khi một nến 1m mainnet đóng (cộng 5 s phòng lệch đồng hồ), engine lấy lại 1 500 nến 1m qua REST (có retry, cache và spot proxy từ vòng ff), rồi áp đúng quy tắc replay.
+  - Kết quả ghi vào `data/intraday_trades_shadow.jsonl`, kèm event `INTRADAY SHADOW …`.
+  - Mỗi dòng có thêm trường `would_block`: lý do một lệnh **thật** sẽ bị chặn trên tài khoản chung (symbol đang có vị thế trend/vi mô, 10 phút sau nến 4H, cầu dao lỗ ngày $25). Các chốt chặn này chỉ được **đo**, không áp vào sổ ảo, để kết quả shadow vẫn so được với replay và verdict.
   - Nến không có volume (lấy từ spot proxy) bị coi là UNKNOWN: không phát tín hiệu.
-- **active** (chỉ demo, khi verdict là ACTIVE-ELIGIBLE):
-  - lệnh vào post-only GTX;
-  - STOP_MARKET closePosition trên sàn đặt ngay sau khi khớp; nếu sàn từ chối stop thì đóng vị thế ngay;
-  - TP post-only;
-  - S2 kéo stop bằng cách huỷ rồi đặt lại;
-  - hết 45 phút thì đóng bằng IOC;
-  - ghi vào `data/intraday_trades.jsonl`.
-- **Chung tài khoản với các làn khác:** Binance one-way mode chỉ có **một vị thế ròng mỗi symbol**.
-  - Khi đang có lệnh hoặc vị thế active, lane đặt `e.busy` để làn trend chờ.
-  - Lane không vào lệnh khi symbol đang có vị thế trend/vi mô, hoặc trong 10 phút sau mỗi lần nến 4H đóng.
-  - Cầu dao lỗ ngày $25 (`intraday_daily_kill_usdt`).
-- **Size:** $150/lệnh (`intraday_notional_usdt`), tối đa 4 % ví.
-- **Biến thể:** `intraday_variants = ('S1_SESSION', 'S2_slope3_tp60')`, tức DEV-best của từng chiến lược.
-- **Telemetry:** `snapshot['intraday_lane'][symbol]` (mode, lệnh chờ, vị thế, VWAP, slope3, ADX15, day_pnl, n).
-
-**Review đối kháng của code lane:** xem mục 6.
+- **`active` không được xây, và đây là chủ ý.**
+  - Bản active đầu tiên bị review đối kháng (mục 6) phát hiện các lỗi an toàn thật:
+    - TP không phải reduce-only, nên sau khi stop khớp, TP có thể **mở vị thế ngược chiều**;
+    - khớp một phần hoặc stop bị từ chối để lại phần vị thế không có stop;
+    - crash khi re-anchor S2;
+    - trạng thái không lưu qua restart;
+    - có thể chặn làn trend tới 45 phút.
+  - Không biến thể nào đủ điều kiện active, nên code đó chỉ là rủi ro, và đã được **gỡ bỏ**.
+  - Đặt `intraday_lane='active'` thì engine ghi lý do từ chối rồi chạy shadow.
+  - Nếu sau này có verdict ACTIVE-ELIGIBLE, executor nên dựng lại trên đường lệnh đã kiểm chứng của làn trend: trạng thái lưu file, thoát reduce-only, stop trên sàn có cơ chế khôi phục hoặc đóng lệnh, PnL lấy từ `realized_parts`.
+- **Biến thể:** `intraday_variants = ('S1_SESSION', 'S2_slope3_tp60')`, tức DEV-best của từng chiến lược. Size $150/lệnh (tối đa 4 % ví), giữ tối đa 45 phút.
+- **Telemetry:** `snapshot['intraday_lane'][symbol]` (mode, sổ ảo, VWAP session, slope3, ADX15, day_pnl, n, gap_bars).
+- **Làn 2 (burst) có cùng loại lỗi tiềm ẩn ở đường active**, hiện cũng đang bị khoá vì mọi verdict là SHADOW. Việc sửa đã được đề xuất thành một task riêng.
 
 ## 5. Kiểm thử và lưu trữ
 
 **Test:**
 - `python -m pytest -q`: xem mục 6 (số cuối cùng sau khi sửa theo review).
-- 13 test mới trong `tests/test_intraday_lane.py`:
+- 15 test mới trong `tests/test_intraday_lane.py`:
   - resample, VWAP warm-up;
   - điều kiện S1/S2;
-  - nến thiếu volume;
-  - lane shadow: khớp TP, lệnh hết hạn, SL ngay trong phút khớp, hết giờ 45 phút;
-  - khoá 4H và symbol bận;
-  - **lane = replay từng lệnh**;
-  - active bị chặn khi không có verdict và ở live;
-  - lệnh vào active đặt stop trên sàn và TP;
+  - nến thiếu volume (UNKNOWN);
+  - lane shadow: khớp TP (phút khớp không tính TP), lệnh hết hạn sau 1 phút, SL ngay trong phút khớp, hết giờ 45 phút;
+  - `would_block` được ghi lại nhưng không áp vào sổ ảo; các lý do chặn (bận, cửa sổ 4H, cầu dao);
+  - sổ ảo của từng biến thể độc lập với nhau;
+  - **lane = replay từng lệnh** với cấu hình production (4 biến thể);
+  - active bị từ chối và chuyển sang shadow;
+  - bỏ qua nến mới đóng chưa đủ 5 s;
   - profile production.
 
 **Lưu trữ:**
