@@ -160,7 +160,7 @@ def test_shadow_stop_in_fill_minute_and_time_barrier(tmp_path, monkeypatch):
     c2 = m2['c'][i6]
     monkeypatch.setattr(il, 's1_signal', lambda f_, k_, vw: (1, c2, c2 * 1.5, c2 * 0.5) if k_ == k else None)
     m2['l'][i6 + 1] = c2 * 0.999
-    lane2 = il.IntradayLane(fake_engine(tmp_path / 'b')[0], tmp_path / 'b', clock=lambda: 0.0)
+    lane2 = il.IntradayLane(fake_engine(tmp_path / 'b', intraday_variants=('S1_ROLL100',))[0], tmp_path / 'b', clock=lambda: 0.0)
     run_bars(lane2, m2, f2, lo=i6)
     row2 = json.loads((tmp_path / 'b' / 'intraday_trades_shadow.jsonl').read_text().splitlines()[0])
     assert row2['exit_how'] == 'TIME' and row2['hold_min'] == pytest.approx(45, abs=1)
@@ -332,8 +332,82 @@ def test_btc_lot_below_min_notional_is_recorded_not_dropped(tmp_path, monkeypatc
     assert row['qty'] * row['entry'] == pytest.approx(150.0)        # the replay's fixed notional
 
 
+# ============================================================================ 10-10 c regime-aligned variants
+def test_regime5_up_down_chop_mixed():
+    f = {'ker5': np.array([0.5, 0.5, 0.1, 0.1, 0.3]), 'dir5': np.array([1, -1, 1, 1, 1]),
+         'slope1': np.array([0.0, 0.0, 0.0, 0.12, 0.0]), 'adx15': np.array([30, 30, 15, 15, 15])}
+    assert [il.regime5(f, k) for k in range(5)] == ['UP', 'DOWN', 'CHOP', 'UP', 'MIXED']
+
+
+def test_r1_blocks_a_band_fade_outside_chop(tmp_path, monkeypatch):
+    m = walk()
+    f = il.features(m)
+    k = 300
+    i5 = int(f['b5']['i_last'][k])
+    c = m['c'][i5]
+    monkeypatch.setattr(il, 's1_signal', lambda f_, k_, vw: (-1, c, c * 0.996, c * 1.003) if k_ == k else None)
+    for reg, want in (('UP', False), ('CHOP', True)):
+        monkeypatch.setattr(il, 'regime5', lambda f_, k_, reg=reg: reg)
+        e, _ = fake_engine(tmp_path / reg, intraday_variants=('R1_SESSION', 'S1_SESSION'))
+        lane = il.IntradayLane(e, tmp_path / reg, clock=lambda: 0.0)
+        lane.on_bar(m, f, i5)
+        assert bool(lane.books['R1_SESSION']['order']) is want and lane.books['S1_SESSION']['order']
+
+
+def test_p15_tp1_half_then_break_even_books_the_whole_trade(tmp_path, monkeypatch):
+    m = walk(n=1500)
+    f = il.features(m)
+    j = 60
+    i15 = int(f['b15']['i_last'][j])
+    c = m['c'][i15]
+    monkeypatch.setattr(il, 'p15_signal', lambda f_, j_: (1, c, c * 0.01) if j_ == j else None)
+    flat = c * 1.001
+    for k in range(i15 + 1, i15 + 200):                          # quiet tape around the entry unless set below
+        m['o'][k] = m['h'][k] = m['l'][k] = m['c'][k] = flat
+    m['l'][i15 + 1] = c * 0.9995                                  # filled through the bid
+    m['h'][i15 + 3] = c * 1.004                                   # TP1 +35 bps reached (half, maker)
+    m['l'][i15 + 3] = c * 1.001
+    m['l'][i15 + 5] = c * 0.9999                                  # back to entry: the break-even stop takes the rest
+    e, _ = fake_engine(tmp_path, intraday_variants=('P15_tp35',))
+    lane = il.IntradayLane(e, tmp_path, clock=lambda: 0.0)
+    run_bars(lane, m, f, lo=i15)
+    row = json.loads((tmp_path / 'intraday_trades_shadow.jsonl').read_text().splitlines()[0])
+    p = e.p
+    want_net = 0.5 * 35.0 - p.maker_bps - 0.5 * p.maker_bps - 0.5 * (p.taker_bps + p.intraday_slip_bps)
+    assert row['exit_how'] == 'TP1+SL' and row['net_bps'] == pytest.approx(want_net, abs=1e-6) and row['net_bps'] > 0
+    assert row['tp1'] == pytest.approx(c * 1.0035) and row['qty'] * row['entry'] == pytest.approx(150.0)
+
+
+def test_p15_trailing_chandelier_after_tp1(tmp_path, monkeypatch):
+    m = walk(n=1500)
+    f = il.features(m)
+    j = 60
+    i15 = int(f['b15']['i_last'][j])
+    c = m['c'][i15]
+    monkeypatch.setattr(il, 'p15_signal', lambda f_, j_: (1, c, c * 0.01) if j_ == j else None)
+    e, _ = fake_engine(tmp_path, intraday_variants=('P15_tp35',))
+    lane = il.IntradayLane(e, tmp_path, clock=lambda: 0.0)
+    m['l'][i15 + 1] = c * 0.9995
+    m['h'][i15 + 2], m['l'][i15 + 2] = c * 1.004, c * 1.001
+    run_bars(lane, m, f, lo=i15)
+    bk = lane.books['P15_tp35']
+    rows = [json.loads(x) for x in (tmp_path / 'intraday_trades_shadow.jsonl').read_text().splitlines()]
+    assert rows[0]['exit_how'].startswith('TP1+')                 # TP1 taken, then the rest left by stop / trail / time
+    assert bk['pos'] is None or bk['pos'].get('tp1_done')
+
+
+def test_replay_runs_the_lane_engine_for_the_new_variants():
+    import intraday_replay as ir
+    m = walk(n=6000, seed=11, vol=0.0018)
+    f = il.features(m)
+    out = ir.run_lane(m, f, ['R1_SESSION', 'P5_tp35', 'P15_tp50'])
+    assert set(out) == {'R1_SESSION', 'P5_tp35', 'P15_tp50'} and sum(len(v) for v in out.values()) > 0
+    assert all({'t', 't_entry', 'net_bps', 'gross_bps', 'exit', 'hold_min'} <= set(r) for v in out.values() for r in v)
+
+
 @pytest.mark.production_profile
 def test_profiles_intraday_shadow_on_demo_off_on_live():
     assert eng.PROFILES['demo'].intraday_lane == 'shadow' and eng.PROFILES['live'].intraday_lane == 'off'
     d = eng.PROFILES['demo']
     assert d.intraday_notional_usdt == 150.0 and d.intraday_daily_kill_usdt == 25.0 and d.intraday_hold_min == 45.0
+    assert d.intraday_close_margin_s == 10.0 and d.intraday_variants == ('R1_SESSION', 'P15_tp50')

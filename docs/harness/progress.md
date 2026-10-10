@@ -258,3 +258,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - core/intraday_lane.py shadow-only (one virtual book per variant = replay trade by trade; would_block; 3-day kline store; server clock; data gap -> UNKNOWN). First active path removed after an adversarial review found order-safety defects; burst lane's similar latent path proposed as a separate task.
 - Code review v2 (10 agents): 6 confirmed findings (BTC min-notional silent drop, ADX warm-up, SESSION after gaps, long gaps, clock skew, verdict floor) all fixed.
 - Checks: python -m pytest -q 1488 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
+
+## 2026-10-10 (c) Regime-aligned pull-back & 15m/1h swing (lane 3, shadow)
+- core/intraday_lane.py: regime5 (UP/DOWN KER10(5m) > 0.40 or EMA20 slope > 0.10 %, CHOP KER < 0.25 & ADX15 < 20, else MIXED); R1 = S1 only in CHOP; P5 / P15 regime-aligned pull-backs to max(EMA20, session VWAP) with CVD exhaustion; TP1 50 % at +35/+50 bps (maker), break-even from the next minute, chandelier 2.5 ATR, 180 min; whole-trade rows (TP1+SL / TP1+TIME). tools/intraday_replay.py run_lane = the lane's own bar engine (single source of truth).
+- Replay HOLDOUT 2026 (pooled): R1_SESSION -6.51 bps [-10.47,-2.31] win 34 %; P15_tp35 win 59.9 % but -7.07 [-10.83,-3.04] (avg win +29.6 / loss -61.7, break-even needs 67.6 %); P15_tp50 -6.92 win 52 %; P5 -8.1/-8.7. Gross ~0 everywhere -> SHADOW. Diagnostic: counter-trend S1 fades (-7.3/-8.2) are not worse than CHOP (-9.2) or MIXED (-7.2).
+- Profile: intraday_variants=('R1_SESSION','P15_tp50'), intraday_close_margin_s=10.0. Report docs/research_upgrade/report_regime_aligned_pullback_2026-10-10.md, snapshot_2026-10-10c.
+- Checks: python -m pytest -q 1493 passed, 28 skipped, 2 failed (pre-existing env). No restart, no order, ledgers untouched.

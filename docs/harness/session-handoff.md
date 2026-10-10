@@ -125,3 +125,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - 'active' is refused by design; build an executor only if config/intraday_verdict.json gets an ACTIVE-ELIGIBLE (re-run tools/intraday_replay.py --write-verdict on new data), reusing the trend lane's persisted reduce-only order path.
 - Pending suggestion: fix or remove the burst lane's latent active order path (same defect class).
 - Revert: demo intraday_lane='off'.
+
+## Handoff — 2026-10-10 (c)
+- After restart, lane 3 shadow records R1_SESSION (band fade only in CHOP, ~1/day) and P15_tp50 (15m/1h pull-back, ~5/day) instead of S1/S2; rows carry regime, tp1, exit_how 'TP1+…'. Expect ~-7 bps per virtual trade (replay). Kline admission margin is 10 s on the server clock.
+- Nothing to activate: every variant negative on HOLDOUT. A higher win rate (P15_tp35 60 %) came from TP1 + break-even reshaping, not from an edge. Next research should target gross edge >= 10 bps or lower fees, not more filters on the same signal.
+- Revert: intraday_variants=('S1_SESSION','S2_slope3_tp60'), intraday_close_margin_s=5.0; demo intraday_lane='off'.

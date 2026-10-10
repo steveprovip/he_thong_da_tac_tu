@@ -21,6 +21,28 @@
    ],
    "holdout_win_rate": 0.23170731707317074,
    "holdout_n": 82
+  },
+  "R1": {
+   "variant": "R1_SESSION",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -10.166365255734865,
+   "holdout_ci95": [
+    -14.828617815605773,
+    -5.48794025678483
+   ],
+   "holdout_win_rate": 0.2916666666666667,
+   "holdout_n": 96
+  },
+  "P": {
+   "variant": "P15_tp50",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -7.529004891766838,
+   "holdout_ci95": [
+    -15.619398729113419,
+    0.5937664365744798
+   ],
+   "holdout_win_rate": 0.4315352697095436,
+   "holdout_n": 241
   }
  },
  "SOLUSDT": {
@@ -45,6 +67,28 @@
    ],
    "holdout_win_rate": 0.26337448559670784,
    "holdout_n": 243
+  },
+  "R1": {
+   "variant": "R1_SESSION",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -5.413287702158652,
+   "holdout_ci95": [
+    -11.851801996751052,
+    2.0485236495811714
+   ],
+   "holdout_win_rate": 0.344,
+   "holdout_n": 125
+  },
+  "P": {
+   "variant": "P15_tp50",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -6.590752210697783,
+   "holdout_ci95": [
+    -12.216647181595187,
+    -0.8150493611433387
+   ],
+   "holdout_win_rate": 0.5324675324675324,
+   "holdout_n": 539
   }
  },
  "DOGEUSDT": {
@@ -69,8 +113,30 @@
    ],
    "holdout_win_rate": 0.30847457627118646,
    "holdout_n": 295
+  },
+  "R1": {
+   "variant": "R1_SESSION",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -4.673892040997333,
+   "holdout_ci95": [
+    -12.43971950666371,
+    4.268703722274616
+   ],
+   "holdout_win_rate": 0.3793103448275862,
+   "holdout_n": 116
+  },
+  "P": {
+   "variant": "P15_tp50",
+   "verdict": "SHADOW",
+   "holdout_mean_net_bps": -6.971537238865479,
+   "holdout_ci95": [
+    -12.956798129531023,
+    -0.9663073515070904
+   ],
+   "holdout_win_rate": 0.5402750491159135,
+   "holdout_n": 509
   }
  },
- "_generated": "2026-10-10T04:06:22+00:00",
+ "_generated": "2026-10-10T10:45:48+00:00",
  "_rule": "ACTIVE-ELIGIBLE iff HOLDOUT n >= 100, CI95 lower > 0 and win rate > 50 % (DEV-best variant)"
 }

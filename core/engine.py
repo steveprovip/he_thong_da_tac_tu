@@ -492,7 +492,7 @@ class Profile:
     # config/intraday_verdict.json (replay 10-10 b: every pre-registered variant negative) and no executor is built.
     intraday_lane: str = 'off'
     intraday_symbols: tuple = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')
-    intraday_variants: tuple = ('S1_SESSION', 'S2_slope3_tp60')   # the replay's DEV-best per strategy
+    intraday_variants: tuple = ('R1_SESSION', 'P15_tp50')   # 10-10 c: the replay's DEV-best of R1 and P (shadow)
     intraday_notional_usdt: float = 150.0
     intraday_budget_pct: float = 0.04
     intraday_daily_kill_usdt: float = 25.0
@@ -500,7 +500,7 @@ class Profile:
     intraday_slip_bps: float = 1.0
     intraday_trend_quiet_s: float = 600.0
     intraday_every_s: float = 10.0
-    intraday_close_margin_s: float = 5.0    # accept a 1m kline only 5 s after its close on the SERVER clock
+    intraday_close_margin_s: float = 10.0   # accept a 1m kline only 10 s after its close on the SERVER clock
     intraday_store_bars: int = 4320         # rolling store of closed 1m klines (3 days; back-filled to 2999 at start)
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).

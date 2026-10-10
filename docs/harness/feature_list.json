@@ -223,6 +223,16 @@
       ],
       "status": "done",
       "evidence": "HOLDOUT 2026: S1_SESSION -7.09 bps [-8.33,-5.82] win 32 %, S2_slope3_tp60 -8.44 [-12.49,-4.60] win 28 %; optimistic bounds still negative; 5 extra families negative on DEV; lane = replay trade by trade on real SOL/DOGE; pytest 1488 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "intraday-regime-pullback-20261010c",
+      "name": "Lane 3: regime gate (R1 band fade only in CHOP) + regime-aligned 5m/15m-1h pull-backs with TP1 50 %, break-even, chandelier trail; shadow-only",
+      "description": "core/intraday_lane.py (regime5, p5_signal, p15_signal, multi-leg position, whole-trade rows, sink), core/engine.py (intraday_variants R1_SESSION + P15_tp50, intraday_close_margin_s 10.0), tools/intraday_replay.py (run_lane = lane engine), config/intraday_verdict.json, tests/test_intraday_lane.py (24), snapshot_2026-10-10c, report_regime_aligned_pullback_2026-10-10.md",
+      "dependencies": [
+        "intraday-lane-5m15m-20261010b"
+      ],
+      "status": "done",
+      "evidence": "HOLDOUT 2026: R1_SESSION -6.51 bps [-10.47,-2.31] win 34 %, P15_tp35 -7.07 [-10.83,-3.04] win 59.9 %, P15_tp50 -6.92 [-11.35,-2.26] win 52 %; gross ~0 -> SHADOW; counter-trend fades not the loss source; pytest 1493 passed (2 pre-existing env failures)"
     }
   ]
 }

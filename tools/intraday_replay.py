@@ -223,11 +223,38 @@ def summarize(trades, lo, hi):
             'median_hold_min': float(np.median([r['hold_min'] for r in tr]))}
 
 
+LANE_KINDS = ('R1', 'P5', 'P15')                         # 10-10 c variants: replayed by the lane's own engine
+
+
+def run_lane(m: dict, f: dict, names, symbol: str = 'X') -> dict:
+    """Feed every closed 1m bar (from the 31st 5m close) through core/intraday_lane.IntradayLane - the very code
+    the shadow lane runs live - and collect its rows as replay trades.  Fees: maker MAKER, taker 5 + 1 bp."""
+    from types import SimpleNamespace
+    from core.intraday_lane import IntradayLane
+    p = SimpleNamespace(symbol=symbol, intraday_variants=tuple(names), intraday_lane='shadow', maker_bps=MAKER,
+                        taker_bps=TAKER - 1.0, intraday_slip_bps=1.0, intraday_notional_usdt=NOTIONAL,
+                        intraday_hold_min=P['hold_min'], intraday_trend_quiet_s=600.0, intraday_daily_kill_usdt=1e18,
+                        intraday_budget_pct=1.0, mock_balance=EQUITY)
+    e = SimpleNamespace(p=p, trend_owned=False, pos=None, busy=False, account={'wallet': EQUITY}, spec={},
+                        event=lambda x: None)
+    lane = IntradayLane(e, Path('.'), fetch=lambda *a, **k: [], clock=lambda: 0.0)
+    out = {n: [] for n in names}
+    lane.sink = lambda r: out[r['variant']].append(
+        {'t': r['t'] - 60, 't_entry': r['fill_t'], 'side': 1 if r['side'] == 'BUY' else -1, 'entry': r['entry'],
+         'exit_px': r['exit'], 'gross_bps': r['gross_bps'], 'net_bps': r['net_bps'], 'exit': r['exit_how'],
+         'hold_min': r['hold_min'], 'regime': r.get('regime')})
+    for i in range(int(f['b5']['i_last'][30]), len(m['t'])):
+        lane.on_bar(m, f, i)
+    return out
+
+
 def run_one(args):
     data, sym = args
     m = load_1m(Path(data), sym)
     f = features(m)
-    return sym, {k: run_symbol(m, f, v) for k, v in VARIANTS.items()}
+    res = {k: run_symbol(m, f, v) for k, v in VARIANTS.items() if v['kind'] not in LANE_KINDS}
+    res.update(run_lane(m, f, [k for k, v in VARIANTS.items() if v['kind'] in LANE_KINDS], sym))
+    return sym, res
 
 
 def main(argv=None):
@@ -252,8 +279,9 @@ def main(argv=None):
         allt = [x for s in syms for x in res[s][v]]
         out['pooled'][v] = {'DEV': summarize(allt, lo_d, hi_d), 'HOLDOUT': summarize(allt, lo_h, hi_h)}
     best = {}
-    for kind in ('S1', 'S2'):
-        cands = [v for v in VARIANTS if VARIANTS[v]['kind'] == kind and out['pooled'][v]['DEV'].get('n', 0) >= 30]
+    groups = {'S1': ('S1',), 'S2': ('S2',), 'R1': ('R1',), 'P': ('P5', 'P15')}       # 10-10 c: R1 and P families
+    for kind, kinds in groups.items():
+        cands = [v for v in VARIANTS if VARIANTS[v]['kind'] in kinds and out['pooled'][v]['DEV'].get('n', 0) >= 30]
         best[kind] = max(cands, key=lambda v: out['pooled'][v]['DEV']['mean_net_bps']) if cands else None
     out['dev_best'] = best
     verdict = {}

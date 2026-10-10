@@ -1,0 +1,7 @@
+S1_SESSION 2025-01..2026-09 pooled, by 5m regime at the signal and side vs trend
+  UP     with trend     n     5 win 0.0% mean net -32.20 bps
+  UP     AGAINST trend  n  3027 win 31.4% mean net  -7.33 bps
+  DOWN   with trend     n     6 win 16.7% mean net -19.82 bps
+  DOWN   AGAINST trend  n  3034 win 31.1% mean net  -8.20 bps
+  CHOP   n/a            n   505 win 31.1% mean net  -9.15 bps
+  MIXED  n/a            n  4072 win 33.5% mean net  -7.18 bps

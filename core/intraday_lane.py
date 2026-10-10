@@ -8,6 +8,20 @@ S2  15m momentum continuation: EMA20(5m) slope over 3 bars >= 0.15 % AND ADX(15m
     of the last 2 closed 5m bars (1 ATR if within 5 bps), trailed to each new 5m bar.
 Both: 45 min time barrier (taker), one position per symbol, the stop before the target inside a minute.
 
+10-10 c regime-aligned variants (PRE-REGISTERED before their first run; thresholds = the request's):
+  regime at a 5m close  UP    (KER10(5m) > 0.40 with the 10-bar move up) OR EMA20(5m) slope1 > +0.10 %
+                        DOWN  mirrored;  CHOP  KER10(5m) < 0.25 AND ADX14(15m) < 20;  else MIXED
+R1  S1 (SESSION VWAP) only in CHOP: no fade of a band touch while the market trends (the 16:08-16:32 BTC shorts).
+P5  5m pull-back with the regime: UP -> the 5m low dipped to max(EMA20(5m), session VWAP), the close is back above
+    EMA20, and the last minute's CVD > 0 (sellers exhausted) -> post-only BUY at the close for one minute (DOWN
+    mirrored).  Stop 1.5 ATR(5m).  TP1 = 50 % at +35 | +50 bps (maker); from the next minute the rest has its stop
+    at break-even (entry) and trails a chandelier 2.5 ATR(5m) from the best 5m close; 180 min time barrier.
+P15 15m / 1h pull-back: UP = EMA20(1h) rose >= 0.10 % over the last closed 1h bar AND the 15m close > EMA20(15m);
+    the 15m low dipped to max(EMA20(15m), session VWAP), the 15m close is back above EMA20(15m), and the 15m bar's CVD
+    > 0 -> post-only BUY at the 15m close, live 5 min (DOWN mirrored).  Stop 1.0 ATR(15m); TP1 50 % at +35 | +50
+    bps; then break-even + chandelier 2.5 ATR(15m) on 15m closes; 180 min time barrier.
+Rows of P variants book the whole trade on its full notional (TP1 leg + rest), win = net > 0.
+
 Modes (Profile.intraday_lane): 'off' | 'shadow'.
   shadow  one independent VIRTUAL book per variant (exactly the replay's per-variant books) fed with each newly
           CLOSED mainnet 1m kline (public REST, with the retry / cache / spot-proxy layer of core/engine.py):
@@ -46,7 +60,14 @@ VARIANTS = {
     'S2_slope3_tp100': {'kind': 'S2', 'slope': 3, 'tp': 100.0},
     'S2_slope1_tp60': {'kind': 'S2', 'slope': 1, 'tp': 60.0},
     'S2_slope1_tp100': {'kind': 'S2', 'slope': 1, 'tp': 100.0},
+    # 10-10 c regime-aligned (see the docstring)
+    'R1_SESSION': {'kind': 'R1', 'vwap': 'SESSION'},
+    'P5_tp35': {'kind': 'P5', 'tp1': 35.0, 'sl_atr': 1.5, 'trail_atr': 2.5, 'hold': 180, 'live_s': 60},
+    'P5_tp50': {'kind': 'P5', 'tp1': 50.0, 'sl_atr': 1.5, 'trail_atr': 2.5, 'hold': 180, 'live_s': 60},
+    'P15_tp35': {'kind': 'P15', 'tp1': 35.0, 'sl_atr': 1.0, 'trail_atr': 2.5, 'hold': 180, 'live_s': 300},
+    'P15_tp50': {'kind': 'P15', 'tp1': 50.0, 'sl_atr': 1.0, 'trail_atr': 2.5, 'hold': 180, 'live_s': 300},
 }
+REG = {'ker_trend': 0.40, 'slope_trend': 0.10, 'ker_chop': 0.25, 'adx_chop': 20.0, 'h1_slope': 0.10}
 
 
 # ------------------------------------------------------------------ indicators (shared with the replay)
@@ -147,10 +168,91 @@ def features(m: dict) -> dict:
     il = b5['i_last']
     out = {'b5': b5, 'ema20': e20, 'slope1': slope1, 'slope3': slope3, 'atr5': atr5, 'adx15': adx_at,
            'cvd60': 2 * m['tbq'][il] - m['qv'][il]}
+    vw_s = None
     for kind in ('ROLL100', 'SESSION'):
         vw, sd = vwap_bands(m, kind)
         out[f'vwap_{kind}'], out[f'sd_{kind}'] = vw[il], sd[il]
+        if kind == 'SESSION':
+            vw_s = vw
+    # 10-10 c: KER10 on 5m closes, the 15m / 1h blocks, 1m-index -> 5m / 15m close maps
+    c5 = b5['c']
+    ker5, dir5 = np.full(len(c5), np.nan), np.zeros(len(c5))
+    if len(c5) > 10:
+        path = _roll_sum(np.abs(np.diff(c5, prepend=c5[0])), 10)
+        net = c5[10:] - c5[:-10]
+        ker5[10:] = np.abs(net) / np.where(path[10:] > 0, path[10:], np.inf)
+        dir5[10:] = np.sign(net)
+    out['ker5'], out['dir5'] = ker5, dir5
+    il15 = b15['i_last']
+    e15 = ema(b15['c'], 20)
+    atr15 = wilder_atr(b15['h'], b15['l'], b15['c']) if len(b15['c']) else np.array([])
+    cvd1 = 2 * m['tbq'] - m['qv']
+    cs = np.r_[0.0, np.cumsum(cvd1)]
+    cvd15 = cs[il15 + 1] - cs[np.maximum(il15 + 1 - 15, 0)] if len(il15) else np.array([])
+    b1h = resample(m, 3600)
+    e1h = ema(b1h['c'], 20)
+    s1h = np.r_[np.nan, (e1h[1:] / e1h[:-1] - 1) * 100] if len(e1h) > 1 else np.full(len(e1h), np.nan)
+    jh = np.searchsorted(b1h['t_close'], b15['t_close'], side='right') - 1 if len(b15['t_close']) else np.array([], int)
+    out['b15'] = b15
+    out['ema20_15'], out['atr15'], out['cvd15'] = e15, atr15, cvd15
+    out['vwap_SESSION_15'] = vw_s[il15] if len(il15) else np.array([])
+    out['h1_slope'] = np.where(jh >= 0, s1h[np.maximum(jh, 0)], np.nan) if len(s1h) else np.full(len(il15), np.nan)
+    n = len(m['t'])
+    out['k5_of'] = np.full(n, -1, dtype=np.int64)
+    out['k5_of'][il] = np.arange(len(il))
+    out['k15_of'] = np.full(n, -1, dtype=np.int64)
+    out['k15_of'][il15] = np.arange(len(il15))
     return out
+
+
+def _roll_sum(x, w):
+    c = np.r_[0.0, np.cumsum(x)]
+    k = np.arange(len(x))
+    return c[k + 1] - c[np.maximum(k + 1 - w, 0)]
+
+
+def regime5(f: dict, k: int) -> str:
+    """UP / DOWN / CHOP / MIXED at 5m close k (10-10 c, see the module docstring)."""
+    ker, d, s1, adx = f['ker5'][k], f['dir5'][k], f['slope1'][k], f['adx15'][k]
+    up = (np.isfinite(ker) and ker > REG['ker_trend'] and d > 0) or (np.isfinite(s1) and s1 > REG['slope_trend'])
+    dn = (np.isfinite(ker) and ker > REG['ker_trend'] and d < 0) or (np.isfinite(s1) and s1 < -REG['slope_trend'])
+    if up and not dn:
+        return 'UP'
+    if dn and not up:
+        return 'DOWN'
+    if np.isfinite(ker) and np.isfinite(adx) and ker < REG['ker_chop'] and adx < REG['adx_chop']:
+        return 'CHOP'
+    return 'MIXED'
+
+
+def p5_signal(f: dict, k: int) -> Optional[tuple]:
+    """5m pull-back with the regime -> (side, entry, sl_dist) or None."""
+    reg = regime5(f, k)
+    if reg not in ('UP', 'DOWN'):
+        return None
+    b5, e20, vw, atr = f['b5'], f['ema20'][k], f['vwap_SESSION'][k], f['atr5'][k]
+    if not (np.isfinite(atr) and atr > 0 and np.isfinite(vw)):
+        return None
+    c, cvd = b5['c'][k], f['cvd60'][k]
+    if reg == 'UP' and b5['l'][k] <= max(e20, vw) and c > e20 and cvd > 0:
+        return 1, c, atr
+    if reg == 'DOWN' and b5['h'][k] >= min(e20, vw) and c < e20 and cvd < 0:
+        return -1, c, atr
+    return None
+
+
+def p15_signal(f: dict, j: int) -> Optional[tuple]:
+    """15m / 1h pull-back at 15m close j -> (side, entry, sl_dist) or None."""
+    b15, e15, vw, atr, s1h, cvd = (f['b15'], f['ema20_15'][j], f['vwap_SESSION_15'][j], f['atr15'][j],
+                                   f['h1_slope'][j], f['cvd15'][j])
+    if not (np.isfinite(atr) and atr > 0 and np.isfinite(vw) and np.isfinite(s1h)):
+        return None
+    c = b15['c'][j]
+    if s1h >= REG['h1_slope'] and c > e15 and b15['l'][j] <= max(e15, vw) and cvd > 0:
+        return 1, c, atr
+    if s1h <= -REG['h1_slope'] and c < e15 and b15['h'][j] >= min(e15, vw) and cvd < 0:
+        return -1, c, atr
+    return None
 
 
 def s1_signal(f: dict, k: int, vwap: str) -> Optional[tuple]:
@@ -214,6 +316,7 @@ class IntradayLane:
         self.server_offset_fn = server_offset if server_offset is not None else (None if fetch is None else (lambda: 0.0))
         self.offset, self.offset_t = 0.0, -1e18
         self.store = {}             # open_s -> kline row (closed bars only)
+        self.sink = None            # replay hook: f(row) instead of the shadow ledger
         self.gaps = self.skew = 0
         self.variants = [v for v in p.intraday_variants if v in VARIANTS]
         self.mode = 'off' if p.intraday_lane == 'off' else 'shadow'
@@ -256,18 +359,31 @@ class IntradayLane:
 
     # ------------------------------------------------------------------ ledger
     def _close(self, bk: dict, px: float, how: str, t: float, maker: bool) -> None:
+        """Book the whole trade on its full notional: the TP1 leg (if any) + the remaining fraction at px."""
         p, ps = self.e.p, bk['pos']
-        gross = ps['side'] * (px - ps['entry']) / ps['entry'] * 1e4
-        net = gross - p.maker_bps - (p.maker_bps if maker else p.taker_bps + p.intraday_slip_bps)
+        frac = ps.get('frac', 1.0)
+        leg = ps['side'] * (px - ps['entry']) / ps['entry'] * 1e4
+        exit_fee = p.maker_bps if maker else p.taker_bps + p.intraday_slip_bps
+        gross = ps.get('real_gross', 0.0) + frac * leg
+        net = gross - p.maker_bps - ps.get('real_fee', 0.0) - frac * exit_fee
         usd = net / 1e4 * ps['qty'] * ps['entry']
         self.day_pnl += usd
         self.n += 1
+        if ps.get('tp1_done'):
+            how = f'TP1+{how}'
         row = {'t': float(t), 'lane': 'INTRADAY', 'mode': self.mode, 'symbol': p.symbol, 'variant': ps['var'],
                'side': 'BUY' if ps['side'] > 0 else 'SELL', 'qty': float(ps['qty']), 'entry': float(ps['entry']),
-               'exit': float(px), 'exit_how': how, 'hold_min': float((t - ps['fill_t']) / 60), 'tp': float(ps['tp']),
-               'sl0': float(ps['sl0']), 'gross_bps': float(gross), 'net_bps': float(net), 'net_usd': float(usd),
-               'would_block': ps.get('would_block'),
+               'exit': float(px), 'exit_how': how, 'hold_min': float((t - ps['fill_t']) / 60),
+               'tp': float(ps['tp']) if ps.get('tp') is not None else None,
+               'tp1': float(ps['tp1']) if ps.get('tp1') is not None else None,
+               'sl0': float(ps['sl0']), 'regime': ps.get('regime'), 'fill_t': float(ps['fill_t']),
+               'gross_bps': float(gross), 'net_bps': float(net),
+               'net_usd': float(usd), 'would_block': ps.get('would_block'),
                'fees_model': f'maker {p.maker_bps:g} / taker {p.taker_bps:g} + {p.intraday_slip_bps:g} bps'}
+        bk['pos'] = None
+        if self.sink is not None:
+            self.sink(row)
+            return
         try:
             self.ledger.parent.mkdir(parents=True, exist_ok=True)
             with open(self.ledger, 'a', encoding='utf-8') as fh:
@@ -275,7 +391,6 @@ class IntradayLane:
         except OSError:
             pass
         self.e.event(f'INTRADAY SHADOW {row["side"]} {p.symbol} {ps["var"]} {how} {net:+.1f} bps ({usd:+.3f} U)')
-        bk['pos'] = None
 
     def _qty(self, px: float) -> float:
         """Virtual size = the replay's fixed notional (no lot rounding, no minimum: those go to would_block)."""
@@ -287,65 +402,98 @@ class IntradayLane:
             self._bar(bk, name, m, f, i)
 
     def _bar(self, bk: dict, name: str, m: dict, f: dict, i: int) -> None:
-        """Process CLOSED 1m bar i for one variant: exits, then the resting entry, then a signal at a 5m close."""
+        """Process CLOSED 1m bar i for one variant: exits, then the resting entry, then a signal at a 5m / 15m close."""
         t = float(m['t'][i])
         o, h, l, c = m['o'][i], m['h'][i], m['l'][i], m['c'][i]
         b5 = f['b5']
         v = VARIANTS[name]
-        k5 = int(np.searchsorted(b5['i_last'], i))
-        closes5 = k5 < len(b5['i_last']) and b5['i_last'][k5] == i
+        kind = v['kind']
+        k5 = int(f['k5_of'][i])
+        closes5 = k5 >= 0
+        k15 = int(f['k15_of'][i])
+        closes15 = k15 >= 0
         ps = bk['pos']
         if ps is not None:
             first = ps['fill_t'] == t
             d = ps['side']
+            if ps.get('be_next'):                         # break-even from the minute after TP1
+                ps['sl'] = max(ps['sl'], ps['entry']) if d > 0 else min(ps['sl'], ps['entry'])
+                ps['be_next'] = False
+            hold = v.get('hold', self.e.p.intraday_hold_min)
             if (d > 0 and l <= ps['sl']) or (d < 0 and h >= ps['sl']):
                 self._close(bk, ps['sl'] if first else (min(o, ps['sl']) if d > 0 else max(o, ps['sl'])), 'SL', t + 60, False)
-            elif not first and ((d > 0 and h > ps['tp']) or (d < 0 and l < ps['tp'])):
+            elif not first and ps.get('tp') is not None and ((d > 0 and h > ps['tp']) or (d < 0 and l < ps['tp'])):
                 self._close(bk, ps['tp'], 'TP', t + 60, True)
-            elif t + 60 >= ps['fill_t'] + self.e.p.intraday_hold_min * 60:
+            elif t + 60 >= ps['fill_t'] + hold * 60:
                 self._close(bk, c, 'TIME', t + 60, False)
-            elif closes5 and v['kind'] == 'S2':
-                nb = b5['l'][k5] if d > 0 else b5['h'][k5]
-                ps['sl'] = max(ps['sl'], nb) if d > 0 else min(ps['sl'], nb)
+            else:
+                if not first and ps.get('tp1') is not None and not ps.get('tp1_done') and \
+                        ((d > 0 and h > ps['tp1']) or (d < 0 and l < ps['tp1'])):
+                    half = 0.5                            # TP1: half at the target, maker
+                    ps['real_gross'] = ps.get('real_gross', 0.0) + half * d * (ps['tp1'] - ps['entry']) / ps['entry'] * 1e4
+                    ps['real_fee'] = ps.get('real_fee', 0.0) + half * self.e.p.maker_bps
+                    ps['frac'] = 1.0 - half
+                    ps['tp1_done'], ps['be_next'] = True, True
+                if kind == 'S2' and closes5:
+                    nb = b5['l'][k5] if d > 0 else b5['h'][k5]
+                    ps['sl'] = max(ps['sl'], nb) if d > 0 else min(ps['sl'], nb)
+                elif ps.get('tp1_done') and ((kind == 'P5' and closes5) or (kind == 'P15' and closes15)):
+                    cl, atr = (b5['c'][k5], f['atr5'][k5]) if kind == 'P5' else (f['b15']['c'][k15], f['atr15'][k15])
+                    ps['best'] = max(ps.get('best', cl), cl) if d > 0 else min(ps.get('best', cl), cl)
+                    if np.isfinite(atr):
+                        lvl = ps['best'] - d * v['trail_atr'] * atr
+                        ps['sl'] = max(ps['sl'], lvl) if d > 0 else min(ps['sl'], lvl)
             return
         od = bk['order']
         if od is not None:
             if (od['side'] > 0 and l < od['px']) or (od['side'] < 0 and h > od['px']):
                 bk['order'] = None
-                if v['kind'] == 'S2':
+                tp1 = None
+                if kind == 'S2':
                     last_k = int(np.searchsorted(b5['t_close'], t, side='right')) - 1
                     sl = s2_stop(f, last_k, od['side'], od['px'])
                     tp = od['px'] * (1 + od['side'] * v['tp'] / 1e4)
+                elif kind in ('P5', 'P15'):
+                    sl = od['px'] - od['side'] * v['sl_atr'] * od['atr']
+                    tp, tp1 = None, od['px'] * (1 + od['side'] * v['tp1'] / 1e4)
                 else:
                     sl, tp = od['sl'], od['tp']
                 bk['pos'] = {'var': name, 'side': od['side'], 'entry': od['px'], 'sl': sl, 'sl0': sl, 'tp': tp,
-                             'fill_t': t, 'qty': od['qty'], 'would_block': od.get('would_block')}
+                             'tp1': tp1, 'fill_t': t, 'qty': od['qty'], 'would_block': od.get('would_block'),
+                             'regime': od.get('regime')}
                 self._bar(bk, name, m, f, i)              # the fill minute: only the stop can trigger
                 return
-            if v['kind'] == 'S1' and t >= od['expire_t']:
-                bk['order'] = None                        # S1: one minute to fill, no chase
-            elif v['kind'] == 'S2' and closes5:
+            if kind in ('S1', 'R1', 'P5', 'P15') and t >= od['expire_t']:
+                bk['order'] = None                        # one window to fill, no chase
+            elif kind == 'S2' and closes5:
                 if s2_trend(f, k5, v['slope']) != od['side']:
                     bk['order'] = None
                 else:
                     od['px'] = float(f['ema20'][k5])      # re-anchor at the new EMA20
-            if bk['order'] is not None or not closes5:
+            if bk['order'] is not None or not (closes15 if kind == 'P15' else closes5):
                 return
-        if not closes5:
-            return
         od = None
-        if v['kind'] == 'S1':
+        if kind in ('S1', 'R1') and closes5:
             sig = s1_signal(f, k5, v['vwap'])
-            if sig:
+            if sig and (kind == 'S1' or regime5(f, k5) == 'CHOP'):
                 side, entry, tp, sl = sig
                 od = {'side': side, 'px': float(entry), 'tp': float(tp), 'sl': float(sl), 'expire_t': t + 60}
-        else:
+        elif kind == 'S2' and closes5:
             sd = s2_trend(f, k5, v['slope'])
             if sd:
                 od = {'side': sd, 'px': float(f['ema20'][k5])}
+        elif kind == 'P5' and closes5:
+            sig = p5_signal(f, k5)
+            if sig:
+                od = {'side': sig[0], 'px': float(sig[1]), 'atr': float(sig[2]), 'expire_t': t + v['live_s']}
+        elif kind == 'P15' and closes15:
+            sig = p15_signal(f, k15)
+            if sig:
+                od = {'side': sig[0], 'px': float(sig[1]), 'atr': float(sig[2]), 'expire_t': t + v['live_s']}
         if od is not None:
             od['qty'] = self._qty(od['px'])
             od['would_block'] = self.would_block(t + 60, od['px'])
+            od['regime'] = regime5(f, k5) if closes5 else None
             bk['order'] = od
 
     # ------------------------------------------------------------------ data
