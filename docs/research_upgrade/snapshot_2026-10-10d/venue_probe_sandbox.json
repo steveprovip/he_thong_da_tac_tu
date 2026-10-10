@@ -1,0 +1,84 @@
+{
+ "t_utc": "2026-10-10T11:52:52Z",
+ "latency": {
+  "binance": {
+   "status": 451,
+   "n": 0
+  },
+  "mexc": {
+   "status": 200,
+   "n": 15,
+   "median_ms": 304.32610599996224,
+   "p90_ms": 450.212054000076
+  },
+  "hyperliquid": {
+   "status": 200,
+   "n": 15,
+   "median_ms": 298.46707299998343,
+   "p90_ms": 426.17990499991265
+  },
+  "bybit": {
+   "status": 403,
+   "n": 0
+  }
+ },
+ "specs": {
+  "binance": {
+   "status": 451
+  },
+  "mexc": {
+   "BTC_USDT": {
+    "contractSize": 0.0001,
+    "minVol": 1,
+    "priceUnit": 0.1,
+    "makerFeeRate": 0,
+    "takerFeeRate": 0.0002,
+    "apiAllowed": true
+   },
+   "SOL_USDT": {
+    "contractSize": 0.1,
+    "minVol": 1,
+    "priceUnit": 0.01,
+    "makerFeeRate": 0,
+    "takerFeeRate": 0.0002,
+    "apiAllowed": true
+   },
+   "DOGE_USDT": {
+    "contractSize": 100,
+    "minVol": 1,
+    "priceUnit": 1e-05,
+    "makerFeeRate": 0,
+    "takerFeeRate": 0.0002,
+    "apiAllowed": true
+   }
+  },
+  "hyperliquid": {
+   "BTC": {
+    "index": 0,
+    "szDecimals": 5,
+    "min_order_usd": 10
+   },
+   "SOL": {
+    "index": 5,
+    "szDecimals": 2,
+    "min_order_usd": 10
+   },
+   "DOGE": {
+    "index": 12,
+    "szDecimals": 0,
+    "min_order_usd": 10
+   }
+  },
+  "bybit": {
+   "BTCUSDT": {
+    "status": 403
+   },
+   "SOLUSDT": {
+    "status": 403
+   },
+   "DOGEUSDT": {
+    "status": 403
+   }
+  }
+ }
+}

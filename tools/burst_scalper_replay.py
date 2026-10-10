@@ -285,6 +285,7 @@ def simulate(day, policy: str, tp_bps: float, model: str, fees, lat: float = Non
             fee_x = tkf if how in ('SL', 'TIME-TAKER') else mk
             gross = pos * (out_px - entry) / entry * 1e4
             trades.append({'t': entry_t, 'side': pos, 'gross_bps': gross, 'net_bps': gross - mk - fee_x, 'exit': how,
+                           'taker_frac': 1.0 if how in ('SL', 'TIME-TAKER') else 0.0,
                            'hold_s': t[i] - entry_t})
             pos, orders, exit_phase = 0, [], None
         i += 1

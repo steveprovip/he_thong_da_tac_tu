@@ -34,15 +34,15 @@
    "holdout_n": 96
   },
   "P": {
-   "variant": "P15_tp50",
+   "variant": "P15_rr25atr",
    "verdict": "SHADOW",
-   "holdout_mean_net_bps": -7.529004891766838,
+   "holdout_mean_net_bps": -5.429911585222436,
    "holdout_ci95": [
-    -15.619398729113419,
-    0.5937664365744798
+    -15.314410578057696,
+    4.401644302074973
    ],
-   "holdout_win_rate": 0.4315352697095436,
-   "holdout_n": 241
+   "holdout_win_rate": 0.31645569620253167,
+   "holdout_n": 237
   }
  },
  "SOLUSDT": {
@@ -80,15 +80,15 @@
    "holdout_n": 125
   },
   "P": {
-   "variant": "P15_tp50",
+   "variant": "P15_rr25atr",
    "verdict": "SHADOW",
-   "holdout_mean_net_bps": -6.590752210697783,
+   "holdout_mean_net_bps": -3.245645867624496,
    "holdout_ci95": [
-    -12.216647181595187,
-    -0.8150493611433387
+    -11.609025338269513,
+    5.512910016209999
    ],
-   "holdout_win_rate": 0.5324675324675324,
-   "holdout_n": 539
+   "holdout_win_rate": 0.3623481781376518,
+   "holdout_n": 494
   }
  },
  "DOGEUSDT": {
@@ -126,17 +126,17 @@
    "holdout_n": 116
   },
   "P": {
-   "variant": "P15_tp50",
+   "variant": "P15_rr25atr",
    "verdict": "SHADOW",
-   "holdout_mean_net_bps": -6.971537238865479,
+   "holdout_mean_net_bps": -7.899987619273083,
    "holdout_ci95": [
-    -12.956798129531023,
-    -0.9663073515070904
+    -16.49068064154875,
+    1.2666714065149038
    ],
-   "holdout_win_rate": 0.5402750491159135,
-   "holdout_n": 509
+   "holdout_win_rate": 0.33116883116883117,
+   "holdout_n": 462
   }
  },
- "_generated": "2026-10-10T10:45:48+00:00",
+ "_generated": "2026-10-10T11:56:27+00:00",
  "_rule": "ACTIVE-ELIGIBLE iff HOLDOUT n >= 100, CI95 lower > 0 and win rate > 50 % (DEV-best variant)"
 }

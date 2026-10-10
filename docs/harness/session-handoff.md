@@ -130,3 +130,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After restart, lane 3 shadow records R1_SESSION (band fade only in CHOP, ~1/day) and P15_tp50 (15m/1h pull-back, ~5/day) instead of S1/S2; rows carry regime, tp1, exit_how 'TP1+…'. Expect ~-7 bps per virtual trade (replay). Kline admission margin is 10 s on the server clock.
 - Nothing to activate: every variant negative on HOLDOUT. A higher win rate (P15_tp35 60 %) came from TP1 + break-even reshaping, not from an edge. Next research should target gross edge >= 10 bps or lower fees, not more filters on the same signal.
 - Revert: intraday_variants=('S1_SESSION','S2_slope3_tp60'), intraday_close_margin_s=5.0; demo intraday_lane='off'.
+
+## Handoff — 2026-10-10 (d)
+- Answer to "switch exchange?": not for the current strategies. Zero fees do not create an edge (report_exchange_pivot_and_zero_fee_2026-10-10.md); MEXC API orders cost 6/8 bps (more than Binance).
+- Before any venue work: verify the account's real fee via the venue API, run tools/venue_probe.py on the trading machine, and require a signal with HOLDOUT gross >= 3 bps and CI > 0 on Binance first.
+- After restart, lane 3 shadow also records P15_rr25atr. Revert: intraday_variants=('R1_SESSION','P15_tp50').

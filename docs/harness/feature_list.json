@@ -233,6 +233,17 @@
       ],
       "status": "done",
       "evidence": "HOLDOUT 2026: R1_SESSION -6.51 bps [-10.47,-2.31] win 34 %, P15_tp35 -7.07 [-10.83,-3.04] win 59.9 %, P15_tp50 -6.92 [-11.35,-2.26] win 52 %; gross ~0 -> SHADOW; counter-trend fades not the loss source; pytest 1493 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "venue-pivot-zero-fee-20261010d",
+      "name": "Multi-venue fee re-pricing (9 schedules) + venue survey + core/venues BaseVenue with Binance wrapper and MEXC / Hyperliquid prototypes; P15 R:R 2.5 variants",
+      "description": "tools/venue_fee_replay.py (exact re-pricing via taker_frac), tools/venue_probe.py, core/venues/{base,binance,mexc,hyperliquid}.py (not wired; no transport -> VenueDisabled), core/intraday_lane.py (P15_rr25, P15_rr25atr, taker_frac), tests/test_venues.py (9), snapshot_2026-10-10d, report_exchange_pivot_and_zero_fee_2026-10-10.md",
+      "dependencies": [
+        "intraday-regime-pullback-20261010c",
+        "burst-lane-sub-minute-20261010"
+      ],
+      "status": "done",
+      "evidence": "No variant net > 0 with CI > 0 under any fee >= 0 incl. zero (intraday gross CI contains 0; burst gross -2.2..-3.1); MEXC API 6/8 bps -> -13..-15 bps/trade; P15_rr25 SR -4.0, P15_rr25atr SR -1.8; pytest 1503 passed (2 pre-existing env failures)"
     }
   ]
 }

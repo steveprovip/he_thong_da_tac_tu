@@ -21,6 +21,9 @@ P15 15m / 1h pull-back: UP = EMA20(1h) rose >= 0.10 % over the last closed 1h ba
     > 0 -> post-only BUY at the 15m close, live 5 min (DOWN mirrored).  Stop 1.0 ATR(15m); TP1 50 % at +35 | +50
     bps; then break-even + chandelier 2.5 ATR(15m) on 15m closes; 180 min time barrier.
 Rows of P variants book the whole trade on its full notional (TP1 leg + rest), win = net > 0.
+10-10 d (PRE-REGISTERED): P15_rr25 = the P15 signal with a fixed bracket TP +100 / SL -40 bps (R:R 2.5), and
+P15_rr25atr = TP 2.5 / SL 1.0 ATR(15m); no TP1, no trail, 180 min.  Every row carries taker_frac (share of the
+notional closed by a taker leg) so a replay can re-price it under another venue's fee schedule exactly.
 
 Modes (Profile.intraday_lane): 'off' | 'shadow'.
   shadow  one independent VIRTUAL book per variant (exactly the replay's per-variant books) fed with each newly
@@ -66,6 +69,9 @@ VARIANTS = {
     'P5_tp50': {'kind': 'P5', 'tp1': 50.0, 'sl_atr': 1.5, 'trail_atr': 2.5, 'hold': 180, 'live_s': 60},
     'P15_tp35': {'kind': 'P15', 'tp1': 35.0, 'sl_atr': 1.0, 'trail_atr': 2.5, 'hold': 180, 'live_s': 300},
     'P15_tp50': {'kind': 'P15', 'tp1': 50.0, 'sl_atr': 1.0, 'trail_atr': 2.5, 'hold': 180, 'live_s': 300},
+    # 10-10 d R:R >= 2.5 brackets on the P15 signal (no TP1 / trail): fixed 100 / 40 bps, and 2.5 / 1.0 ATR(15m)
+    'P15_rr25': {'kind': 'P15', 'tp_bps': 100.0, 'sl_bps': 40.0, 'hold': 180, 'live_s': 300},
+    'P15_rr25atr': {'kind': 'P15', 'tp_atr': 2.5, 'sl_atr': 1.0, 'hold': 180, 'live_s': 300},
 }
 REG = {'ker_trend': 0.40, 'slope_trend': 0.10, 'ker_chop': 0.25, 'adx_chop': 20.0, 'h1_slope': 0.10}
 
@@ -377,7 +383,7 @@ class IntradayLane:
                'tp': float(ps['tp']) if ps.get('tp') is not None else None,
                'tp1': float(ps['tp1']) if ps.get('tp1') is not None else None,
                'sl0': float(ps['sl0']), 'regime': ps.get('regime'), 'fill_t': float(ps['fill_t']),
-               'gross_bps': float(gross), 'net_bps': float(net),
+               'gross_bps': float(gross), 'net_bps': float(net), 'taker_frac': 0.0 if maker else float(frac),
                'net_usd': float(usd), 'would_block': ps.get('would_block'),
                'fees_model': f'maker {p.maker_bps:g} / taker {p.taker_bps:g} + {p.intraday_slip_bps:g} bps'}
         bk['pos'] = None
@@ -453,6 +459,12 @@ class IntradayLane:
                     last_k = int(np.searchsorted(b5['t_close'], t, side='right')) - 1
                     sl = s2_stop(f, last_k, od['side'], od['px'])
                     tp = od['px'] * (1 + od['side'] * v['tp'] / 1e4)
+                elif kind in ('P5', 'P15') and 'tp_bps' in v:      # fixed bracket, no TP1
+                    sl = od['px'] * (1 - od['side'] * v['sl_bps'] / 1e4)
+                    tp = od['px'] * (1 + od['side'] * v['tp_bps'] / 1e4)
+                elif kind in ('P5', 'P15') and 'tp_atr' in v:      # ATR bracket, no TP1
+                    sl = od['px'] - od['side'] * v['sl_atr'] * od['atr']
+                    tp = od['px'] + od['side'] * v['tp_atr'] * od['atr']
                 elif kind in ('P5', 'P15'):
                     sl = od['px'] - od['side'] * v['sl_atr'] * od['atr']
                     tp, tp1 = None, od['px'] * (1 + od['side'] * v['tp1'] / 1e4)

@@ -376,6 +376,10 @@ def test_p15_tp1_half_then_break_even_books_the_whole_trade(tmp_path, monkeypatc
     want_net = 0.5 * 35.0 - p.maker_bps - 0.5 * p.maker_bps - 0.5 * (p.taker_bps + p.intraday_slip_bps)
     assert row['exit_how'] == 'TP1+SL' and row['net_bps'] == pytest.approx(want_net, abs=1e-6) and row['net_bps'] > 0
     assert row['tp1'] == pytest.approx(c * 1.0035) and row['qty'] * row['entry'] == pytest.approx(150.0)
+    assert row['taker_frac'] == pytest.approx(0.5)                # half closed by the taker break-even stop
+    from tools.venue_fee_replay import reprice                    # the fee re-pricing is exact on this row
+    assert reprice(row['gross_bps'], row['taker_frac'], p.maker_bps, p.taker_bps, p.intraday_slip_bps) == \
+        pytest.approx(row['net_bps'], abs=1e-9)
 
 
 def test_p15_trailing_chandelier_after_tp1(tmp_path, monkeypatch):
@@ -410,4 +414,30 @@ def test_profiles_intraday_shadow_on_demo_off_on_live():
     assert eng.PROFILES['demo'].intraday_lane == 'shadow' and eng.PROFILES['live'].intraday_lane == 'off'
     d = eng.PROFILES['demo']
     assert d.intraday_notional_usdt == 150.0 and d.intraday_daily_kill_usdt == 25.0 and d.intraday_hold_min == 45.0
-    assert d.intraday_close_margin_s == 10.0 and d.intraday_variants == ('R1_SESSION', 'P15_tp50')
+    assert d.intraday_close_margin_s == 10.0 and d.intraday_variants == ('R1_SESSION', 'P15_tp50', 'P15_rr25atr')
+
+
+def test_p15_rr25_fixed_bracket_tp_and_sl(tmp_path, monkeypatch):
+    """10-10 d: P15_rr25 = TP +100 / SL -40 bps, no TP1: a maker TP books taker_frac 0, a stop books 1."""
+    for hit, how, tf in ((1.0105, 'TP', 0.0), (0.9950, 'SL', 1.0)):
+        m = walk(n=1500)
+        f = il.features(m)
+        j = 60
+        i15 = int(f['b15']['i_last'][j])
+        c = m['c'][i15]
+        monkeypatch.setattr(il, 'p15_signal', lambda f_, j_, c=c: (1, c, c * 0.01) if j_ == j else None)
+        for k in range(i15 + 1, i15 + 200):
+            m['o'][k] = m['h'][k] = m['l'][k] = m['c'][k] = c * 1.001
+        m['l'][i15 + 1] = c * 0.9995                              # filled through the bid
+        if hit > 1:
+            m['h'][i15 + 4] = c * hit
+        else:
+            m['l'][i15 + 4] = c * hit
+        d = tmp_path / how
+        e, _ = fake_engine(d, intraday_variants=('P15_rr25',))
+        lane = il.IntradayLane(e, d, clock=lambda: 0.0)
+        run_bars(lane, m, f, lo=i15)
+        row = json.loads((d / 'intraday_trades_shadow.jsonl').read_text().splitlines()[0])
+        want = c * (1.01 if how == 'TP' else 0.996)
+        assert row['exit_how'] == how and row['exit'] == pytest.approx(want) and row['taker_frac'] == tf
+        assert row['tp1'] is None and row['tp'] == pytest.approx(c * 1.01) and row['sl0'] == pytest.approx(c * 0.996)

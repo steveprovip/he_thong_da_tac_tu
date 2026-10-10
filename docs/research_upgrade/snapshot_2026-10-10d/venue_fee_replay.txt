@@ -1,0 +1,367 @@
+
+======== INTRADAY  (HOLDOUT, pooled; DEV-best per group marked *)
+
+A_BINANCE_VIP0  [Binance USD-M VIP0 (the replays' baseline)]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 33.0% net  -8.12 [ -8.93,  -7.22] gross -1.09 tau 0.76 SR -17.42 $  -76.95/mo DD $939
+                     HO  n   5680 (  20.8/d) win 32.4% net  -7.99 [ -8.93,  -7.00] gross -0.87 tau 0.78 SR -17.55 $  -74.78/mo DD $681
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 32.0% net  -8.04 [ -9.19,  -6.85] gross -0.34 tau 0.93 SR -12.43 $  -58.96/mo DD $717
+                     HO  n   4704 (  17.2/d) win 32.2% net  -7.09 [ -8.33,  -5.82] gross +0.56 tau 0.91 SR -12.15 $  -55.00/mo DD $500
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 27.6% net  -7.58 [ -9.89,  -5.34] gross -0.53 tau 0.76 SR  -6.18 $  -14.95/mo DD $185
+                     HO  n    620 (   2.3/d) win 28.1% net  -8.44 [-12.49,  -4.60] gross -1.33 tau 0.78 SR  -4.50 $   -8.63/mo DD $79
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 24.3% net  -8.35 [-11.08,  -5.79] gross -0.81 tau 0.89 SR  -6.00 $  -16.30/mo DD $204
+                     HO  n    615 (   2.3/d) win 26.8% net  -7.53 [-12.09,  -2.84] gross -0.01 tau 0.88 SR  -3.72 $   -7.64/mo DD $70
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net -10.03 [-31.08,  +9.87] gross -3.93 tau 0.53 SR  -0.92 $   -0.49/mo DD $11
+                     HO  n     16 (   0.1/d) win 31.2% net -11.26 [-51.18, +15.45] gross -4.51 tau 0.69 SR  -0.85 $   -0.30/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 32.5% net -14.78 [-38.17, +12.09] gross -7.98 tau 0.70 SR  -1.06 $   -0.73/mo DD $18
+                     HO  n     16 (   0.1/d) win 25.0% net  -5.93 [-55.39, +25.55] gross +1.07 tau 0.75 SR  -0.35 $   -0.16/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 31.0% net -10.47 [-14.37,  -6.38] gross -2.93 tau 0.88 SR  -4.34 $   -4.71/mo DD $58
+                     HO  n    337 (   1.2/d) win 34.1% net  -6.51 [-10.47,  -2.31] gross +1.01 tau 0.88 SR  -3.63 $   -3.62/mo DD $38
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.5% net  -8.17 [ -9.92,  -6.20] gross -1.17 tau 0.75 SR  -8.67 $  -71.82/mo DD $874
+                     HO  n   5246 (  19.2/d) win 46.9% net  -8.08 [ -9.42,  -6.62] gross -1.00 tau 0.77 SR -13.00 $  -69.88/mo DD $636
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.1% net  -8.26 [-10.26,  -5.94] gross -1.08 tau 0.79 SR  -7.48 $  -69.20/mo DD $842
+                     HO  n   5027 (  18.4/d) win 38.9% net  -8.65 [-10.28,  -6.97] gross -1.37 tau 0.82 SR -11.79 $  -71.71/mo DD $653
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.4% net  -7.98 [-10.74,  -5.27] gross -1.24 tau 0.68 SR  -5.61 $  -25.72/mo DD $314
+                     HO  n   1373 (   5.0/d) win 59.9% net  -7.07 [-10.83,  -3.04] gross -0.25 tau 0.70 SR  -4.07 $  -15.99/mo DD $148
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.2% net  -7.43 [-10.76,  -4.04] gross -0.54 tau 0.72 SR  -4.33 $  -22.61/mo DD $286
+                     HO  n   1289 (   4.7/d) win 51.7% net  -6.92 [-11.35,  -2.26] gross +0.08 tau 0.75 SR  -3.45 $  -14.70/mo DD $140
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.0% net  -7.61 [-10.47,  -4.61] gross -0.65 tau 0.74 SR  -5.21 $  -26.62/mo DD $324
+                     HO  n   1377 (   5.0/d) win 31.0% net  -6.39 [-10.06,  -2.71] gross +0.62 tau 0.75 SR  -3.96 $  -14.50/mo DD $132
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.1% net  -3.61 [ -9.19,  +1.82] gross +3.56 tau 0.79 SR  -1.31 $   -9.71/mo DD $136
+                     HO  n   1193 (   4.4/d) win 34.1% net  -5.48 [-11.97,  +2.20] gross +1.73 tau 0.80 SR  -1.82 $  -10.78/mo DD $113
+
+A2_BINANCE_BNB  [Binance VIP0 with the 10 % BNB futures discount]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 33.4% net  -7.49 [ -8.30,  -6.59] gross -1.09 tau 0.76 SR -16.24 $  -71.00/mo DD $868
+                     HO  n   5680 (  20.8/d) win 32.8% net  -7.35 [ -8.29,  -6.37] gross -0.87 tau 0.78 SR -16.36 $  -68.85/mo DD $627
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 32.3% net  -7.37 [ -8.51,  -6.18] gross -0.34 tau 0.93 SR -11.56 $  -53.99/mo DD $657
+                     HO  n   4704 (  17.2/d) win 32.7% net  -6.42 [ -7.66,  -5.14] gross +0.56 tau 0.91 SR -11.12 $  -49.77/mo DD $453
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 28.0% net  -6.95 [ -9.25,  -4.72] gross -0.53 tau 0.76 SR  -5.75 $  -13.71/mo DD $171
+                     HO  n    620 (   2.3/d) win 28.9% net  -7.81 [-11.85,  -3.98] gross -1.33 tau 0.78 SR  -4.22 $   -7.98/mo DD $74
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 24.8% net  -7.69 [-10.41,  -5.13] gross -0.81 tau 0.89 SR  -5.59 $  -15.00/mo DD $188
+                     HO  n    615 (   2.3/d) win 27.6% net  -6.87 [-11.42,  -2.19] gross -0.01 tau 0.88 SR  -3.41 $   -6.96/mo DD $65
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -9.47 [-30.49, +10.39] gross -3.93 tau 0.53 SR  -0.87 $   -0.47/mo DD $11
+                     HO  n     16 (   0.1/d) win 31.2% net -10.65 [-50.57, +16.00] gross -4.51 tau 0.69 SR  -0.80 $   -0.28/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 32.5% net -14.17 [-37.53, +12.67] gross -7.98 tau 0.70 SR  -1.02 $   -0.70/mo DD $17
+                     HO  n     16 (   0.1/d) win 25.0% net  -5.30 [-54.72, +26.13] gross +1.07 tau 0.75 SR  -0.31 $   -0.14/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 31.0% net  -9.80 [-13.70,  -5.72] gross -2.93 tau 0.88 SR  -4.11 $   -4.41/mo DD $55
+                     HO  n    337 (   1.2/d) win 34.7% net  -5.85 [ -9.80,  -1.65] gross +1.01 tau 0.88 SR  -3.28 $   -3.25/mo DD $35
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.6% net  -7.55 [ -9.29,  -5.58] gross -1.17 tau 0.75 SR  -8.02 $  -66.33/mo DD $807
+                     HO  n   5246 (  19.2/d) win 46.9% net  -7.45 [ -8.79,  -5.99] gross -1.00 tau 0.77 SR -12.03 $  -64.42/mo DD $586
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.1% net  -7.62 [ -9.62,  -5.31] gross -1.08 tau 0.79 SR  -6.92 $  -63.85/mo DD $777
+                     HO  n   5027 (  18.4/d) win 39.0% net  -8.01 [ -9.64,  -6.33] gross -1.37 tau 0.82 SR -10.94 $  -66.35/mo DD $604
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.4% net  -7.37 [-10.13,  -4.67] gross -1.24 tau 0.68 SR  -5.19 $  -23.76/mo DD $291
+                     HO  n   1373 (   5.0/d) win 59.9% net  -6.46 [-10.21,  -2.43] gross -0.25 tau 0.70 SR  -3.72 $  -14.61/mo DD $136
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.2% net  -6.81 [-10.15,  -3.43] gross -0.54 tau 0.72 SR  -3.98 $  -20.74/mo DD $264
+                     HO  n   1289 (   4.7/d) win 51.7% net  -6.29 [-10.72,  -1.64] gross +0.08 tau 0.75 SR  -3.14 $  -13.37/mo DD $128
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.1% net  -6.98 [ -9.85,  -4.00] gross -0.65 tau 0.74 SR  -4.80 $  -24.44/mo DD $297
+                     HO  n   1377 (   5.0/d) win 31.1% net  -5.76 [ -9.43,  -2.09] gross +0.62 tau 0.75 SR  -3.58 $  -13.08/mo DD $119
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.2% net  -2.97 [ -8.55,  +2.45] gross +3.56 tau 0.79 SR  -1.08 $   -8.00/mo DD $122
+                     HO  n   1193 (   4.4/d) win 34.2% net  -4.84 [-11.32,  +2.83] gross +1.73 tau 0.80 SR  -1.61 $   -9.52/mo DD $105
+
+B_MEXC_WEB  [form = MEXC web/app rate (contract/detail 0 % / 0.02 %, 2026-10-10)]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 35.3% net  -3.36 [ -4.16,  -2.47] gross -1.09 tau 0.76 SR  -7.61 $  -31.85/mo DD $397
+                     HO  n   5680 (  20.8/d) win 34.9% net  -3.21 [ -4.14,  -2.23] gross -0.87 tau 0.78 SR  -7.60 $  -30.04/mo DD $273
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 34.4% net  -3.12 [ -4.26,  -1.93] gross -0.34 tau 0.93 SR  -5.31 $  -22.86/mo DD $291
+                     HO  n   4704 (  17.2/d) win 35.6% net  -2.18 [ -3.42,  -0.91] gross +0.56 tau 0.91 SR  -3.97 $  -16.90/mo DD $155
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 30.2% net  -2.81 [ -5.11,  -0.60] gross -0.53 tau 0.76 SR  -2.48 $   -5.55/mo DD $79
+                     HO  n    620 (   2.3/d) win 31.8% net  -3.67 [ -7.68,  +0.14] gross -1.33 tau 0.78 SR  -2.09 $   -3.75/mo DD $39
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 27.5% net  -3.47 [ -6.18,  -0.92] gross -0.81 tau 0.89 SR  -2.63 $   -6.77/mo DD $91
+                     HO  n    615 (   2.3/d) win 30.6% net  -2.65 [ -7.19,  +2.00] gross -0.01 tau 0.88 SR  -1.31 $   -2.69/mo DD $36
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -5.50 [-26.46, +14.28] gross -3.93 tau 0.53 SR  -0.52 $   -0.27/mo DD $9
+                     HO  n     16 (   0.1/d) win 31.2% net  -6.57 [-46.47, +19.93] gross -4.51 tau 0.69 SR  -0.49 $   -0.17/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 35.0% net -10.08 [-33.36, +16.68] gross -7.98 tau 0.70 SR  -0.75 $   -0.50/mo DD $16
+                     HO  n     16 (   0.1/d) win 25.0% net  -1.18 [-50.48, +30.16] gross +1.07 tau 0.75 SR  -0.07 $   -0.03/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 32.6% net  -5.58 [ -9.47,  -1.53] gross -2.93 tau 0.88 SR  -2.52 $   -2.51/mo DD $34
+                     HO  n    337 (   1.2/d) win 37.7% net  -1.63 [ -5.57,  +2.56] gross +1.01 tau 0.88 SR  -0.93 $   -0.91/mo DD $20
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.8% net  -3.42 [ -5.16,  -1.45] gross -1.17 tau 0.75 SR  -3.68 $  -30.08/mo DD $366
+                     HO  n   5246 (  19.2/d) win 47.2% net  -3.31 [ -4.64,  -1.85] gross -1.00 tau 0.77 SR  -5.44 $  -28.62/mo DD $262
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.4% net  -3.47 [ -5.46,  -1.15] gross -1.08 tau 0.79 SR  -3.18 $  -29.03/mo DD $353
+                     HO  n   5027 (  18.4/d) win 39.5% net  -3.83 [ -5.46,  -2.16] gross -1.37 tau 0.82 SR  -5.31 $  -31.76/mo DD $291
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.6% net  -3.29 [ -6.04,  -0.60] gross -1.24 tau 0.68 SR  -2.31 $  -10.61/mo DD $140
+                     HO  n   1373 (   5.0/d) win 60.0% net  -2.36 [ -6.11,  +1.65] gross -0.25 tau 0.70 SR  -1.36 $   -5.35/mo DD $66
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.3% net  -2.71 [ -6.03,  +0.67] gross -0.54 tau 0.72 SR  -1.58 $   -8.24/mo DD $132
+                     HO  n   1289 (   4.7/d) win 52.1% net  -2.17 [ -6.59,  +2.47] gross +0.08 tau 0.75 SR  -1.08 $   -4.60/mo DD $64
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.4% net  -2.87 [ -5.72,  +0.10] gross -0.65 tau 0.74 SR  -1.98 $  -10.03/mo DD $122
+                     HO  n   1377 (   5.0/d) win 31.4% net  -1.64 [ -5.29,  +2.01] gross +0.62 tau 0.75 SR  -1.01 $   -3.72/mo DD $51
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.6% net  +1.18 [ -4.38,  +6.60] gross +3.56 tau 0.79 SR  +0.43 $   +3.18/mo DD $51
+                     HO  n   1193 (   4.4/d) win 35.0% net  -0.68 [ -7.14,  +6.97] gross +1.73 tau 0.80 SR  -0.22 $   -1.34/mo DD $71
+
+B2_MEXC_API_ORDERS  [MEXC API-order schedule from 2026-06-01 (notice of 2026-05-28)]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 29.7% net -15.36 [-16.16, -14.47] gross -1.09 tau 0.76 SR -29.90 $ -145.60/mo DD $1772
+                     HO  n   5680 (  20.8/d) win 28.8% net -15.21 [-16.14, -14.23] gross -0.87 tau 0.78 SR -29.77 $ -142.39/mo DD $1296
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 28.2% net -15.12 [-16.26, -13.93] gross -0.34 tau 0.93 SR -19.65 $ -110.81/mo DD $1348
+                     HO  n   4704 (  17.2/d) win 28.1% net -14.18 [-15.42, -12.91] gross +0.56 tau 0.91 SR -21.16 $ -109.95/mo DD $1001
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 25.8% net -14.81 [-17.11, -12.60] gross -0.53 tau 0.76 SR  -9.87 $  -29.24/mo DD $356
+                     HO  n    620 (   2.3/d) win 25.3% net -15.67 [-19.68, -11.86] gross -1.33 tau 0.78 SR  -6.95 $  -16.01/mo DD $146
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 21.2% net -15.47 [-18.18, -12.92] gross -0.81 tau 0.89 SR  -9.53 $  -30.19/mo DD $370
+                     HO  n    615 (   2.3/d) win 22.9% net -14.65 [-19.19, -10.00] gross -0.01 tau 0.88 SR  -6.58 $  -14.85/mo DD $135
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net -17.50 [-38.46,  +2.28] gross -3.93 tau 0.53 SR  -1.52 $   -0.86/mo DD $15
+                     HO  n     16 (   0.1/d) win 31.2% net -18.57 [-58.47,  +7.93] gross -4.51 tau 0.69 SR  -1.36 $   -0.49/mo DD $4
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 30.0% net -22.08 [-45.36,  +4.68] gross -7.98 tau 0.70 SR  -1.51 $   -1.09/mo DD $21
+                     HO  n     16 (   0.1/d) win 25.0% net -13.18 [-62.48, +18.16] gross +1.07 tau 0.75 SR  -0.81 $   -0.35/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 27.4% net -17.58 [-21.47, -13.53] gross -2.93 tau 0.88 SR  -6.39 $   -7.91/mo DD $96
+                     HO  n    337 (   1.2/d) win 28.2% net -13.63 [-17.57,  -9.44] gross +1.01 tau 0.88 SR  -6.93 $   -7.57/mo DD $69
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.1% net -15.42 [-17.16, -13.45] gross -1.17 tau 0.75 SR -16.04 $ -135.52/mo DD $1649
+                     HO  n   5246 (  19.2/d) win 46.4% net -15.31 [-16.64, -13.85] gross -1.00 tau 0.77 SR -23.77 $ -132.39/mo DD $1205
+    P5_tp50          DEV n   6796 (  18.6/d) win 42.6% net -15.47 [-17.46, -13.15] gross -1.08 tau 0.79 SR -13.75 $ -129.58/mo DD $1577
+                     HO  n   5027 (  18.4/d) win 38.2% net -15.83 [-17.46, -14.16] gross -1.37 tau 0.82 SR -21.03 $ -131.20/mo DD $1194
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.2% net -15.29 [-18.04, -12.60] gross -1.24 tau 0.68 SR -10.45 $  -49.30/mo DD $600
+                     HO  n   1373 (   5.0/d) win 59.5% net -14.36 [-18.11, -10.35] gross -0.25 tau 0.70 SR  -8.00 $  -32.50/mo DD $297
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.0% net -14.71 [-18.03, -11.33] gross -0.54 tau 0.72 SR  -8.44 $  -44.75/mo DD $549
+                     HO  n   1289 (   4.7/d) win 51.2% net -14.17 [-18.59,  -9.53] gross +0.08 tau 0.75 SR  -6.97 $  -30.10/mo DD $277
+    P15_rr25         DEV n   2839 (   7.8/d) win 28.6% net -14.87 [-17.72, -11.90] gross -0.65 tau 0.74 SR  -9.88 $  -52.03/mo DD $633
+                     HO  n   1377 (   5.0/d) win 29.8% net -13.64 [-17.29,  -9.99] gross +0.62 tau 0.75 SR  -8.17 $  -30.96/mo DD $282
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 33.0% net -10.82 [-16.38,  -5.40] gross +3.56 tau 0.79 SR  -3.95 $  -29.10/mo DD $360
+                     HO  n   1193 (   4.4/d) win 32.7% net -12.68 [-19.14,  -5.03] gross +1.73 tau 0.80 SR  -4.25 $  -24.93/mo DD $230
+
+C1_FORM_REBATE  [form: maker -0.2 bps rebate / taker 2.5]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 35.2% net  -3.49 [ -4.30,  -2.59] gross -1.09 tau 0.76 SR  -7.84 $  -33.09/mo DD $412
+                     HO  n   5680 (  20.8/d) win 34.8% net  -3.35 [ -4.29,  -2.37] gross -0.87 tau 0.78 SR  -7.87 $  -31.40/mo DD $286
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 34.3% net  -3.37 [ -4.51,  -2.18] gross -0.34 tau 0.93 SR  -5.69 $  -24.67/mo DD $310
+                     HO  n   4704 (  17.2/d) win 35.5% net  -2.42 [ -3.66,  -1.14] gross +0.56 tau 0.91 SR  -4.39 $  -18.76/mo DD $171
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 30.0% net  -2.95 [ -5.25,  -0.72] gross -0.53 tau 0.76 SR  -2.58 $   -5.82/mo DD $82
+                     HO  n    620 (   2.3/d) win 31.6% net  -3.81 [ -7.85,  +0.02] gross -1.33 tau 0.78 SR  -2.16 $   -3.89/mo DD $41
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 27.4% net  -3.69 [ -6.41,  -1.13] gross -0.81 tau 0.89 SR  -2.79 $   -7.20/mo DD $96
+                     HO  n    615 (   2.3/d) win 30.4% net  -2.87 [ -7.42,  +1.81] gross -0.01 tau 0.88 SR  -1.41 $   -2.91/mo DD $37
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -5.47 [-26.49, +14.39] gross -3.93 tau 0.53 SR  -0.51 $   -0.27/mo DD $9
+                     HO  n     16 (   0.1/d) win 31.2% net  -6.65 [-46.57, +20.00] gross -4.51 tau 0.69 SR  -0.50 $   -0.18/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 35.0% net -10.17 [-33.53, +16.67] gross -7.98 tau 0.70 SR  -0.75 $   -0.50/mo DD $16
+                     HO  n     16 (   0.1/d) win 25.0% net  -1.30 [-50.72, +30.13] gross +1.07 tau 0.75 SR  -0.07 $   -0.03/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 32.3% net  -5.80 [ -9.70,  -1.72] gross -2.93 tau 0.88 SR  -2.60 $   -2.61/mo DD $35
+                     HO  n    337 (   1.2/d) win 37.7% net  -1.85 [ -5.80,  +2.35] gross +1.01 tau 0.88 SR  -1.05 $   -1.03/mo DD $21
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.8% net  -3.55 [ -5.29,  -1.58] gross -1.17 tau 0.75 SR  -3.80 $  -31.18/mo DD $379
+                     HO  n   5246 (  19.2/d) win 47.2% net  -3.45 [ -4.79,  -1.99] gross -1.00 tau 0.77 SR  -5.65 $  -29.83/mo DD $273
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.4% net  -3.62 [ -5.62,  -1.31] gross -1.08 tau 0.79 SR  -3.32 $  -30.34/mo DD $369
+                     HO  n   5027 (  18.4/d) win 39.5% net  -4.01 [ -5.64,  -2.33] gross -1.37 tau 0.82 SR  -5.53 $  -33.21/mo DD $304
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.6% net  -3.37 [ -6.13,  -0.67] gross -1.24 tau 0.68 SR  -2.36 $  -10.87/mo DD $143
+                     HO  n   1373 (   5.0/d) win 60.0% net  -2.46 [ -6.21,  +1.57] gross -0.25 tau 0.70 SR  -1.41 $   -5.56/mo DD $68
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.3% net  -2.81 [ -6.15,  +0.57] gross -0.54 tau 0.72 SR  -1.64 $   -8.56/mo DD $135
+                     HO  n   1289 (   4.7/d) win 52.1% net  -2.29 [ -6.72,  +2.36] gross +0.08 tau 0.75 SR  -1.14 $   -4.87/mo DD $65
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.4% net  -2.98 [ -5.85,  +0.00] gross -0.65 tau 0.74 SR  -2.05 $  -10.44/mo DD $127
+                     HO  n   1377 (   5.0/d) win 31.4% net  -1.76 [ -5.43,  +1.91] gross +0.62 tau 0.75 SR  -1.09 $   -4.01/mo DD $53
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.6% net  +1.03 [ -4.55,  +6.45] gross +3.56 tau 0.79 SR  +0.37 $   +2.76/mo DD $51
+                     HO  n   1193 (   4.4/d) win 35.0% net  -0.84 [ -7.32,  +6.83] gross +1.73 tau 0.80 SR  -0.28 $   -1.65/mo DD $73
+
+C2_FORM_1BP  [form: maker 1.0 / taker 2.5]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 34.7% net  -4.98 [ -5.78,  -4.10] gross -1.09 tau 0.76 SR -11.20 $  -47.21/mo DD $581
+                     HO  n   5680 (  20.8/d) win 34.2% net  -4.82 [ -5.75,  -3.84] gross -0.87 tau 0.78 SR -11.25 $  -45.12/mo DD $411
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 33.7% net  -4.66 [ -5.79,  -3.47] gross -0.34 tau 0.93 SR  -7.74 $  -34.12/mo DD $415
+                     HO  n   4704 (  17.2/d) win 34.7% net  -3.72 [ -4.96,  -2.45] gross +0.56 tau 0.91 SR  -6.71 $  -28.87/mo DD $263
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 29.2% net  -4.43 [ -6.71,  -2.23] gross -0.53 tau 0.76 SR  -3.86 $   -8.75/mo DD $114
+                     HO  n    620 (   2.3/d) win 30.6% net  -5.28 [ -9.28,  -1.48] gross -1.33 tau 0.78 SR  -2.98 $   -5.39/mo DD $52
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 26.5% net  -5.03 [ -7.73,  -2.49] gross -0.81 tau 0.89 SR  -3.78 $   -9.81/mo DD $127
+                     HO  n    615 (   2.3/d) win 29.4% net  -4.21 [ -8.74,  +0.43] gross -0.01 tau 0.88 SR  -2.11 $   -4.27/mo DD $46
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -7.24 [-28.15, +12.49] gross -3.93 tau 0.53 SR  -0.68 $   -0.36/mo DD $10
+                     HO  n     16 (   0.1/d) win 31.2% net  -8.22 [-48.11, +18.16] gross -4.51 tau 0.69 SR  -0.62 $   -0.22/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 32.5% net -11.73 [-34.92, +14.98] gross -7.98 tau 0.70 SR  -0.86 $   -0.58/mo DD $16
+                     HO  n     16 (   0.1/d) win 25.0% net  -2.80 [-52.02, +28.47] gross +1.07 tau 0.75 SR  -0.16 $   -0.07/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 32.1% net  -7.14 [-11.01,  -3.12] gross -2.93 tau 0.88 SR  -3.15 $   -3.21/mo DD $41
+                     HO  n    337 (   1.2/d) win 36.8% net  -3.19 [ -7.12,  +0.99] gross +1.01 tau 0.88 SR  -1.82 $   -1.77/mo DD $25
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.7% net  -5.05 [ -6.79,  -3.07] gross -1.17 tau 0.75 SR  -5.41 $  -44.36/mo DD $540
+                     HO  n   5246 (  19.2/d) win 47.1% net  -4.92 [ -6.25,  -3.47] gross -1.00 tau 0.77 SR  -8.07 $  -42.58/mo DD $388
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.3% net  -5.07 [ -7.07,  -2.76] gross -1.08 tau 0.79 SR  -4.64 $  -42.46/mo DD $517
+                     HO  n   5027 (  18.4/d) win 39.4% net  -5.42 [ -7.05,  -3.75] gross -1.37 tau 0.82 SR  -7.49 $  -44.94/mo DD $410
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.6% net  -4.95 [ -7.70,  -2.27] gross -1.24 tau 0.68 SR  -3.50 $  -15.96/mo DD $198
+                     HO  n   1373 (   5.0/d) win 60.0% net  -4.01 [ -7.75,  +0.00] gross -0.25 tau 0.70 SR  -2.32 $   -9.08/mo DD $94
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.3% net  -4.35 [ -7.66,  -0.98] gross -0.54 tau 0.72 SR  -2.54 $  -13.23/mo DD $176
+                     HO  n   1289 (   4.7/d) win 52.1% net  -3.79 [ -8.21,  +0.84] gross +0.08 tau 0.75 SR  -1.90 $   -8.06/mo DD $86
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.3% net  -4.50 [ -7.34,  -1.54] gross -0.65 tau 0.74 SR  -3.12 $  -15.74/mo DD $191
+                     HO  n   1377 (   5.0/d) win 31.2% net  -3.26 [ -6.90,  +0.38] gross +0.62 tau 0.75 SR  -2.04 $   -7.41/mo DD $68
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.5% net  -0.42 [ -5.97,  +4.98] gross +3.56 tau 0.79 SR  -0.15 $   -1.14/mo DD $65
+                     HO  n   1193 (   4.4/d) win 34.8% net  -2.28 [ -8.72,  +5.35] gross +1.73 tau 0.80 SR  -0.76 $   -4.48/mo DD $84
+
+D_HYPERLIQUID_T0  [Hyperliquid perps base tier 0.015 % / 0.045 %]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 33.5% net  -7.12 [ -7.93,  -6.22] gross -1.09 tau 0.76 SR -15.45 $  -67.47/mo DD $825
+                     HO  n   5680 (  20.8/d) win 33.1% net  -6.99 [ -7.93,  -6.00] gross -0.87 tau 0.78 SR -15.58 $  -65.42/mo DD $595
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 32.4% net  -7.04 [ -8.19,  -5.85] gross -0.34 tau 0.93 SR -11.12 $  -51.63/mo DD $628
+                     HO  n   4704 (  17.2/d) win 33.0% net  -6.09 [ -7.33,  -4.82] gross +0.56 tau 0.91 SR -10.59 $  -47.24/mo DD $430
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 28.3% net  -6.58 [ -8.89,  -4.34] gross -0.53 tau 0.76 SR  -5.47 $  -12.98/mo DD $162
+                     HO  n    620 (   2.3/d) win 29.0% net  -7.44 [-11.49,  -3.60] gross -1.33 tau 0.78 SR  -4.04 $   -7.61/mo DD $71
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 25.1% net  -7.35 [-10.08,  -4.79] gross -0.81 tau 0.89 SR  -5.36 $  -14.35/mo DD $181
+                     HO  n    615 (   2.3/d) win 27.8% net  -6.53 [-11.09,  -1.84] gross -0.01 tau 0.88 SR  -3.24 $   -6.62/mo DD $63
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -9.03 [-30.08, +10.87] gross -3.93 tau 0.53 SR  -0.83 $   -0.45/mo DD $11
+                     HO  n     16 (   0.1/d) win 31.2% net -10.26 [-50.18, +16.45] gross -4.51 tau 0.69 SR  -0.77 $   -0.27/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 32.5% net -13.78 [-37.17, +13.09] gross -7.98 tau 0.70 SR  -1.00 $   -0.68/mo DD $17
+                     HO  n     16 (   0.1/d) win 25.0% net  -4.93 [-54.39, +26.55] gross +1.07 tau 0.75 SR  -0.29 $   -0.13/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 31.0% net  -9.47 [-13.37,  -5.38] gross -2.93 tau 0.88 SR  -3.99 $   -4.26/mo DD $53
+                     HO  n    337 (   1.2/d) win 34.7% net  -5.51 [ -9.47,  -1.31] gross +1.01 tau 0.88 SR  -3.09 $   -3.06/mo DD $34
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.6% net  -7.17 [ -8.92,  -5.20] gross -1.17 tau 0.75 SR  -7.62 $  -63.03/mo DD $767
+                     HO  n   5246 (  19.2/d) win 46.9% net  -7.08 [ -8.42,  -5.62] gross -1.00 tau 0.77 SR -11.44 $  -61.23/mo DD $557
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.1% net  -7.26 [ -9.26,  -4.94] gross -1.08 tau 0.79 SR  -6.59 $  -60.82/mo DD $740
+                     HO  n   5027 (  18.4/d) win 39.0% net  -7.65 [ -9.28,  -5.97] gross -1.37 tau 0.82 SR -10.46 $  -63.42/mo DD $577
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.4% net  -6.98 [ -9.74,  -4.27] gross -1.24 tau 0.68 SR  -4.91 $  -22.49/mo DD $276
+                     HO  n   1373 (   5.0/d) win 59.9% net  -6.07 [ -9.83,  -2.04] gross -0.25 tau 0.70 SR  -3.50 $  -13.73/mo DD $130
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.2% net  -6.43 [ -9.76,  -3.04] gross -0.54 tau 0.72 SR  -3.75 $  -19.57/mo DD $250
+                     HO  n   1289 (   4.7/d) win 51.8% net  -5.92 [-10.35,  -1.26] gross +0.08 tau 0.75 SR  -2.95 $  -12.57/mo DD $121
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.1% net  -6.61 [ -9.47,  -3.61] gross -0.65 tau 0.74 SR  -4.54 $  -23.12/mo DD $281
+                     HO  n   1377 (   5.0/d) win 31.1% net  -5.39 [ -9.06,  -1.71] gross +0.62 tau 0.75 SR  -3.34 $  -12.23/mo DD $111
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.2% net  -2.61 [ -8.19,  +2.82] gross +3.56 tau 0.79 SR  -0.95 $   -7.02/mo DD $114
+                     HO  n   1193 (   4.4/d) win 34.4% net  -4.48 [-10.97,  +3.20] gross +1.73 tau 0.80 SR  -1.49 $   -8.81/mo DD $102
+
+E_BYBIT_VIP0  [Bybit linear perps VIP0 0.02 % / 0.055 %]  best: S1=S1_ROLL100->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+  * S1_ROLL100       DEV n   7689 (  21.1/d) win 32.9% net  -8.50 [ -9.31,  -7.59] gross -1.09 tau 0.76 SR -18.06 $  -80.55/mo DD $983
+                     HO  n   5680 (  20.8/d) win 32.1% net  -8.38 [ -9.32,  -7.39] gross -0.87 tau 0.78 SR -18.20 $  -78.43/mo DD $714
+    S1_SESSION       DEV n   5945 (  16.3/d) win 31.9% net  -8.51 [ -9.65,  -7.32] gross -0.34 tau 0.93 SR -12.99 $  -62.35/mo DD $759
+                     HO  n   4704 (  17.2/d) win 31.9% net  -7.55 [ -8.79,  -6.27] gross +0.56 tau 0.91 SR -12.81 $  -58.54/mo DD $533
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 27.5% net  -7.96 [-10.28,  -5.71] gross -0.53 tau 0.76 SR  -6.41 $  -15.70/mo DD $194
+                     HO  n    620 (   2.3/d) win 28.1% net  -8.83 [-12.89,  -4.96] gross -1.33 tau 0.78 SR  -4.66 $   -9.03/mo DD $83
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 24.1% net  -8.80 [-11.52,  -6.23] gross -0.81 tau 0.89 SR  -6.26 $  -17.16/mo DD $214
+                     HO  n    615 (   2.3/d) win 26.5% net  -7.97 [-12.55,  -3.26] gross -0.01 tau 0.88 SR  -3.92 $   -8.08/mo DD $74
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net -10.29 [-31.39,  +9.66] gross -3.93 tau 0.53 SR  -0.94 $   -0.51/mo DD $12
+                     HO  n     16 (   0.1/d) win 31.2% net -11.60 [-51.54, +15.22] gross -4.51 tau 0.69 SR  -0.87 $   -0.31/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 32.5% net -15.13 [-38.58, +11.80] gross -7.98 tau 0.70 SR  -1.08 $   -0.75/mo DD $18
+                     HO  n     16 (   0.1/d) win 25.0% net  -6.30 [-55.85, +25.24] gross +1.07 tau 0.75 SR  -0.37 $   -0.17/mo DD $4
+  * R1_SESSION       DEV n    365 (   1.0/d) win 30.7% net -10.91 [-14.82,  -6.81] gross -2.93 tau 0.88 SR  -4.47 $   -4.91/mo DD $60
+                     HO  n    337 (   1.2/d) win 33.5% net  -6.95 [-10.92,  -2.74] gross +1.01 tau 0.88 SR  -3.85 $   -3.86/mo DD $39
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.5% net  -8.55 [-10.29,  -6.57] gross -1.17 tau 0.75 SR  -9.04 $  -75.11/mo DD $914
+                     HO  n   5246 (  19.2/d) win 46.9% net  -8.47 [ -9.81,  -7.01] gross -1.00 tau 0.77 SR -13.57 $  -73.21/mo DD $666
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.1% net  -8.66 [-10.66,  -6.34] gross -1.08 tau 0.79 SR  -7.82 $  -72.53/mo DD $882
+                     HO  n   5027 (  18.4/d) win 38.9% net  -9.06 [-10.70,  -7.38] gross -1.37 tau 0.82 SR -12.31 $  -75.10/mo DD $683
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.4% net  -8.32 [-11.09,  -5.61] gross -1.24 tau 0.68 SR  -5.83 $  -26.82/mo DD $327
+                     HO  n   1373 (   5.0/d) win 59.9% net  -7.42 [-11.18,  -3.39] gross -0.25 tau 0.70 SR  -4.26 $  -16.79/mo DD $155
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.2% net  -7.79 [-11.13,  -4.39] gross -0.54 tau 0.72 SR  -4.53 $  -23.71/mo DD $299
+                     HO  n   1289 (   4.7/d) win 51.7% net  -7.29 [-11.73,  -2.63] gross +0.08 tau 0.75 SR  -3.64 $  -15.49/mo DD $147
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.0% net  -7.98 [-10.85,  -4.97] gross -0.65 tau 0.74 SR  -5.45 $  -27.91/mo DD $340
+                     HO  n   1377 (   5.0/d) win 30.9% net  -6.77 [-10.45,  -3.07] gross +0.62 tau 0.75 SR  -4.17 $  -15.36/mo DD $140
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.0% net  -4.01 [ -9.59,  +1.43] gross +3.56 tau 0.79 SR  -1.45 $  -10.78/mo DD $145
+                     HO  n   1193 (   4.4/d) win 33.9% net  -5.88 [-12.38,  +1.81] gross +1.73 tau 0.80 SR  -1.95 $  -11.57/mo DD $119
+
+Z_GROSS  [no fee, no slip: the gross edge itself]  best: S1=S1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, S2=S2_slope3_tp60->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, R1=R1_SESSION->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, P=P15_rr25atr->SHADOW {'BTCUSDT': 'SHADOW', 'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    S1_ROLL100       DEV n   7689 (  21.1/d) win 36.4% net  -1.09 [ -1.87,  -0.22] gross -1.09 tau 0.76 SR  -2.57 $  -10.29/mo DD $151
+                     HO  n   5680 (  20.8/d) win 36.2% net  -0.87 [ -1.77,  +0.08] gross -0.87 tau 0.78 SR  -2.19 $   -8.17/mo DD $90
+  * S1_SESSION       DEV n   5945 (  16.3/d) win 35.7% net  -0.34 [ -1.46,  +0.82] gross -0.34 tau 0.93 SR  -0.61 $   -2.50/mo DD $89
+                     HO  n   4704 (  17.2/d) win 37.2% net  +0.56 [ -0.66,  +1.82] gross +0.56 tau 0.91 SR  +1.04 $   +4.34/mo DD $36
+  * S2_slope3_tp60   DEV n   1601 (   4.4/d) win 31.2% net  -0.53 [ -2.75,  +1.63] gross -0.53 tau 0.76 SR  -0.48 $   -1.04/mo DD $37
+                     HO  n    620 (   2.3/d) win 33.7% net  -1.33 [ -5.26,  +2.39] gross -1.33 tau 0.78 SR  -0.78 $   -1.36/mo DD $22
+    S2_slope3_tp100  DEV n   1583 (   4.3/d) win 28.6% net  -0.81 [ -3.48,  +1.70] gross -0.81 tau 0.89 SR  -0.63 $   -1.59/mo DD $43
+                     HO  n    615 (   2.3/d) win 32.7% net  -0.01 [ -4.49,  +4.54] gross -0.01 tau 0.88 SR  -0.00 $   -0.01/mo DD $21
+    S2_slope1_tp60   DEV n     40 (   0.1/d) win 47.5% net  -3.93 [-24.61, +15.56] gross -3.93 tau 0.53 SR  -0.38 $   -0.19/mo DD $9
+                     HO  n     16 (   0.1/d) win 31.2% net  -4.51 [-44.32, +21.35] gross -4.51 tau 0.69 SR  -0.34 $   -0.12/mo DD $3
+    S2_slope1_tp100  DEV n     40 (   0.1/d) win 35.0% net  -7.98 [-30.97, +18.45] gross -7.98 tau 0.70 SR  -0.60 $   -0.39/mo DD $14
+                     HO  n     16 (   0.1/d) win 25.0% net  +1.07 [-47.73, +32.00] gross +1.07 tau 0.75 SR  +0.06 $   +0.03/mo DD $3
+  * R1_SESSION       DEV n    365 (   1.0/d) win 34.0% net  -2.93 [ -6.71,  +1.04] gross -2.93 tau 0.88 SR  -1.39 $   -1.32/mo DD $20
+                     HO  n    337 (   1.2/d) win 39.5% net  +1.01 [ -2.89,  +5.13] gross +1.01 tau 0.88 SR  +0.58 $   +0.56/mo DD $11
+    P5_tp35          DEV n   7127 (  19.5/d) win 50.9% net  -1.17 [ -2.90,  +0.79] gross -1.17 tau 0.75 SR  -1.27 $  -10.32/mo DD $134
+                     HO  n   5246 (  19.2/d) win 47.4% net  -1.00 [ -2.31,  +0.45] gross -1.00 tau 0.77 SR  -1.67 $   -8.63/mo DD $102
+    P5_tp50          DEV n   6796 (  18.6/d) win 43.6% net  -1.08 [ -3.06,  +1.21] gross -1.08 tau 0.79 SR  -1.00 $   -9.07/mo DD $129
+                     HO  n   5027 (  18.4/d) win 39.8% net  -1.37 [ -2.98,  +0.28] gross -1.37 tau 0.82 SR  -1.93 $  -11.37/mo DD $110
+    P15_tp35         DEV n   2615 (   7.2/d) win 63.7% net  -1.24 [ -3.96,  +1.42] gross -1.24 tau 0.68 SR  -0.87 $   -4.00/mo DD $86
+                     HO  n   1373 (   5.0/d) win 60.3% net  -0.25 [ -3.97,  +3.74] gross -0.25 tau 0.70 SR  -0.14 $   -0.56/mo DD $40
+    P15_tp50         DEV n   2468 (   6.8/d) win 56.3% net  -0.54 [ -3.83,  +2.80] gross -0.54 tau 0.72 SR  -0.32 $   -1.64/mo DD $77
+                     HO  n   1289 (   4.7/d) win 52.5% net  +0.08 [ -4.30,  +4.65] gross +0.08 tau 0.75 SR  +0.04 $   +0.18/mo DD $43
+    P15_rr25         DEV n   2839 (   7.8/d) win 29.6% net  -0.65 [ -3.44,  +2.26] gross -0.65 tau 0.74 SR  -0.45 $   -2.27/mo DD $40
+                     HO  n   1377 (   5.0/d) win 32.2% net  +0.62 [ -2.95,  +4.18] gross +0.62 tau 0.75 SR  +0.38 $   +1.40/mo DD $28
+  * P15_rr25atr      DEV n   2182 (   6.0/d) win 34.8% net  +3.56 [ -1.95,  +8.92] gross +3.56 tau 0.79 SR  +1.29 $   +9.56/mo DD $45
+                     HO  n   1193 (   4.4/d) win 35.8% net  +1.73 [ -4.65,  +9.28] gross +1.73 tau 0.80 SR  +0.57 $   +3.40/mo DD $51
+
+======== BURST  (HOLDOUT, pooled; DEV-best per group marked *)
+
+A_BINANCE_VIP0  [Binance USD-M VIP0 (the replays' baseline)]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 20.9% net  -7.80 [ -7.97,  -7.64] gross -2.25 tau 0.52 SR -87.45 $-3200.97/mo DD $2134
+                     HO  n  19643 (1033.8/d) win 26.0% net  -7.69 [ -7.86,  -7.52] gross -2.24 tau 0.48 SR -37.29 $-3575.73/mo DD $2265
+    MOM30|through    DEV n  15913 ( 795.6/d) win 18.2% net  -7.77 [ -7.98,  -7.57] gross -2.41 tau 0.45 SR -111.35 $-2781.33/mo DD $1854
+                     HO  n  16064 ( 845.5/d) win 22.3% net  -7.58 [ -7.82,  -7.34] gross -2.45 tau 0.38 SR -46.22 $-2884.03/mo DD $1827
+    MR15|through     DEV n  22140 (1107.0/d) win 20.1% net  -7.69 [ -7.87,  -7.51] gross -2.08 tau 0.54 SR -85.22 $-3830.25/mo DD $2554
+                     HO  n  23976 (1261.9/d) win 25.0% net  -7.57 [ -7.76,  -7.39] gross -2.07 tau 0.50 SR -42.28 $-4300.13/mo DD $2723
+  * MR30|through     DEV n  19552 ( 977.6/d) win 18.3% net  -7.54 [ -7.75,  -7.36] gross -2.12 tau 0.47 SR -110.42 $-3317.75/mo DD $2212
+                     HO  n  19963 (1050.7/d) win 22.2% net  -7.41 [ -7.61,  -7.21] gross -2.19 tau 0.41 SR -55.41 $-3503.23/mo DD $2219
+  * MM|through       DEV n 168442 (8422.1/d) win  0.1% net  -7.03 [ -7.10,  -6.97] gross -2.93 tau 0.03 SR -70.05 $-26652.26/mo DD $17768
+                     HO  n 204108 (10742.5/d) win  0.2% net  -7.14 [ -7.19,  -7.09] gross -3.08 tau 0.02 SR -36.38 $-34522.25/mo DD $21864
+
+A2_BINANCE_BNB  [Binance VIP0 with the 10 % BNB futures discount]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 22.2% net  -7.25 [ -7.42,  -7.09] gross -2.25 tau 0.52 SR -87.08 $-2973.30/mo DD $1982
+                     HO  n  19643 (1033.8/d) win 26.3% net  -7.14 [ -7.32,  -6.97] gross -2.24 tau 0.48 SR -37.20 $-3322.41/mo DD $2104
+    MOM30|through    DEV n  15913 ( 795.6/d) win 19.7% net  -7.23 [ -7.44,  -7.03] gross -2.41 tau 0.45 SR -109.57 $-2589.56/mo DD $1726
+                     HO  n  16064 ( 845.5/d) win 22.8% net  -7.07 [ -7.31,  -6.83] gross -2.45 tau 0.38 SR -45.79 $-2688.90/mo DD $1703
+    MR15|through     DEV n  22140 (1107.0/d) win 21.5% net  -7.13 [ -7.31,  -6.96] gross -2.08 tau 0.54 SR -83.89 $-3550.64/mo DD $2367
+                     HO  n  23976 (1261.9/d) win 25.4% net  -7.02 [ -7.20,  -6.84] gross -2.07 tau 0.50 SR -42.08 $-3987.83/mo DD $2526
+  * MR30|through     DEV n  19552 ( 977.6/d) win 19.8% net  -7.00 [ -7.21,  -6.82] gross -2.12 tau 0.47 SR -107.55 $-3079.30/mo DD $2053
+                     HO  n  19963 (1050.7/d) win 22.8% net  -6.89 [ -7.09,  -6.68] gross -2.19 tau 0.41 SR -54.89 $-3256.26/mo DD $2062
+  * MM|through       DEV n 168442 (8422.1/d) win  0.2% net  -6.62 [ -6.69,  -6.56] gross -2.93 tau 0.03 SR -69.78 $-25097.64/mo DD $16732
+                     HO  n 204108 (10742.5/d) win  0.2% net  -6.74 [ -6.78,  -6.69] gross -3.08 tau 0.02 SR -36.23 $-32560.71/mo DD $20622
+
+B_MEXC_WEB  [form = MEXC web/app rate (contract/detail 0 % / 0.02 %, 2026-10-10)]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 33.4% net  -3.29 [ -3.45,  -3.13] gross -2.25 tau 0.52 SR -80.14 $-1348.27/mo DD $899
+                     HO  n  19643 (1033.8/d) win 36.3% net  -3.20 [ -3.38,  -3.04] gross -2.24 tau 0.48 SR -36.22 $-1490.72/mo DD $944
+    MOM30|through    DEV n  15913 ( 795.6/d) win 32.5% net  -3.32 [ -3.52,  -3.12] gross -2.41 tau 0.45 SR -86.85 $-1187.31/mo DD $792
+                     HO  n  16064 ( 845.5/d) win 35.0% net  -3.20 [ -3.44,  -2.97] gross -2.45 tau 0.38 SR -41.29 $-1219.01/mo DD $772
+    MR15|through     DEV n  22140 (1107.0/d) win 33.7% net  -3.15 [ -3.33,  -2.98] gross -2.08 tau 0.54 SR -67.64 $-1569.81/mo DD $1047
+                     HO  n  23976 (1261.9/d) win 35.7% net  -3.07 [ -3.25,  -2.90] gross -2.07 tau 0.50 SR -39.58 $-1744.86/mo DD $1105
+  * MR30|through     DEV n  19552 ( 977.6/d) win 33.4% net  -3.07 [ -3.28,  -2.89] gross -2.12 tau 0.47 SR -78.78 $-1349.81/mo DD $900
+                     HO  n  19963 (1050.7/d) win 35.1% net  -3.00 [ -3.20,  -2.80] gross -2.19 tau 0.41 SR -49.69 $-1419.18/mo DD $899
+  * MM|through       DEV n 168442 (8422.1/d) win 11.3% net  -3.00 [ -3.07,  -2.94] gross -2.93 tau 0.03 SR -68.24 $-11363.69/mo DD $7576
+                     HO  n 204108 (10742.5/d) win 10.7% net  -3.12 [ -3.17,  -3.07] gross -3.08 tau 0.02 SR -34.29 $-15092.75/mo DD $9559
+
+B2_MEXC_API_ORDERS  [MEXC API-order schedule from 2026-06-01 (notice of 2026-05-28)]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 11.7% net -15.29 [-15.45, -15.13] gross -2.25 tau 0.52 SR -85.51 $-6270.37/mo DD $4180
+                     HO  n  19643 (1033.8/d) win 16.7% net -15.20 [-15.38, -15.04] gross -2.24 tau 0.48 SR -37.29 $-7073.46/mo DD $4480
+    MOM30|through    DEV n  15913 ( 795.6/d) win  6.7% net -15.32 [-15.52, -15.12] gross -2.41 tau 0.45 SR -108.64 $-5483.82/mo DD $3656
+                     HO  n  16064 ( 845.5/d) win  9.6% net -15.20 [-15.44, -14.97] gross -2.45 tau 0.38 SR -46.34 $-5784.57/mo DD $3664
+    MR15|through     DEV n  22140 (1107.0/d) win 10.3% net -15.15 [-15.33, -14.98] gross -2.08 tau 0.54 SR -90.15 $-7547.61/mo DD $5032
+                     HO  n  23976 (1261.9/d) win 15.0% net -15.07 [-15.25, -14.90] gross -2.07 tau 0.50 SR -42.58 $-8559.10/mo DD $5421
+  * MR30|through     DEV n  19552 ( 977.6/d) win  6.3% net -15.07 [-15.28, -14.89] gross -2.12 tau 0.47 SR -116.86 $-6628.85/mo DD $4419
+                     HO  n  19963 (1050.7/d) win  8.7% net -15.00 [-15.20, -14.80] gross -2.19 tau 0.41 SR -54.96 $-7092.88/mo DD $4492
+  * MM|through       DEV n 168442 (8422.1/d) win  0.0% net -15.00 [-15.07, -14.94] gross -2.93 tau 0.03 SR -69.06 $-56843.03/mo DD $37895
+                     HO  n 204108 (10742.5/d) win  0.0% net -15.12 [-15.17, -15.07] gross -3.08 tau 0.02 SR -36.97 $-73102.39/mo DD $46298
+
+C1_FORM_REBATE  [form: maker -0.2 bps rebate / taker 2.5]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 35.6% net  -3.25 [ -3.42,  -3.09] gross -2.25 tau 0.52 SR -81.04 $-1332.60/mo DD $888
+                     HO  n  19643 (1033.8/d) win 37.8% net  -3.14 [ -3.32,  -2.97] gross -2.24 tau 0.48 SR -36.49 $-1461.49/mo DD $926
+    MOM30|through    DEV n  15913 ( 795.6/d) win 34.9% net  -3.23 [ -3.44,  -3.03] gross -2.41 tau 0.45 SR -88.72 $-1157.39/mo DD $772
+                     HO  n  16064 ( 845.5/d) win 36.7% net  -3.07 [ -3.31,  -2.83] gross -2.45 tau 0.38 SR -42.23 $-1167.04/mo DD $739
+    MR15|through     DEV n  22140 (1107.0/d) win 35.8% net  -3.13 [ -3.31,  -2.96] gross -2.08 tau 0.54 SR -68.64 $-1558.04/mo DD $1039
+                     HO  n  23976 (1261.9/d) win 37.2% net  -3.02 [ -3.20,  -2.84] gross -2.07 tau 0.50 SR -40.02 $-1716.42/mo DD $1087
+  * MR30|through     DEV n  19552 ( 977.6/d) win 35.8% net  -3.00 [ -3.21,  -2.82] gross -2.12 tau 0.47 SR -81.11 $-1319.62/mo DD $880
+                     HO  n  19963 (1050.7/d) win 36.9% net  -2.89 [ -3.09,  -2.68] gross -2.19 tau 0.41 SR -51.17 $-1365.03/mo DD $865
+  * MM|through       DEV n 168442 (8422.1/d) win 30.1% net  -2.62 [ -2.69,  -2.56] gross -2.93 tau 0.03 SR -69.65 $-9937.86/mo DD $6625
+                     HO  n 204108 (10742.5/d) win 27.8% net  -2.74 [ -2.78,  -2.69] gross -3.08 tau 0.02 SR -34.17 $-13224.16/mo DD $8375
+
+C2_FORM_1BP  [form: maker 1.0 / taker 2.5]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 28.1% net  -5.03 [ -5.19,  -4.87] gross -2.25 tau 0.52 SR -84.19 $-2062.63/mo DD $1375
+                     HO  n  19643 (1033.8/d) win 31.4% net  -4.96 [ -5.13,  -4.80] gross -2.24 tau 0.48 SR -36.65 $-2309.12/mo DD $1462
+    MOM30|through    DEV n  15913 ( 795.6/d) win 26.4% net  -5.09 [ -5.29,  -4.89] gross -2.41 tau 0.45 SR -98.47 $-1822.48/mo DD $1215
+                     HO  n  16064 ( 845.5/d) win 29.0% net  -5.02 [ -5.25,  -4.78] gross -2.45 tau 0.38 SR -43.25 $-1908.35/mo DD $1209
+    MR15|through     DEV n  22140 (1107.0/d) win 27.9% net  -4.88 [ -5.06,  -4.72] gross -2.08 tau 0.54 SR -76.17 $-2432.19/mo DD $1621
+                     HO  n  23976 (1261.9/d) win 30.7% net  -4.82 [ -5.00,  -4.65] gross -2.07 tau 0.50 SR -40.80 $-2738.64/mo DD $1734
+  * MR30|through     DEV n  19552 ( 977.6/d) win 26.9% net  -4.83 [ -5.04,  -4.65] gross -2.12 tau 0.47 SR -92.19 $-2125.52/mo DD $1417
+                     HO  n  19963 (1050.7/d) win 29.1% net  -4.80 [ -4.99,  -4.59] gross -2.19 tau 0.41 SR -51.70 $-2268.39/mo DD $1437
+  * MM|through       DEV n 168442 (8422.1/d) win  1.8% net  -4.98 [ -5.05,  -4.92] gross -2.93 tau 0.03 SR -68.22 $-18879.18/mo DD $12586
+                     HO  n 204108 (10742.5/d) win  1.9% net  -5.11 [ -5.16,  -5.06] gross -3.08 tau 0.02 SR -35.43 $-24714.54/mo DD $15653
+
+D_HYPERLIQUID_T0  [Hyperliquid perps base tier 0.015 % / 0.045 %]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 23.5% net  -6.80 [ -6.97,  -6.64] gross -2.25 tau 0.52 SR -87.47 $-2790.79/mo DD $1861
+                     HO  n  19643 (1033.8/d) win 28.1% net  -6.69 [ -6.86,  -6.52] gross -2.24 tau 0.48 SR -37.25 $-3110.50/mo DD $1970
+    MOM30|through    DEV n  15913 ( 795.6/d) win 21.2% net  -6.77 [ -6.98,  -6.57] gross -2.41 tau 0.45 SR -110.38 $-2423.28/mo DD $1616
+                     HO  n  16064 ( 845.5/d) win 25.0% net  -6.58 [ -6.82,  -6.34] gross -2.45 tau 0.38 SR -45.96 $-2503.57/mo DD $1586
+    MR15|through     DEV n  22140 (1107.0/d) win 22.6% net  -6.69 [ -6.87,  -6.51] gross -2.08 tau 0.54 SR -83.47 $-3332.10/mo DD $2221
+                     HO  n  23976 (1261.9/d) win 27.3% net  -6.57 [ -6.76,  -6.39] gross -2.07 tau 0.50 SR -42.11 $-3732.28/mo DD $2364
+  * MR30|through     DEV n  19552 ( 977.6/d) win 21.1% net  -6.54 [ -6.75,  -6.36] gross -2.12 tau 0.47 SR -107.43 $-2877.83/mo DD $1919
+                     HO  n  19963 (1050.7/d) win 25.0% net  -6.41 [ -6.61,  -6.21] gross -2.19 tau 0.41 SR -55.23 $-3030.42/mo DD $1919
+  * MM|through       DEV n 168442 (8422.1/d) win  0.5% net  -6.03 [ -6.10,  -5.97] gross -2.93 tau 0.03 SR -70.18 $-22862.31/mo DD $15242
+                     HO  n 204108 (10742.5/d) win  0.6% net  -6.14 [ -6.19,  -6.09] gross -3.08 tau 0.02 SR -36.16 $-29688.12/mo DD $18802
+
+E_BYBIT_VIP0  [Bybit linear perps VIP0 0.02 % / 0.055 %]  best: BURST=MR30|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 20.7% net  -8.06 [ -8.23,  -7.90] gross -2.25 tau 0.52 SR -88.04 $-3306.97/mo DD $2205
+                     HO  n  19643 (1033.8/d) win 25.8% net  -7.93 [ -8.11,  -7.76] gross -2.24 tau 0.48 SR -37.40 $-3687.78/mo DD $2336
+    MOM30|through    DEV n  15913 ( 795.6/d) win 18.0% net  -7.99 [ -8.20,  -7.79] gross -2.41 tau 0.45 SR -113.63 $-2862.25/mo DD $1908
+                     HO  n  16064 ( 845.5/d) win 22.1% net  -7.77 [ -8.01,  -7.52] gross -2.45 tau 0.38 SR -46.73 $-2955.62/mo DD $1872
+    MR15|through     DEV n  22140 (1107.0/d) win 19.8% net  -7.96 [ -8.14,  -7.78] gross -2.08 tau 0.54 SR -86.26 $-3964.17/mo DD $2643
+                     HO  n  23976 (1261.9/d) win 24.7% net  -7.82 [ -8.01,  -7.64] gross -2.07 tau 0.50 SR -42.49 $-4442.06/mo DD $2813
+  * MR30|through     DEV n  19552 ( 977.6/d) win 18.0% net  -7.78 [ -7.99,  -7.60] gross -2.12 tau 0.47 SR -113.21 $-3421.88/mo DD $2281
+                     HO  n  19963 (1050.7/d) win 21.9% net  -7.61 [ -7.81,  -7.41] gross -2.19 tau 0.41 SR -56.11 $-3599.63/mo DD $2280
+  * MM|through       DEV n 168442 (8422.1/d) win  0.1% net  -7.05 [ -7.12,  -6.99] gross -2.93 tau 0.03 SR -70.56 $-26716.65/mo DD $17811
+                     HO  n 204108 (10742.5/d) win  0.2% net  -7.15 [ -7.20,  -7.10] gross -3.08 tau 0.02 SR -36.49 $-34568.74/mo DD $21894
+
+Z_GROSS  [no fee, no slip: the gross edge itself]  best: BURST=MR15|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}, MM=MM|through->SHADOW {'DOGEUSDT': 'SHADOW', 'SOLUSDT': 'SHADOW'}
+    MOM15|through    DEV n  18230 ( 911.5/d) win 36.1% net  -2.25 [ -2.41,  -2.10] gross -2.25 tau 0.52 SR -67.71 $ -924.28/mo DD $616
+                     HO  n  19643 (1033.8/d) win 38.3% net  -2.24 [ -2.41,  -2.08] gross -2.24 tau 0.48 SR -34.16 $-1042.52/mo DD $660
+    MOM30|through    DEV n  15913 ( 795.6/d) win 35.5% net  -2.41 [ -2.61,  -2.22] gross -2.41 tau 0.45 SR -65.38 $ -863.63/mo DD $576
+                     HO  n  16064 ( 845.5/d) win 37.4% net  -2.45 [ -2.69,  -2.22] gross -2.45 tau 0.38 SR -35.14 $ -932.67/mo DD $591
+  * MR15|through     DEV n  22140 (1107.0/d) win 37.1% net  -2.08 [ -2.24,  -1.92] gross -2.08 tau 0.54 SR -53.28 $-1034.13/mo DD $689
+                     HO  n  23976 (1261.9/d) win 38.1% net  -2.07 [ -2.24,  -1.90] gross -2.07 tau 0.50 SR -35.54 $-1177.15/mo DD $746
+    MR30|through     DEV n  19552 ( 977.6/d) win 37.2% net  -2.12 [ -2.33,  -1.94] gross -2.12 tau 0.47 SR -56.76 $ -933.29/mo DD $622
+                     HO  n  19963 (1050.7/d) win 38.0% net  -2.19 [ -2.38,  -1.99] gross -2.19 tau 0.41 SR -40.54 $-1033.56/mo DD $655
+  * MM|through       DEV n 168442 (8422.1/d) win 11.4% net  -2.93 [ -3.00,  -2.87] gross -2.93 tau 0.03 SR -63.92 $-11106.11/mo DD $7404
+                     HO  n 204108 (10742.5/d) win 10.7% net  -3.08 [ -3.14,  -3.03] gross -3.08 tau 0.02 SR -33.39 $-14906.83/mo DD $9441
+
+130s
+rc 0

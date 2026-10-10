@@ -179,7 +179,7 @@ def run_symbol(m: dict, f: dict, var: dict):
         gross = side * (px - entry) / entry * 1e4
         net = gross - MAKER - (MAKER if mk else TAKER)
         trades.append({'t': float(t1[ix]), 't_entry': float(t1[fill_i]), 'side': side, 'entry': float(entry),
-                       'exit_px': float(px), 'gross_bps': gross, 'net_bps': net, 'exit': how,
+                       'exit_px': float(px), 'gross_bps': gross, 'net_bps': net, 'exit': how, 'taker_frac': 0.0 if mk else 1.0,
                        'hold_min': (t1[ix] - t1[fill_i]) / 60 + 1})
         busy_until = t1[ix] + 60
         k += 1
@@ -242,7 +242,7 @@ def run_lane(m: dict, f: dict, names, symbol: str = 'X') -> dict:
     lane.sink = lambda r: out[r['variant']].append(
         {'t': r['t'] - 60, 't_entry': r['fill_t'], 'side': 1 if r['side'] == 'BUY' else -1, 'entry': r['entry'],
          'exit_px': r['exit'], 'gross_bps': r['gross_bps'], 'net_bps': r['net_bps'], 'exit': r['exit_how'],
-         'hold_min': r['hold_min'], 'regime': r.get('regime')})
+         'hold_min': r['hold_min'], 'regime': r.get('regime'), 'taker_frac': r['taker_frac']})
     for i in range(int(f['b5']['i_last'][30]), len(m['t'])):
         lane.on_bar(m, f, i)
     return out

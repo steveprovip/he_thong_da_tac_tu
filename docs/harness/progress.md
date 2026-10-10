@@ -264,3 +264,9 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - Replay HOLDOUT 2026 (pooled): R1_SESSION -6.51 bps [-10.47,-2.31] win 34 %; P15_tp35 win 59.9 % but -7.07 [-10.83,-3.04] (avg win +29.6 / loss -61.7, break-even needs 67.6 %); P15_tp50 -6.92 win 52 %; P5 -8.1/-8.7. Gross ~0 everywhere -> SHADOW. Diagnostic: counter-trend S1 fades (-7.3/-8.2) are not worse than CHOP (-9.2) or MIXED (-7.2).
 - Profile: intraday_variants=('R1_SESSION','P15_tp50'), intraday_close_margin_s=10.0. Report docs/research_upgrade/report_regime_aligned_pullback_2026-10-10.md, snapshot_2026-10-10c.
 - Checks: python -m pytest -q 1493 passed, 28 skipped, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
+
+## 2026-10-10 (d) Exchange pivot & zero-maker-fee simulation (research + prototype adapters)
+- tools/venue_fee_replay.py: one intraday + burst replay, every trade re-priced exactly (net = g - m - (1-tau) m - tau (t + s)) under 9 schedules. HOLDOUT: no variant positive with CI > 0 for any fee >= 0, not even zero fee (intraday gross -0.25..+1.73 CI contains 0; burst gross -2.2..-3.1). MEXC web 0/2: best intraday P15_rr25atr -0.68 [-7.14,+6.97], burst MR30 -3.00. MEXC API orders pay 6/8 bps since 2026-06-01 -> -13..-15. Only positive cell: MM touch-fill + -0.2 bps rebate (+0.20), unattainable.
+- Binance: BNB -10 % = +0.6 bps; USDC-M 0 % maker promo ended 2025-12-10. P15_rr25 (100/40) HO -6.39 SR -4.0; P15_rr25atr -5.48 SR -1.8 -> added to demo shadow only.
+- core/venues/: BaseVenue (place_post_only, cancel_order, position_view, set_disaster_stop), BinanceAdapter, MexcVenue / HyperliquidVenue prototypes (send nothing without transport/signer); tools/venue_probe.py. Not wired into the engine.
+- Checks: python -m pytest -q 1503 passed, 28 skipped, 2 failed (pre-existing env). No restart, no order, ledgers untouched.

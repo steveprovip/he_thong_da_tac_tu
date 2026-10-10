@@ -492,7 +492,7 @@ class Profile:
     # config/intraday_verdict.json (replay 10-10 b: every pre-registered variant negative) and no executor is built.
     intraday_lane: str = 'off'
     intraday_symbols: tuple = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')
-    intraday_variants: tuple = ('R1_SESSION', 'P15_tp50')   # 10-10 c: the replay's DEV-best of R1 and P (shadow)
+    intraday_variants: tuple = ('R1_SESSION', 'P15_tp50', 'P15_rr25atr')   # 10-10 c/d DEV-best R1 / P (shadow)
     intraday_notional_usdt: float = 150.0
     intraday_budget_pct: float = 0.04
     intraday_daily_kill_usdt: float = 25.0
