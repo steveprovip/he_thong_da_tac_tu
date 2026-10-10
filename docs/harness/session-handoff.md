@@ -119,3 +119,9 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After restart, lane 2 (burst scalper) runs SHADOW on SOL/DOGE: virtual rows in data/micro_trades_shadow.jsonl, events 'BURST SHADOW', telemetry burst_lane. Expect ~-7 bps per virtual trade (replay). Active needs config/burst_verdict.json ACTIVE-ELIGIBLE (re-run tools/burst_scalper_replay.py --write-verdict on new aggTrades); never live.
 - Run tools/fee_survey.py --quote USDC on the user's machine to read the real commission (0 % maker unconfirmed).
 - Revert: demo burst_lane='off'.
+
+## Handoff — 2026-10-10 (b)
+- After restart, lane 3 (intraday 5m/15m) runs SHADOW on BTC/SOL/DOGE: rows in data/intraday_trades_shadow.jsonl (variant, would_block), events 'INTRADAY SHADOW', telemetry intraday_lane. Expect ~17-20 virtual S1 trades/day at ~-7 bps (replay).
+- 'active' is refused by design; build an executor only if config/intraday_verdict.json gets an ACTIVE-ELIGIBLE (re-run tools/intraday_replay.py --write-verdict on new data), reusing the trend lane's persisted reduce-only order path.
+- Pending suggestion: fix or remove the burst lane's latent active order path (same defect class).
+- Revert: demo intraday_lane='off'.

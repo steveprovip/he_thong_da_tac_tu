@@ -13,8 +13,13 @@ Modes (Profile.intraday_lane): 'off' | 'shadow'.
           CLOSED mainnet 1m kline (public REST, with the retry / cache / spot-proxy layer of core/engine.py):
           fills only when a later bar trades THROUGH the limit -> data/intraday_trades_shadow.jsonl.  No venue call.
           Each row also records `would_block`: why a real entry on the shared account would have been refused at
-          the signal (trend / micro position, the 10 min after a 4H close, the daily loss breaker) - measured, not
-          applied, so the rows stay comparable with the replay and with config/intraday_verdict.json.
+          the signal (trend / micro position, the 10 min after a 4H close, the daily loss breaker, a lot size below
+          the exchange minimum notional) - measured, not applied: virtual books use the replay's fixed notional,
+          so the rows stay comparable with the replay and with config/intraday_verdict.json.
+          Data: a rolling store of closed 1m klines (>= 2 pages = 2999 bars after a back-fill, kept to 3 days) so
+          ADX(15m) is warmed up and the SESSION VWAP of every replayed bar starts at its own 00:00 UTC; bars are
+          admitted on the Binance SERVER clock (+ margin), never on the local clock; a hole the REST window cannot
+          fill ends every open virtual trade as UNKNOWN (no invented exit price) and restarts the books.
   'active' is NOT implemented on purpose: no (symbol, strategy) is ACTIVE-ELIGIBLE (replay 10-10 b: every variant
           negative), and the 10-10 b review of a first active path found safety defects (non reduce-only TP able to
           open the opposite position, unprotected remainders after partial fills / rejected stops, no state
@@ -201,9 +206,15 @@ def rows_to_m(rows) -> Optional[dict]:
 
 
 class IntradayLane:
-    def __init__(self, e, ledger_dir: Path, fetch=None, clock=time.time, verdict_path: Path = VERDICT):
+    def __init__(self, e, ledger_dir: Path, fetch=None, clock=time.time, verdict_path: Path = VERDICT,
+                 server_offset=None):
         p = e.p
         self.e, self.clock, self.fetch = e, clock, fetch
+        # server clock: production asks Binance; an injected fetch (tests / replays) without an offset uses 0
+        self.server_offset_fn = server_offset if server_offset is not None else (None if fetch is None else (lambda: 0.0))
+        self.offset, self.offset_t = 0.0, -1e18
+        self.store = {}             # open_s -> kline row (closed bars only)
+        self.gaps = self.skew = 0
         self.variants = [v for v in p.intraday_variants if v in VARIANTS]
         self.mode = 'off' if p.intraday_lane == 'off' else 'shadow'
         if p.intraday_lane == 'active':
@@ -222,7 +233,7 @@ class IntradayLane:
         self.last = {'mode': self.mode}
 
     # ------------------------------------------------------------------ the shared account (measured only)
-    def would_block(self, t: float) -> Optional[str]:
+    def would_block(self, t: float, px: Optional[float] = None) -> Optional[str]:
         """Why a REAL entry on the shared one-way account would be refused now (recorded on shadow rows)."""
         e, p = self.e, self.e.p
         if e.trend_owned or e.pos or e.busy:
@@ -231,6 +242,16 @@ class IntradayLane:
             return '4H close window reserved for the trend lane'
         if self.day_pnl <= -p.intraday_daily_kill_usdt:
             return f'daily loss breaker {self.day_pnl:+.2f} U'
+        if px:
+            wallet = float((e.account or {}).get('wallet') or 0.0)
+            spec = e.spec or {}
+            budget = min(p.intraday_notional_usdt, p.intraday_budget_pct * wallet) if wallet else None
+            if budget is not None and budget < p.intraday_notional_usdt:
+                return f'budget {p.intraday_budget_pct:.0%} of wallet = {budget:.0f} U < {p.intraday_notional_usdt:g} U'
+            step, min_n = spec.get('step', 0.001), spec.get('min_notional', 5.0)
+            q = math.floor(p.intraday_notional_usdt / px / step + 1e-9) * step
+            if q * px < min_n:
+                return f'below min notional: {q:g} = {q * px:.1f} U < {min_n:g} U'
         return None
 
     # ------------------------------------------------------------------ ledger
@@ -257,12 +278,8 @@ class IntradayLane:
         bk['pos'] = None
 
     def _qty(self, px: float) -> float:
-        e, p = self.e, self.e.p
-        wallet = float((e.account or {}).get('wallet') or p.mock_balance or 0.0)
-        notional = min(p.intraday_notional_usdt, p.intraday_budget_pct * wallet) if wallet else p.intraday_notional_usdt
-        step = (e.spec or {}).get('step', 0.001)
-        q = math.floor(notional / px / step + 1e-9) * step
-        return q if q * px >= (e.spec or {}).get('min_notional', 5.0) else 0.0
+        """Virtual size = the replay's fixed notional (no lot rounding, no minimum: those go to would_block)."""
+        return self.e.p.intraday_notional_usdt / px
 
     # ------------------------------------------------------------------ bar-by-bar engine (each book == the replay)
     def on_bar(self, m: dict, f: dict, i: int) -> None:
@@ -328,14 +345,55 @@ class IntradayLane:
                 od = {'side': sd, 'px': float(f['ema20'][k5])}
         if od is not None:
             od['qty'] = self._qty(od['px'])
-            od['would_block'] = self.would_block(t + 60)
-            bk['order'] = od if od['qty'] else None
+            od['would_block'] = self.would_block(t + 60, od['px'])
+            bk['order'] = od
+
+    # ------------------------------------------------------------------ data
+    def _fetch_rows(self, fetch, n: int, end_ms=None) -> list:
+        if end_ms is None:
+            return list(fetch(self.e.p.symbol, '1m', n))
+        try:
+            return list(fetch(self.e.p.symbol, '1m', n, end_ms=end_ms))
+        except TypeError:                                          # an injected fetch without paging
+            return []
+
+    def _gap(self, t_first_new: float) -> None:
+        """A hole the REST window cannot fill: every open virtual trade ends UNKNOWN, the books restart."""
+        self.gaps += 1
+        p = self.e.p
+        for name, bk in self.books.items():
+            ps = bk['pos']
+            if ps is not None:
+                row = {'t': float(t_first_new), 'lane': 'INTRADAY', 'mode': self.mode, 'symbol': p.symbol,
+                       'variant': name, 'side': 'BUY' if ps['side'] > 0 else 'SELL', 'qty': float(ps['qty']),
+                       'entry': float(ps['entry']), 'exit': None, 'exit_how': 'UNKNOWN-DATA-GAP',
+                       'gross_bps': None, 'net_bps': None, 'net_usd': None, 'would_block': ps.get('would_block'),
+                       'gap_from': self.last_t, 'gap_to': float(t_first_new)}
+                try:
+                    with open(self.ledger, 'a', encoding='utf-8') as fh:
+                        fh.write(json.dumps(row) + '\n')
+                except OSError:
+                    pass
+            bk['order'] = bk['pos'] = None
+        self.e.event(f'INTRADAY {p.symbol} data gap {self.last_t} -> {t_first_new}: open virtual trades UNKNOWN, '
+                     'books restarted')
+        self.last_t = None                                         # restart like a cold start (no history replay)
 
     # ------------------------------------------------------------------ one pass
     async def step(self) -> dict:
         import asyncio
         p = self.e.p
-        now = self.clock()
+        local = self.clock()
+        if self.server_offset_fn is None:
+            from core.engine import fetch_server_offset
+            self.server_offset_fn = fetch_server_offset
+        if local - self.offset_t > 3600:                           # refresh the server-clock offset hourly
+            try:
+                self.offset = float(await asyncio.to_thread(self.server_offset_fn))
+            except Exception:
+                pass                                               # keep the last offset (0 at start)
+            self.offset_t = local
+        now = local + self.offset
         d = time.strftime('%Y-%m-%d', time.gmtime(now))           # UTC day, like the replay and the 4H clock
         if d != self.day:
             self.day, self.day_pnl = d, 0.0
@@ -346,13 +404,38 @@ class IntradayLane:
         if fetch is None:
             from core.engine import fetch_klines
             fetch = fetch_klines
-        rows = await asyncio.to_thread(fetch, p.symbol, '1m', 1500)
-        m = rows_to_m([r for r in rows if r[5] <= now - margin])  # a fast local clock must not admit the open bar
+
+        def fresh(rows):
+            return [r for r in rows if r[5] <= now - margin]       # server clock: never the open candle
+        cold = not self.store
+        rows = fresh(await asyncio.to_thread(self._fetch_rows, fetch, 1500 if cold else 120))
+        if not rows:
+            return self.last
+        if not cold and rows[0][0] > self.last_t + 60:             # more missed than the short page: full page
+            rows = fresh(await asyncio.to_thread(self._fetch_rows, fetch, 1500))
+            if rows and rows[0][0] > self.last_t + 60:
+                self._gap(rows[0][0])
+                self.store, cold = {}, True
+        for r in rows:
+            old = self.store.get(r[0])
+            if old is not None and r[0] <= (self.last_t or -1) and tuple(old[:5]) != tuple(r[:5]):
+                self.skew += 1                                     # a processed bar changed: it was still open
+                self.e.event(f'INTRADAY {p.symbol} bar {r[0]:.0f} changed after processing (clock skew?) '
+                             f'-> raise intraday_close_margin_s')
+            self.store[r[0]] = r
+        if cold and rows:                                          # back-fill one page: ADX / SESSION warm-up
+            back = fresh(await asyncio.to_thread(self._fetch_rows, fetch, 1500, int(rows[0][0] * 1000) - 1))
+            for r in back:
+                self.store.setdefault(r[0], r)
+        keys = sorted(self.store)[-int(p.intraday_store_bars):]
+        self.store = {k: self.store[k] for k in keys}
+        m = rows_to_m([self.store[k] for k in keys])
         if m is None or len(m['t']) < 600:
             self.last = {**self.last, 'status': 'volume UNKNOWN / warming up'}
             return self.last
         f = features(m)
-        new = np.flatnonzero(m['t'] > (self.last_t if self.last_t is not None else m['t'][-2]))
+        start = self.last_t if self.last_t is not None else m['t'][-2]
+        new = np.flatnonzero(m['t'] > start)
         for i in new:
             self.on_bar(m, f, int(i))
         self.last_t = float(m['t'][-1])
@@ -360,8 +443,9 @@ class IntradayLane:
 
         def num(x):
             return float(x) if k >= 0 and np.isfinite(x) else None
-        self.last = {'mode': self.mode, 'variants': self.variants, 'day_pnl': self.day_pnl, 'n': self.n,
-                     'bar_t': self.last_t, 'gap_bars': int(max(0, len(new) - 1)),
+        self.last = {'mode': self.mode, 'variants': self.variants, 'day_pnl': float(self.day_pnl), 'n': self.n,
+                     'bar_t': self.last_t, 'new_bars': int(len(new)), 'store_bars': len(keys), 'gaps': self.gaps,
+                     'clock_skew_events': self.skew, 'server_offset_s': round(self.offset, 3),
                      'books': {n: {'order': bool(b['order']), 'pos': (b['pos'] or {}).get('side')}
                                for n, b in self.books.items()},
                      'vwap_session': num(f['vwap_SESSION'][k]), 'slope3': num(f['slope3'][k]),

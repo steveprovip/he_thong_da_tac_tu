@@ -3,9 +3,7 @@
 **Phạm vi.**
 - Code, test và replay offline trên kline 1 phút thật của Binance USD-M. Không khởi động lại engine, không gửi lệnh nào.
 - Không đụng tới `data/engine_trades.jsonl` hay `data/trend_trades.jsonl`.
-- Làn 3 ghi vào file riêng:
-  - `data/intraday_trades_shadow.jsonl` ở chế độ shadow;
-  - `data/intraday_trades.jsonl` ở chế độ active.
+- Làn 3 chỉ chạy shadow và ghi vào file riêng `data/intraday_trades_shadow.jsonl`. Không có đường gửi lệnh thật (mục 4).
 - Live không đổi (`intraday_lane='off'`).
 
 ## 0. Kết luận
@@ -20,7 +18,11 @@
 
 **Vì sao không đạt:**
 - **Phí quyết định dấu kết quả.** Gross trước phí ≈ 0 (−1.3 đến +0.6 bps) ở mọi biến thể. Phí round-trip là 8 bps khi cả hai chân maker, tới 12 bps khi thoát bằng taker.
-- **Tỷ lệ thắng > 50 % mâu thuẫn với R:R ≥ 1.5 khi không có lợi thế.** Mục tiêu (TP) thường xa gấp 1.5–4 lần điểm dừng (SL), nên xác suất chạm TP trước SL theo random walk chỉ khoảng 20–34 %. Muốn thắng trên 55 % với R:R ≥ 1.5 thì cần gross edge vài chục bps mỗi lệnh. Đo được thì gần 0.
+- **Tỷ lệ thắng > 50 % mâu thuẫn với R:R ≥ 1.5 khi không có lợi thế.** Mục tiêu (TP) thường xa gấp 1.5–4 lần điểm dừng (SL), nên xác suất chạm TP trước SL theo random walk chỉ khoảng 20–34 %. Ví dụ với SL 25 bps và TP 37.5 bps (R:R 1.5):
+  - thắng 55 % tương đương gross edge khoảng +9 bps mỗi lệnh;
+  - muốn thêm +15 bps net sau 8 bps phí thì cần gross khoảng +23 bps mỗi lệnh.
+
+  Đo được thì gần 0.
 
 Theo quy tắc đã đăng ký trước, không (symbol, chiến lược) nào được bật active. Điều kiện để bật: CI hold-out > 0, tỷ lệ thắng > 50 % và ít nhất 100 lệnh.
 
@@ -118,9 +120,15 @@ Tổng cộng 6 họ, 26 biến thể, 3 coin. Ở khung 5 phút đến 4 giờ,
 
 **Chế độ** (`Profile.intraday_lane`):
 - **`shadow`:** mỗi biến thể có **một sổ ảo độc lập**, giống hệt sổ của replay.
-  - Mỗi khi một nến 1m mainnet đóng (cộng 5 s phòng lệch đồng hồ), engine lấy lại 1 500 nến 1m qua REST (có retry, cache và spot proxy từ vòng ff), rồi áp đúng quy tắc replay.
+  - Mỗi khi một nến 1m mainnet đóng (tính theo **giờ server Binance** + 5 s), engine lấy trang nến mới qua REST (có retry, cache và spot proxy từ vòng ff), ghép vào kho nến 1m 3 ngày (backfill tới 2 999 nến lúc khởi động), rồi áp đúng quy tắc replay. Nếu có khoảng trống dữ liệu mà REST không lấp được, các vị thế ảo đang mở ghi `UNKNOWN-DATA-GAP`, không bịa giá thoát.
   - Kết quả ghi vào `data/intraday_trades_shadow.jsonl`, kèm event `INTRADAY SHADOW …`.
-  - Mỗi dòng có thêm trường `would_block`: lý do một lệnh **thật** sẽ bị chặn trên tài khoản chung (symbol đang có vị thế trend/vi mô, 10 phút sau nến 4H, cầu dao lỗ ngày $25). Các chốt chặn này chỉ được **đo**, không áp vào sổ ảo, để kết quả shadow vẫn so được với replay và verdict.
+  - Mỗi dòng có thêm trường `would_block`: lý do một lệnh **thật** sẽ bị chặn trên tài khoản chung. Các lý do gồm:
+    - symbol đang có vị thế trend/vi mô;
+    - 10 phút sau nến 4H;
+    - cầu dao lỗ ngày $25;
+    - ngân sách 4 % ví;
+    - lot làm tròn dưới notional tối thiểu (ví dụ BTC ở $75k–100k).
+    Các chốt chặn này chỉ được **đo**, không áp vào sổ ảo, để kết quả shadow vẫn so được với replay và verdict.
   - Nến không có volume (lấy từ spot proxy) bị coi là UNKNOWN: không phát tín hiệu.
 - **`active` không được xây, và đây là chủ ý.**
   - Bản active đầu tiên bị review đối kháng (mục 6) phát hiện các lỗi an toàn thật:
@@ -132,15 +140,15 @@ Tổng cộng 6 họ, 26 biến thể, 3 coin. Ở khung 5 phút đến 4 giờ,
   - Không biến thể nào đủ điều kiện active, nên code đó chỉ là rủi ro, và đã được **gỡ bỏ**.
   - Đặt `intraday_lane='active'` thì engine ghi lý do từ chối rồi chạy shadow.
   - Nếu sau này có verdict ACTIVE-ELIGIBLE, executor nên dựng lại trên đường lệnh đã kiểm chứng của làn trend: trạng thái lưu file, thoát reduce-only, stop trên sàn có cơ chế khôi phục hoặc đóng lệnh, PnL lấy từ `realized_parts`.
-- **Biến thể:** `intraday_variants = ('S1_SESSION', 'S2_slope3_tp60')`, tức DEV-best của từng chiến lược. Size $150/lệnh (tối đa 4 % ví), giữ tối đa 45 phút.
-- **Telemetry:** `snapshot['intraday_lane'][symbol]` (mode, sổ ảo, VWAP session, slope3, ADX15, day_pnl, n, gap_bars).
+- **Biến thể:** `intraday_variants = ('S1_SESSION', 'S2_slope3_tp60')`, tức DEV-best của từng chiến lược. Sổ ảo dùng notional cố định $150/lệnh như replay, giữ tối đa 45 phút.
+- **Telemetry:** `snapshot['intraday_lane'][symbol]` (mode, sổ ảo, VWAP session, slope3, ADX15, day_pnl, n, new_bars, store_bars, gaps, clock_skew_events, server_offset_s).
 - **Làn 2 (burst) có cùng loại lỗi tiềm ẩn ở đường active**, hiện cũng đang bị khoá vì mọi verdict là SHADOW. Việc sửa đã được đề xuất thành một task riêng.
 
 ## 5. Kiểm thử và lưu trữ
 
 **Test:**
 - `python -m pytest -q`: xem mục 6 (số cuối cùng sau khi sửa theo review).
-- 15 test mới trong `tests/test_intraday_lane.py`:
+- 19 test mới trong `tests/test_intraday_lane.py` (danh sách đầy đủ ở mục 6):
   - resample, VWAP warm-up;
   - điều kiện S1/S2;
   - nến thiếu volume (UNKNOWN);
@@ -161,4 +169,47 @@ Tổng cộng 6 họ, 26 biến thể, 3 coin. Ở khung 5 phút đến 4 giờ,
 
 ## 6. Review code làn 3 và số test cuối cùng
 
-(xem phần cập nhật bên dưới)
+**Review v1** (workflow, 3 góc nhìn) nhắm vào bản đầu tiên có đường active. Kết quả xác minh được lưu ở `workflow_code_review.json`.
+
+Đường active có 12 phát hiện, gồm:
+- TP không phải reduce-only có thể mở vị thế ngược chiều; lệnh thoát theo thời gian sau đó còn nhân đôi vị thế ngược này;
+- khớp một phần hoặc stop bị từ chối để lại phần vị thế không có stop;
+- re-anchor S2 crash với `TypeError`;
+- lệnh S1 sống quá 1 phút;
+- race trên cờ `busy`;
+- trạng thái không lưu qua restart;
+- ledger ghi giá theo kế hoạch thay cho giá khớp thật.
+
+Phần tích hợp có 10 phát hiện, gồm: làn trend bị chặn tới 45 phút; burst và intraday cùng tác động lên một vị thế ròng; shadow dùng chung một slot cho nhiều biến thể nên không còn là replay.
+
+**Cách xử lý:** gỡ hẳn đường active (mục 4), shadow đổi sang một sổ ảo cho mỗi biến thể, và sửa test của verdict.
+
+**Review v2** (workflow, 3 góc nhìn trên code shadow-only + một skeptic xác minh cho mỗi phát hiện): 6 phát hiện, cả 6 được xác minh là thật, đều đã sửa.
+
+| Mức | Phát hiện | Cách sửa |
+|---|---|---|
+| major | Sổ BTC **lặng lẽ bỏ mọi tín hiệu** khi BTC ở $75k–100k: $150 làm tròn xuống 0.001 BTC, dưới mức notional tối thiểu 100 U. Khoảng giá này chiếm 42 % thời gian năm 2026 | Sổ ảo dùng notional cố định $150 như replay. Ràng buộc lot/min-notional/ngân sách ghi vào `would_block`, không còn bỏ tín hiệu |
+| minor | ADX(15m) chưa hội tụ trong cửa sổ 1 500 nến: sai số tới 11 %, khoảng 0.6 % quyết định S2 lệch | Kho nến 1m 3 ngày, lúc khởi động backfill 1 trang (2 999 nến). Trên dữ liệu thật: sai số ADX tối đa 6.6e-5, 0/1 200 quyết định S1/S2 lệch |
+| minor | Sau khi mất mạng, VWAP SESSION của nến bỏ lỡ không bắt đầu từ 00:00 UTC của ngày nó | Kho 3 ngày luôn phủ tới đầu phiên |
+| minor | Mất mạng lâu hơn một trang REST: nến bị bỏ qua mà không báo, vị thế ảo đóng như bình thường nhưng trễ hàng trăm phút | Phát hiện khoảng trống: vị thế ảo đang mở ghi `UNKNOWN-DATA-GAP` (không bịa giá thoát), sổ khởi động lại |
+| minor | Đồng hồ máy nhanh hơn 5 s: nến chưa đóng bị coi là đã đóng | Nhận nến theo **giờ server Binance** (`fetch_server_offset`, cập nhật mỗi giờ) + 5 s. Nếu một nến đã xử lý thay đổi về sau, engine ghi event `clock skew` |
+| minor | Thiếu ngưỡng mẫu tối thiểu cho verdict (stats audit) | Đã sửa ở mục 2 |
+
+**Các kiểm tra review v2 không tìm thấy lỗi:**
+- Lane không có đường nào gửi lệnh; không ghi vào `busy`/`pos`/`trend_owned`.
+- Profile live không tạo lane.
+- Test suite không gọi mạng thật.
+- Telemetry serialise JSON được.
+- Fetch chạy trong thread, nên không chặn event loop.
+- **Cả 6 biến thể khớp từng lệnh với replay trên dữ liệu thật** SOL/DOGE 2024-07 → 2026-09.
+- Chạy `step()` thật từng phút suốt 2026: S1 khớp từng lệnh trên SOL và DOGE.
+
+**Số test cuối cùng:**
+- `python -m pytest -q` trong cloud: **1488 passed, 28 skipped, 2 failed**.
+- Hai test fail đã fail sẵn từ trước, do thiếu file local: `data/` signal-lab testnet và `tools/check_models_live.py`.
+- `tests/test_intraday_lane.py` có 19 test. Ngoài các test ở mục 5, thêm:
+  - nhận nến theo giờ server;
+  - backfill khi khởi động và lấy trang ngắn sau đó;
+  - khoảng trống dữ liệu ghi UNKNOWN;
+  - phát hiện lệch đồng hồ;
+  - lot BTC dưới min-notional được ghi lại chứ không bị bỏ.

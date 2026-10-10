@@ -213,6 +213,16 @@
       ],
       "status": "done",
       "evidence": "Holdout SOL/DOGE USDT DEV-best MR30 -7.17/-7.69 bps per trade (CI < 0), USDC 0 % maker -3.98/-5.52, MM -2.2 to -7.4; 20-28 trades/h; pytest 1469 passed (2 pre-existing env failures)"
+    },
+    {
+      "id": "intraday-lane-5m15m-20261010b",
+      "name": "Lane 3: intraday 5m/15m micro-swing (S1 VWAP-band MR, S2 15m momentum pull-back), shadow-only on demo; 1m-kline replay verified by 19 agents",
+      "description": "core/intraday_lane.py (shared indicators/signals, one virtual book per variant = replay, would_block, kline store + back-fill, server clock, data-gap UNKNOWN; 'active' refused), core/engine.py (Profile intraday_*, Runner.intraday_loop, telemetry intraday_lane, fetch_klines end_ms + base volume, fetch_server_offset), tools/intraday_replay.py, config/intraday_verdict.json, tests/test_intraday_lane.py (19), snapshot_2026-10-10b",
+      "dependencies": [
+        "burst-lane-sub-minute-20261010"
+      ],
+      "status": "done",
+      "evidence": "HOLDOUT 2026: S1_SESSION -7.09 bps [-8.33,-5.82] win 32 %, S2_slope3_tp60 -8.44 [-12.49,-4.60] win 28 %; optimistic bounds still negative; 5 extra families negative on DEV; lane = replay trade by trade on real SOL/DOGE; pytest 1488 passed (2 pre-existing env failures)"
     }
   ]
 }

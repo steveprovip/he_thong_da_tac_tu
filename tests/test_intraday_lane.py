@@ -242,18 +242,94 @@ def test_active_is_refused_and_runs_shadow(tmp_path):
     assert lane2.mode == 'shadow' and any('no ACTIVE-ELIGIBLE verdict' in x for x in ev)
 
 
-async def test_step_skips_the_open_bar_and_processes_gaps_in_order(tmp_path):
-    m = walk(n=900)
-    rows = [(float(m['t'][j]), m['o'][j], m['h'][j], m['l'][j], m['c'][j], float(m['t'][j]) + 60, m['qv'][j],
+def kl_rows(m):
+    return [(float(m['t'][j]), m['o'][j], m['h'][j], m['l'][j], m['c'][j], float(m['t'][j]) + 60, m['qv'][j],
              m['tbq'][j], m['v'][j]) for j in range(len(m['t']))]
-    clk = {'t': float(m['t'][-1]) + 60 + 2.0}                      # last row closed only 2 s ago (< 5 s margin)
+
+
+async def test_step_admits_bars_on_the_server_clock_with_margin(tmp_path):
+    m = walk(n=900)
+    rows = kl_rows(m)
+    local = float(m['t'][-1]) + 60 + 30.0                          # local clock 30 s after the last close ...
     e, _ = fake_engine(tmp_path)
-    lane = il.IntradayLane(e, tmp_path, fetch=lambda s, b, n: rows, clock=lambda: clk['t'])
+    lane = il.IntradayLane(e, tmp_path, fetch=lambda s, b, n: rows, clock=lambda: local,
+                           server_offset=lambda: -28.0)            # ... but the server says only 2 s
     await lane.step()
-    assert lane.last_t == m['t'][-2]                               # the too-fresh last bar was not admitted
-    clk['t'] += 3 * 60                                             # pretend 3 more minutes passed: no new rows
+    assert lane.last_t == m['t'][-2] and lane.last['server_offset_s'] == -28.0   # too-fresh bar not admitted
+
+
+async def test_cold_start_backfills_one_page_and_short_pages_after(tmp_path):
+    m = walk(n=3000)
+    rows = kl_rows(m)
+    calls = []
+
+    def fetch(sym, iv, n, end_ms=None):
+        calls.append((n, end_ms))
+        if end_ms:
+            return [r for r in rows if r[0] * 1000 <= end_ms][-n:]
+        return rows[-1500:][-n:]
+    clk = {'t': float(m['t'][-1]) + 60 + 10.0}
+    e, _ = fake_engine(tmp_path)
+    lane = il.IntradayLane(e, tmp_path, fetch=fetch, clock=lambda: clk['t'], server_offset=lambda: 0.0)
     await lane.step()
-    assert lane.last_t == m['t'][-1] and lane.last['gap_bars'] == 0
+    assert calls[0] == (1500, None) and calls[1][0] == 1500 and calls[1][1] == int(rows[-1500][0] * 1000) - 1
+    assert lane.last['store_bars'] == 3000                         # 2 pages: ADX(15m) / SESSION VWAP warmed up
+    rows.append((rows[-1][0] + 60, *rows[-1][1:5], rows[-1][5] + 60, *rows[-1][6:]))
+    clk['t'] += 60
+    await lane.step()
+    assert calls[-1] == (120, None) and lane.last['new_bars'] == 1
+
+
+async def test_hole_ends_open_virtual_trades_unknown(tmp_path, monkeypatch):
+    m = walk(n=6000)
+    rows = kl_rows(m)
+    feed = {'rows': rows[:3000]}
+    clk = {'t': rows[2999][5] + 10.0}
+    e, ev = fake_engine(tmp_path, intraday_variants=('S1_ROLL100',))
+    lane = il.IntradayLane(e, tmp_path, fetch=lambda s, b, n, end_ms=None: [] if end_ms else feed['rows'][-n:],
+                           clock=lambda: clk['t'], server_offset=lambda: 0.0)
+    await lane.step()
+    lane.books['S1_ROLL100']['pos'] = {'var': 'S1_ROLL100', 'side': 1, 'entry': 100.0, 'sl': 90.0, 'sl0': 90.0,
+                                       'tp': 110.0, 'fill_t': lane.last_t, 'qty': 1.5, 'would_block': None}
+    feed['rows'] = rows[:5800]                                     # 2800 bars later: more than one REST page
+    clk['t'] = rows[5799][5] + 10.0
+    await lane.step()
+    rows_out = [json.loads(x) for x in (tmp_path / 'intraday_trades_shadow.jsonl').read_text().splitlines()]
+    assert [r['exit_how'] for r in rows_out] == ['UNKNOWN-DATA-GAP']          # no replay of the missed history
+    assert rows_out[0]['exit'] is None and rows_out[0]['net_bps'] is None and lane.last['new_bars'] == 1
+    assert lane.gaps == 1 and lane.books['S1_ROLL100']['pos'] is None and any('data gap' in x for x in ev)
+
+
+async def test_processed_bar_that_changes_is_flagged_as_clock_skew(tmp_path):
+    m = walk(n=900)
+    rows = kl_rows(m)
+    clk = {'t': rows[-1][5] + 10.0}
+    e, ev = fake_engine(tmp_path)
+    lane = il.IntradayLane(e, tmp_path, fetch=lambda s, b, n: list(rows), clock=lambda: clk['t'],
+                           server_offset=lambda: 0.0)
+    await lane.step()
+    rows[-1] = (rows[-1][0], rows[-1][1], rows[-1][2] * 1.01, *rows[-1][3:])   # the "closed" bar was still open
+    rows.append((rows[-1][0] + 60, *rows[-1][1:5], rows[-1][5] + 60, *rows[-1][6:]))
+    clk['t'] += 60
+    await lane.step()
+    assert lane.skew == 1 and any('clock skew' in x for x in ev)
+
+
+def test_btc_lot_below_min_notional_is_recorded_not_dropped(tmp_path, monkeypatch):
+    m = walk()
+    f = il.features(m)
+    k = 300
+    i5 = int(f['b5']['i_last'][k])
+    c = m['c'][i5]
+    monkeypatch.setattr(il, 's1_signal', lambda f_, k_, vw: (1, c, c * 1.004, c * 0.997) if k_ == k else None)
+    m['l'][i5 + 1], m['h'][i5 + 2] = c * 0.9995, c * 1.0045
+    e, ev = fake_engine(tmp_path, intraday_variants=('S1_ROLL100',))
+    e.spec = {'step': 1.0, 'tick': 0.01, 'min_notional': 200.0}    # $150 / 100 -> 1 lot = 100 U < 200 U
+    lane = il.IntradayLane(e, tmp_path, clock=lambda: 0.0)
+    run_bars(lane, m, f, lo=i5)
+    row = json.loads((tmp_path / 'intraday_trades_shadow.jsonl').read_text().splitlines()[0])
+    assert row['exit_how'] == 'TP' and row['would_block'].startswith('below min notional')
+    assert row['qty'] * row['entry'] == pytest.approx(150.0)        # the replay's fixed notional
 
 
 @pytest.mark.production_profile

@@ -251,3 +251,10 @@ Run `./init.sh` from Git Bash. Record exact test results before marking any futu
 - core/burst_lane.py + Runner.burst_loop: shadow on demo (data/micro_trades_shadow.jsonl), active gated by config/burst_verdict.json, demo-only; coexists with the trend lane (one-way mode: only on a free symbol, 10 min quiet after each 4H close). tools/burst_lane_xcheck.py: live lane code = replay (SOL 168 vs 167 trades, -8.04 vs -7.85 bps).
 - tools/fee_survey.py (signed commissionRate); 0 % USDC maker not confirmed (third-party: to 2026-02).
 - Checks: python -m pytest -q 1469 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.
+
+## 2026-10-10 (b) Intraday 5m/15m micro-swing (lane 3, shadow)
+- tools/intraday_replay.py (pre-registered, 1m klines 2024-07..2026-09, DEV 2025 / HOLDOUT 2026-01..09, through fills, stop-first): HOLDOUT S1_SESSION -7.09 bps [-8.33,-5.82] win 32.2 % (17/day), S1_ROLL100 -7.99, S2_slope3_tp60 -8.44 win 28 %; gross ~0; verdict SHADOW everywhere (n >= 100, CI > 0, win > 50 % rule).
+- Workflow (9 agents): independent reimplementation matches; no look-ahead (5 checks); optimistic fill/fee bounds still negative, win rate <= 41 %; stats verified; 5 more families (intraday TSMOM, HTF MR, ORB, funding window, volume-shock reversal) negative on DEV, no holdout run.
+- core/intraday_lane.py shadow-only (one virtual book per variant = replay trade by trade; would_block; 3-day kline store; server clock; data gap -> UNKNOWN). First active path removed after an adversarial review found order-safety defects; burst lane's similar latent path proposed as a separate task.
+- Code review v2 (10 agents): 6 confirmed findings (BTC min-notional silent drop, ADX warm-up, SESSION after gaps, long gaps, clock skew, verdict floor) all fixed.
+- Checks: python -m pytest -q 1488 passed, 2 failed (pre-existing env). No restart, no order, ledgers untouched.

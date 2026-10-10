@@ -500,7 +500,8 @@ class Profile:
     intraday_slip_bps: float = 1.0
     intraday_trend_quiet_s: float = 600.0
     intraday_every_s: float = 10.0
-    intraday_close_margin_s: float = 5.0    # fetch / accept a 1m kline only 5 s after its close (clock skew)
+    intraday_close_margin_s: float = 5.0    # accept a 1m kline only 5 s after its close on the SERVER clock
+    intraday_store_bars: int = 4320         # rolling store of closed 1m klines (3 days; back-filled to 2999 at start)
     # 10-09 (dd) False = the micro lane opens NO standalone position (observer): fee bleed of 2-5 bps targets at
     # 4 bps fees.  Its features keep running (trend execution timing, telemetry).
     micro_standalone: bool = True
@@ -3440,11 +3441,12 @@ def rest_json(urls, timeout: float = REST_TIMEOUT_S, backoff=REST_BACKOFF_S, sle
 
 
 def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: float = REST_TIMEOUT_S,
-                 get=rest_json) -> list:
-    """Closed candles [(open_s, o, h, l, c, close_s, quote_vol, taker_buy_quote)] from Binance USD-M mainnet public
-    REST (no key).  Network failure -> cached rows, else spot-proxy rows WITHOUT the two volume fields."""
-    q = f'symbol={symbol.upper()}&interval={interval}&limit={int(limit)}'
-    key = (symbol.upper(), interval, int(limit))
+                 get=rest_json, end_ms: Optional[int] = None) -> list:
+    """Closed candles [(open_s, o, h, l, c, close_s, quote_vol, taker_buy_quote, base_vol)] from Binance USD-M
+    mainnet public REST (no key); end_ms pages back in history.  Network failure -> cached rows, else spot-proxy
+    rows WITHOUT the volume fields."""
+    q = f'symbol={symbol.upper()}&interval={interval}&limit={int(limit)}' + (f'&endTime={int(end_ms)}' if end_ms else '')
+    key = (symbol.upper(), interval, int(limit), end_ms)
     now_ms = time.time() * 1000
     try:
         rows = get([f'{h}/fapi/v1/klines?{q}' for h in REST_HOSTS], timeout)
@@ -3462,6 +3464,14 @@ def fetch_klines(symbol: str, interval: str = '1m', limit: int = 30, timeout: fl
         KLINE_SOURCE[key[:2]] = 'spot-proxy'
         return [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3]), float(k[4]), k[6] / 1000.0)
                 for k in rows if k[6] < now_ms]
+
+
+def fetch_server_offset(timeout: float = REST_TIMEOUT_S, get=rest_json) -> float:
+    """Binance USD-M server time minus the local clock, seconds (10-10 b: the intraday lane must not admit the
+    still-open 1m candle when the PC clock runs fast)."""
+    t0 = time.time()
+    st = get([f'{h}/fapi/v1/time' for h in REST_HOSTS], timeout)
+    return float(st['serverTime']) / 1000.0 - (t0 + time.time()) / 2.0
 
 
 def fetch_funding(symbol: str, limit: int = 30, timeout: float = REST_TIMEOUT_S, get=rest_json) -> list:
