@@ -6,6 +6,7 @@ legacy single-leg plan. Basis is spot minus perp, in USDT per coin.
 """
 from dataclasses import dataclass
 import math
+from typing import Iterable, List, Optional
 from core.models import dec
 from core.consensus_engine import ConsensusEngine, Vote
 
@@ -313,3 +314,127 @@ def isolated_margin_ratio(position):
         return float(maintenance / (wallet + pnl))
     except (KeyError, TypeError, ValueError):
         return math.inf
+
+
+@dataclass(frozen=True)
+class DynamicXVQuote:
+    symbol: str
+    binance_rate_8h_bps: float       # Đã quy đổi về chuẩn bps/8h
+    hyperliquid_rate_1h_bps: float   # Rate 1h của Hyperliquid tính bằng bps
+    ema_spread_fast_bps: float       # EMA 6h của |8*HL_1h - BN_8h|
+    ema_spread_slow_bps: float       # EMA 72h của |8*HL_1h - BN_8h|
+    persistence_rho: float           # Hệ số tự tương quan AR(1) thuộc [0.5, 0.95]
+    basis_entry_bps: float           # (P_short_bid - P_long_ask) / P_mid * 1e4
+    min_depth_usd: float             # Thanh khoản L1-L3 khả dụng trên chân mỏng hơn
+    round_trip_fee_bps: float = 10.0
+
+
+@dataclass(frozen=True)
+class DynamicXVPlan:
+    symbol: str
+    direction: str                   # "LONG_BN_SHORT_HL" | "SHORT_BN_LONG_HL"
+    instant_spread_8h_bps: float
+    expected_cum_yield_bps: float
+    effective_cost_bps: float
+    breakeven_cycles_8h: float
+    optimal_hold_cycles_8h: int
+    projected_net_apr_pct: float
+    score: float
+
+
+def evaluate_dynamic_xv_candidate(
+    q: DynamicXVQuote,
+    eval_horizon_cycles: int = 12,
+    capital_utilization: float = 0.70,
+    min_liquidity_usd: float = 25_000.0,
+) -> Optional[DynamicXVPlan]:
+    """
+    Đánh giá ứng viên Cross-Venue Funding (Binance <-> Hyperliquid)
+    tích hợp dự báo phân rã AR(1) và khấu hao chi phí theo Basis Entry.
+    """
+    if q.min_depth_usd < min_liquidity_usd:
+        return None
+
+    hl_8h_equiv_bps = 8.0 * float(q.hyperliquid_rate_1h_bps)
+    bn_8h_bps = float(q.binance_rate_8h_bps)
+    raw_diff = hl_8h_equiv_bps - bn_8h_bps
+    instant_spread_bps = abs(raw_diff)
+
+    if instant_spread_bps < 1.2:
+        return None
+
+    direction = "LONG_BN_SHORT_HL" if raw_diff > 0 else "SHORT_BN_LONG_HL"
+    rho = max(0.50, min(0.95, float(q.persistence_rho)))
+    h = max(int(eval_horizon_cycles), 3)
+
+    # Tổng lợi tức kỳ vọng trong H chu kỳ 8h theo quá trình hồi quy trung bình AR(1)
+    fast_s = max(float(q.ema_spread_fast_bps), instant_spread_bps * 0.8)
+    slow_s = max(float(q.ema_spread_slow_bps), 0.8)
+    decay_sum = rho * (1.0 - (rho ** h)) / max(1.0 - rho, 1e-6)
+    expected_cum_yield_bps = h * slow_s + (fast_s - slow_s) * decay_sum
+
+    # Khấu trừ lợi thế Basis khi vào lệnh (giới hạn tối đa giảm 60% phí để thận trọng)
+    basis_credit_bps = max(-4.0, min(float(q.basis_entry_bps), 0.60 * float(q.round_trip_fee_bps)))
+    effective_cost_bps = max(2.5, float(q.round_trip_fee_bps) - basis_credit_bps)
+
+    net_cum_yield_bps = expected_cum_yield_bps - effective_cost_bps
+    if net_cum_yield_bps <= 0.0:
+        return None
+
+    avg_spread_per_cycle = expected_cum_yield_bps / h
+    breakeven_cycles = effective_cost_bps / max(avg_spread_per_cycle, 1e-6)
+    if breakeven_cycles > 6.0:  # Không vào nếu mất quá 48 giờ chỉ để hòa vốn phí
+        return None
+
+    amortized_net_per_8h_bps = net_cum_yield_bps / h
+    projected_net_apr_pct = (amortized_net_per_8h_bps * 1e-4) * (365.0 * 3.0) * float(capital_utilization) * 100.0
+
+    # Điểm xếp hạng ưu tiên lợi suất ròng cao và thời gian hòa vốn ngắn
+    score = amortized_net_per_8h_bps / math.sqrt(max(breakeven_cycles, 0.5))
+
+    return DynamicXVPlan(
+        symbol=q.symbol,
+        direction=direction,
+        instant_spread_8h_bps=instant_spread_bps,
+        expected_cum_yield_bps=expected_cum_yield_bps,
+        effective_cost_bps=effective_cost_bps,
+        breakeven_cycles_8h=breakeven_cycles,
+        optimal_hold_cycles_8h=h,
+        projected_net_apr_pct=projected_net_apr_pct,
+        score=score,
+    )
+
+
+def rank_dynamic_xv_opportunities(
+    quotes: Iterable[DynamicXVQuote],
+    eval_horizon_cycles: int = 12,
+    capital_utilization: float = 0.70,
+) -> List[DynamicXVPlan]:
+    plans = [
+        p for q in quotes
+        if (p := evaluate_dynamic_xv_candidate(q, eval_horizon_cycles, capital_utilization)) is not None
+    ]
+    plans.sort(key=lambda x: x.score, reverse=True)
+    return plans
+
+
+def should_rotate_xv_position(
+    current_plan: DynamicXVPlan,
+    candidate_plan: DynamicXVPlan,
+    exit_cost_current_bps: float = 5.0,
+    hysteresis_buffer_bps: float = 4.0,
+) -> bool:
+    """
+    Luật Dừng Tối ưu có Trễ (Hysteresis Stopping Rule):
+    Chỉ đảo từ vị thế đang giữ sang vị thế mới nếu phần chênh lệch tích lũy
+    lớn hơn toàn bộ phí thoát lệnh cũ + phí vào lệnh mới + đệm an toàn 4 bps.
+    """
+    if current_plan.symbol == candidate_plan.symbol and current_plan.direction == candidate_plan.direction:
+        return False
+
+    # Với vị thế đang giữ, phí vào lệnh đã là sunk cost, chỉ còn phí thoát
+    remaining_value_current = current_plan.expected_cum_yield_bps - float(exit_cost_current_bps)
+    net_value_candidate = candidate_plan.expected_cum_yield_bps - candidate_plan.effective_cost_bps
+
+    return (net_value_candidate - remaining_value_current) > float(hysteresis_buffer_bps)
+

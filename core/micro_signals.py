@@ -35,7 +35,7 @@ import math
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Optional, Tuple
+from typing import Deque, Optional, Sequence, Tuple
 
 from research.flow_gauge import FlowGauge
 
@@ -749,3 +749,226 @@ def signals(f: dict, cfg: SignalConfig = SignalConfig(), reg: dict = None) -> di
             out[key] = None
     out['BANNED'] = banned
     return out
+
+
+@dataclass(frozen=True)
+class AsymmetricQuotePlan:
+    reservation_price: float
+    bid_price: float
+    ask_price: float
+    bid_half_spread_bps: float
+    ask_half_spread_bps: float
+    vpin: float
+    z_ofi: float
+    cancel_bid: bool
+    cancel_ask: bool
+    hazard_bid: float
+    hazard_ask: float
+
+
+class AsymmetricToxicityGuard:
+    """
+    HFT Microstructure Guard: Volume-Synchronized VPIN + Multi-Level OFI
+    Thiết kế theo chuẩn Ponytail YAGNI: O(1) per update, zero external libraries.
+    """
+
+    def __init__(
+        self,
+        bucket_volume: float = 50_000.0,
+        num_buckets: int = 20,
+        ofi_window: int = 50,
+        decay_lambda: float = 0.5,
+        base_half_spread_bps: float = 2.0,
+        vpin_safe_threshold: float = 0.45,
+        vpin_toxic_threshold: float = 0.75,
+    ) -> None:
+        self.bucket_volume = max(float(bucket_volume), 1e-6)
+        self.num_buckets = max(int(num_buckets), 5)
+        self.decay_lambda = float(decay_lambda)
+        self.base_half_spread_bps = max(float(base_half_spread_bps), 0.5)
+        self.vpin_safe_threshold = float(vpin_safe_threshold)
+        self.vpin_toxic_threshold = float(vpin_toxic_threshold)
+
+        # Trạng thái Volume Bucket cho VPIN
+        self._current_buy_vol: float = 0.0
+        self._current_sell_vol: float = 0.0
+        self._imbalance_buckets: Deque[float] = deque(maxlen=self.num_buckets)
+
+        # Trạng thái Multi-Level OFI
+        self._prev_bids: Sequence[Tuple[float, float]] = ()
+        self._prev_asks: Sequence[Tuple[float, float]] = ()
+        self._ofi_history: Deque[float] = deque(maxlen=max(int(ofi_window), 10))
+        self._peak_l1_bid_qty: float = 0.0
+        self._peak_l1_ask_qty: float = 0.0
+
+    def on_trade(self, qty: float, price: float, is_buyer_maker: bool) -> float:
+        """
+        Cập nhật dòng lệnh khớp (aggTrade) theo đồng hồ khối lượng (Volume Clock).
+        is_buyer_maker=True nghĩa là lệnh Taker Sell chủ động đánh vào Maker Bid.
+        """
+        notional = max(float(qty) * float(price), 0.0)
+        rem = notional
+        while rem > 0.0:
+            current_total = self._current_buy_vol + self._current_sell_vol
+            space_left = max(self.bucket_volume - current_total, 0.0)
+            fill = min(rem, space_left)
+            if is_buyer_maker:
+                self._current_sell_vol += fill
+            else:
+                self._current_buy_vol += fill
+            rem -= fill
+
+            if (self._current_buy_vol + self._current_sell_vol) >= self.bucket_volume * 0.999999:
+                imbalance = abs(self._current_buy_vol - self._current_sell_vol) / self.bucket_volume
+                self._imbalance_buckets.append(min(max(imbalance, 0.0), 1.0))
+                self._current_buy_vol = 0.0
+                self._current_sell_vol = 0.0
+        return self.current_vpin
+
+    @property
+    def current_vpin(self) -> float:
+        if not self._imbalance_buckets:
+            return 0.0
+        return sum(self._imbalance_buckets) / len(self._imbalance_buckets)
+
+    def on_depth(
+        self,
+        bids: Sequence[Tuple[float, float]],
+        asks: Sequence[Tuple[float, float]],
+    ) -> float:
+        """
+        Cập nhật sổ lệnh L2 (tối đa 5 mức đầu) và tính Multi-level Decay-Weighted OFI.
+        Mỗi phần tử trong bids/asks là tuple (price, qty).
+        """
+        if not bids or not asks:
+            return self.current_z_ofi
+
+        l1_bid_q = max(float(bids[0][1]), 0.0)
+        l1_ask_q = max(float(asks[0][1]), 0.0)
+
+        if not self._prev_bids or not self._prev_asks:
+            self._prev_bids = list(bids[:5])
+            self._prev_asks = list(asks[:5])
+            self._peak_l1_bid_qty = l1_bid_q
+            self._peak_l1_ask_qty = l1_ask_q
+            return 0.0
+
+        # Theo dõi đỉnh thanh khoản L1 để phát hiện Queue Depletion
+        if bids[0][0] != self._prev_bids[0][0]:
+            self._peak_l1_bid_qty = l1_bid_q
+        else:
+            self._peak_l1_bid_qty = max(self._peak_l1_bid_qty * 0.98, l1_bid_q)
+
+        if asks[0][0] != self._prev_asks[0][0]:
+            self._peak_l1_ask_qty = l1_ask_q
+        else:
+            self._peak_l1_ask_qty = max(self._peak_l1_ask_qty * 0.98, l1_ask_q)
+
+        levels = min(len(bids), len(asks), len(self._prev_bids), len(self._prev_asks), 5)
+        weighted_ofi = 0.0
+        weighted_depth = 0.0
+
+        for m in range(levels):
+            w = math.exp(-self.decay_lambda * m)
+            pb_curr, qb_curr = float(bids[m][0]), float(bids[m][1])
+            pb_prev, qb_prev = float(self._prev_bids[m][0]), float(self._prev_bids[m][1])
+            pa_curr, qa_curr = float(asks[m][0]), float(asks[m][1])
+            pa_prev, qa_prev = float(self._prev_asks[m][0]), float(self._prev_asks[m][1])
+
+            e_b = (qb_curr if pb_curr >= pb_prev else 0.0) - (qb_prev if pb_curr <= pb_prev else 0.0)
+            e_a = (qa_curr if pa_curr <= pa_prev else 0.0) - (qa_prev if pa_curr >= pa_prev else 0.0)
+            weighted_ofi += w * (e_b - e_a)
+            weighted_depth += w * max(qb_curr + qa_curr, 1e-6) * 0.5
+
+        norm_ofi = weighted_ofi / max(weighted_depth, 1e-6)
+        self._ofi_history.append(norm_ofi)
+        self._prev_bids = list(bids[:5])
+        self._prev_asks = list(asks[:5])
+        return self.current_z_ofi
+
+    @property
+    def current_z_ofi(self) -> float:
+        n = len(self._ofi_history)
+        if n < 3:
+            return 0.0
+        mean_ofi = sum(self._ofi_history) / n
+        var_ofi = sum((x - mean_ofi) ** 2 for x in self._ofi_history) / n
+        std_ofi = math.sqrt(max(var_ofi, 1e-12))
+        z = (self._ofi_history[-1] - mean_ofi) / std_ofi
+        return max(-4.0, min(4.0, z))
+
+    def compute_quote_plan(
+        self,
+        bids: Sequence[Tuple[float, float]],
+        asks: Sequence[Tuple[float, float]],
+        inventory_skew: float = 0.0,
+        btc_lead_return_bps: float = 0.0,
+    ) -> AsymmetricQuotePlan:
+        """
+        Tính toán giá đặt lệnh Maker Bất đối xứng và tín hiệu Pre-emptive Cancel.
+        inventory_skew thuộc [-1.0, +1.0].
+        """
+        best_bid, q_bid = float(bids[0][0]), max(float(bids[0][1]), 1e-9)
+        best_ask, q_ask = float(asks[0][0]), max(float(asks[0][1]), 1e-9)
+        micro_price = (q_bid * best_ask + q_ask * best_bid) / (q_bid + q_ask)
+
+        vpin = self.current_vpin
+        z_ofi = self.current_z_ofi
+
+        # 1. Giá dự trữ (Reservation Price) điều chỉnh theo OFI drift và Inventory
+        drift_bps = 0.65 * z_ofi - 1.25 * max(-1.0, min(1.0, float(inventory_skew)))
+        reservation_price = micro_price * (1.0 + drift_bps * 1e-4)
+
+        # 2. Hệ số phạt Toxicity phi tuyến khi VPIN vượt ngưỡng an toàn
+        excess_vpin = max(0.0, (vpin - self.vpin_safe_threshold) / max(1.0 - self.vpin_safe_threshold, 1e-6))
+        tox_mult = 1.0 + 3.5 * (excess_vpin ** 2)
+
+        # 3. Half-spread bất đối xứng theo chiều dòng lệnh
+        bid_half_bps = self.base_half_spread_bps * tox_mult * math.exp(-0.45 * min(0.0, z_ofi))
+        ask_half_bps = self.base_half_spread_bps * tox_mult * math.exp(+0.45 * max(0.0, z_ofi))
+
+        quote_bid = min(best_bid, reservation_price * (1.0 - bid_half_bps * 1e-4))
+        quote_ask = max(best_ask, reservation_price * (1.0 + ask_half_bps * 1e-4))
+
+        # 4. Điểm nguy cơ khớp độc hại (Pre-emptive Cancellation Hazard Score)
+        depl_bid = 1.0 - min(1.0, q_bid / max(self._peak_l1_bid_qty, q_bid, 1e-9))
+        depl_ask = 1.0 - min(1.0, q_ask / max(self._peak_l1_ask_qty, q_ask, 1e-9))
+
+        hazard_bid = (
+            0.35 * (vpin / max(self.vpin_toxic_threshold, 1e-6))
+            + 0.30 * max(0.0, -z_ofi / 2.0)
+            + 0.20 * (depl_bid / 0.70)
+            + 0.15 * max(0.0, -float(btc_lead_return_bps) / 8.0)
+        )
+        hazard_ask = (
+            0.35 * (vpin / max(self.vpin_toxic_threshold, 1e-6))
+            + 0.30 * max(0.0, +z_ofi / 2.0)
+            + 0.20 * (depl_ask / 0.70)
+            + 0.15 * max(0.0, +float(btc_lead_return_bps) / 8.0)
+        )
+
+        cancel_bid = (
+            hazard_bid >= 1.0
+            or (vpin >= self.vpin_toxic_threshold and z_ofi <= -1.5)
+            or (depl_bid >= 0.70 and z_ofi <= -1.0)
+        )
+        cancel_ask = (
+            hazard_ask >= 1.0
+            or (vpin >= self.vpin_toxic_threshold and z_ofi >= 1.5)
+            or (depl_ask >= 0.70 and z_ofi >= 1.0)
+        )
+
+        return AsymmetricQuotePlan(
+            reservation_price=reservation_price,
+            bid_price=quote_bid,
+            ask_price=quote_ask,
+            bid_half_spread_bps=bid_half_bps,
+            ask_half_spread_bps=ask_half_bps,
+            vpin=vpin,
+            z_ofi=z_ofi,
+            cancel_bid=cancel_bid,
+            cancel_ask=cancel_ask,
+            hazard_bid=hazard_bid,
+            hazard_ask=hazard_ask,
+        )
+
