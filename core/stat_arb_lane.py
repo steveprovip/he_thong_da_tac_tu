@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import json
 import math
-from typing import Deque, Optional, Tuple
+from pathlib import Path
+import time
+from typing import Deque, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -245,3 +248,188 @@ class OnlineKalmanPairTracker:
             half_life_bars=half_life, weight_a=0.0, weight_b=0.0,
             reason="awaiting_z_threshold",
         )
+
+
+class StatArbLane:
+    """
+    Stat-Arb Cointegration Lane:
+    Operates on cointegrated pairs from the available active engines.
+    Tracks spread in real-time using OnlineKalmanPairTracker.
+    Estimates OU half-life and equilibrium standard deviation.
+    Runs in 'shadow' (default paper simulation) or 'active' (real/mock venue orders).
+    Logs to data/stat_arb_shadow.jsonl or data/stat_arb_trades.jsonl.
+    """
+
+    def __init__(
+        self,
+        engines: dict,
+        data_dir: Path,
+        mode: str = 'shadow',
+        pairs: Optional[Sequence[Tuple[str, str]]] = None,
+        notional_usdt: float = 50.0,
+        round_trip_cost_bps: float = 12.0,
+        z_entry: float = 2.10,
+        z_exit: float = 0.25,
+        z_stop: float = 3.60,
+        every_s: float = 1.0,
+    ) -> None:
+        self.engines = engines
+        self.data_dir = Path(data_dir)
+        self.mode = mode
+        self.notional_usdt = float(notional_usdt)
+        self.round_trip_cost_bps = float(round_trip_cost_bps)
+        self.z_entry = float(z_entry)
+        self.z_exit = float(z_exit)
+        self.z_stop = float(z_stop)
+        self.every_s = float(every_s)
+        self.ledger = self.data_dir / ('stat_arb_trades.jsonl' if mode == 'active' else 'stat_arb_shadow.jsonl')
+
+        if pairs:
+            self.pairs = list(pairs)
+        else:
+            syms = [s for s in engines.keys() if s in ('SOLUSDT', 'DOGEUSDT', 'BTCUSDT', 'ETHUSDT')]
+            if len(syms) >= 2:
+                if 'SOLUSDT' in syms and 'DOGEUSDT' in syms:
+                    self.pairs = [('SOLUSDT', 'DOGEUSDT')]
+                else:
+                    self.pairs = [(syms[0], syms[1])]
+            else:
+                self.pairs = []
+
+        self.trackers: dict[str, OnlineKalmanPairTracker] = {}
+        self.positions: dict[str, dict] = {}
+        self.last: dict[str, dict] = {}
+        self.day_pnl: float = 0.0
+        self.total_trades: int = 0
+
+        for a, b in self.pairs:
+            pair_id = f"{a}_{b}"
+            self.trackers[pair_id] = OnlineKalmanPairTracker(
+                asset_a=a, asset_b=b,
+                delta_alpha=1e-5, delta_beta=1e-4, obs_var_init=1e-3, ou_window=120
+            )
+
+    async def step(self, now: Optional[float] = None) -> dict:
+        now = time.time() if now is None else now
+        results = {}
+
+        for a, b in self.pairs:
+            pair_id = f"{a}_{b}"
+            ea = self.engines.get(a)
+            eb = self.engines.get(b)
+            if not ea or not eb:
+                continue
+
+            px_a = ea.feed.price() if getattr(ea, 'feed', None) else None
+            px_b = eb.feed.price() if getattr(eb, 'feed', None) else None
+            if not px_a or not px_b or px_a <= 0 or px_b <= 0:
+                continue
+
+            tracker = self.trackers[pair_id]
+            sig = tracker.evaluate_signal(
+                px_a, px_b,
+                round_trip_cost_bps=self.round_trip_cost_bps,
+                z_entry=self.z_entry,
+                z_exit=self.z_exit,
+                z_stop=self.z_stop,
+            )
+
+            pos = self.positions.get(pair_id)
+
+            if sig.action in ("ENTER_LONG_SPREAD", "ENTER_SHORT_SPREAD") and pos is None:
+                side = +1 if sig.action == "ENTER_LONG_SPREAD" else -1
+                pos = {
+                    'pair_id': pair_id,
+                    'side': side,
+                    'entry_t': now,
+                    'px_a_entry': px_a,
+                    'px_b_entry': px_b,
+                    'beta': sig.hedge_ratio,
+                    'notional': self.notional_usdt,
+                    'z_entry': sig.z_score,
+                }
+                self.positions[pair_id] = pos
+                msg = f"STAT_ARB {self.mode.upper()} {sig.action} {a}/{b} Z={sig.z_score:+.2f} beta={sig.hedge_ratio:.2f}"
+                if hasattr(ea, 'event'):
+                    ea.event(msg)
+                self._record_trade({
+                    'type': 'ENTRY',
+                    't': now,
+                    'pair_id': pair_id,
+                    'action': sig.action,
+                    'side': side,
+                    'px_a': px_a,
+                    'px_b': px_b,
+                    'beta': sig.hedge_ratio,
+                    'z_score': sig.z_score,
+                    'half_life': sig.half_life_bars,
+                    'mode': self.mode,
+                })
+
+            elif sig.action in ("EXIT_SPREAD", "STOP_BREAKDOWN") and pos is not None:
+                side = pos['side']
+                ret_a = (px_a / pos['px_a_entry'] - 1.0)
+                ret_b = (px_b / pos['px_b_entry'] - 1.0)
+                raw_spread_ret = side * (ret_a - pos['beta'] * ret_b)
+                gross_bps = raw_spread_ret * 1e4
+                net_bps = gross_bps - self.round_trip_cost_bps
+                pnl_usd = (net_bps * 1e-4) * pos['notional']
+
+                self.day_pnl += pnl_usd
+                self.total_trades += 1
+                hold_s = now - pos['entry_t']
+                del self.positions[pair_id]
+
+                msg = f"STAT_ARB {self.mode.upper()} {sig.action} {a}/{b} Z={sig.z_score:+.2f} net={net_bps:+.1f} bps ({pnl_usd:+.3f} U) hold={hold_s:.0f}s"
+                if hasattr(ea, 'event'):
+                    ea.event(msg)
+                self._record_trade({
+                    'type': 'EXIT',
+                    't': now,
+                    'pair_id': pair_id,
+                    'action': sig.action,
+                    'side': side,
+                    'px_a_exit': px_a,
+                    'px_b_exit': px_b,
+                    'beta': pos['beta'],
+                    'z_score': sig.z_score,
+                    'net_bps': net_bps,
+                    'pnl_usd': pnl_usd,
+                    'hold_s': hold_s,
+                    'reason': sig.reason,
+                    'mode': self.mode,
+                })
+
+            res = {
+                'pair_id': pair_id,
+                'action': sig.action,
+                'z_score': round(sig.z_score, 2),
+                'beta': round(sig.hedge_ratio, 3),
+                'spread_std_bps': round(sig.spread_std_bps, 1),
+                'half_life': round(sig.half_life_bars, 1),
+                'in_trade': tracker.current_position != 0,
+                'bars_in_trade': tracker.bars_in_trade,
+                'day_pnl_usd': round(self.day_pnl, 4),
+            }
+            self.last[pair_id] = res
+            results[pair_id] = res
+
+        return results
+
+    def _record_trade(self, row: dict) -> None:
+        try:
+            self.ledger.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.ledger, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(row) + '\n')
+        except OSError:
+            pass
+
+    def view(self) -> dict:
+        return {
+            'mode': self.mode,
+            'pairs': self.pairs,
+            'day_pnl_usd': round(self.day_pnl, 4),
+            'total_trades': self.total_trades,
+            'pairs_state': self.last,
+        }
+

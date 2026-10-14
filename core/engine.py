@@ -512,6 +512,10 @@ class Profile:
     trend_bars: tuple = ('1d', '4h')
     trend_equity: float = 5000.0
     trend_every_s: float = 900.0
+    stat_arb_lane: str = 'off'
+    stat_arb_pairs: tuple = (('SOLUSDT', 'DOGEUSDT'),)
+    stat_arb_notional_usdt: float = 50.0
+    stat_arb_every_s: float = 1.0
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -544,7 +548,9 @@ PROFILES = {
                     trend_be_pct=0.3, trend_conv_alloc_pct=0.30, trend_conv_risk_pct=0.02, trend_btc_align='shadow',
                     trend_notional_max=1500.0,
                     burst_lane='shadow',   # 10-10 lane 2 runs virtual (replay: every variant negative after fees)
-                    intraday_lane='shadow'),  # 10-10 b lane 3 runs virtual (replay: every variant negative)
+                    intraday_lane='shadow',  # 10-10 b lane 3 runs virtual (replay: every variant negative)
+                    stat_arb_lane='shadow'),  # Stat-Arb cointegration Kalman lane (pairs trading)
+
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
@@ -3702,6 +3708,7 @@ class Runner:
                 snap['trend_lane'] = getattr(self, 'trend_state', None)
                 snap['burst_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'burst', None) or {}).items()}
                 snap['intraday_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'intraday', None) or {}).items()}
+                snap['stat_arb_lane'] = self.stat_arb.view() if getattr(self, 'stat_arb', None) is not None else None
                 snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
@@ -3775,6 +3782,13 @@ class Runner:
                 from core.intraday_lane import IntradayLane
                 self.intraday[s_] = IntradayLane(x, ROOT / 'data')
                 self.tasks.append(asyncio.create_task(self.intraday_loop(self.intraday[s_])))
+        self.stat_arb = None
+        if any(getattr(x.p, 'stat_arb_lane', 'off') != 'off' for x in self.engines.values()) and len(self.engines) >= 2:
+            from core.stat_arb_lane import StatArbLane
+            sa_mode = next((x.p.stat_arb_lane for x in self.engines.values() if x.p.stat_arb_lane != 'off'), 'shadow')
+            self.stat_arb = StatArbLane(self.engines, ROOT / 'data', mode=sa_mode)
+            self.tasks.append(asyncio.create_task(self.stat_arb_loop(self.stat_arb)))
+
         if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
             from core.autonomy import Autonomy
             self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
@@ -3809,6 +3823,18 @@ class Runner:
             if once:
                 return lane.last
             await asyncio.sleep(lane.e.p.intraday_every_s)
+
+    async def stat_arb_loop(self, lane, once: bool = False) -> dict:
+        """Stat-Arb Cointegration loop across active pairs."""
+        while True:
+            try:
+                await lane.step()
+            except Exception as exc:
+                if self.engines:
+                    next(iter(self.engines.values())).event(f'STAT_ARB error {type(exc).__name__}: {exc}'[:200])
+            if once:
+                return lane.last
+            await asyncio.sleep(getattr(lane, 'every_s', 1.0))
 
     async def autonomy_loop(self, every_s: float = 5.0, threaded: bool = True) -> None:
         """10-09 (cc): every 5 s poll config/live_tunables.json (mtime), run the capital router; every 15 min or

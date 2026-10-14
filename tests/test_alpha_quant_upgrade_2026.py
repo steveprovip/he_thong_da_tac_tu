@@ -256,3 +256,43 @@ def test_dynamic_xv_ranking_and_rotation():
 
     # Same symbol rotation should always be False
     assert should_rotate_xv_position(plan_tao, plan_tao) is False
+
+
+# =====================================================================
+# 4. Tests for StatArbLane Engine Wiring
+# =====================================================================
+
+class _MockFeed:
+    def __init__(self, price: float):
+        self._price = price
+    def price(self):
+        return self._price
+
+class _MockEngine:
+    def __init__(self, symbol: str, price: float):
+        self.symbol = symbol
+        self.feed = _MockFeed(price)
+        self.events = []
+    def event(self, msg: str):
+        self.events.append(msg)
+
+@pytest.mark.asyncio
+async def test_stat_arb_lane_step_and_telemetry(tmp_path):
+    from core.stat_arb_lane import StatArbLane
+
+    ea = _MockEngine("SOLUSDT", 150.0)
+    eb = _MockEngine("DOGEUSDT", 0.12)
+    engines = {"SOLUSDT": ea, "DOGEUSDT": eb}
+
+    lane = StatArbLane(engines=engines, data_dir=tmp_path, mode="shadow")
+    assert lane.pairs == [("SOLUSDT", "DOGEUSDT")]
+
+    for _ in range(10):
+        res = await lane.step()
+
+    assert "SOLUSDT_DOGEUSDT" in res
+    v = lane.view()
+    assert v["mode"] == "shadow"
+    assert "SOLUSDT_DOGEUSDT" in v["pairs_state"]
+    assert v["pairs_state"]["SOLUSDT_DOGEUSDT"]["action"] in ("HOLD", "ENTER_LONG_SPREAD", "ENTER_SHORT_SPREAD")
+
