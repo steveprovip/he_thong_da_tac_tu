@@ -42,6 +42,8 @@ class Autonomy:
         self.router_pending = None
         self.router_hold_s = 60.0
         self.router_said = -1e18
+        self.chop_exit_since = None               # first poll of an unbroken KER >= 0.40 run while in CHOP
+        self.chop_left_at = -1e18
         self.shadow_disagree = 0
         self.counts = {'dreams': 0, 'traps': {}, 'directives': 0, 'mutes': 0, 'bans': 0, 'router_switches': 0}
         self.settled_since_dream = 0
@@ -183,9 +185,25 @@ class Autonomy:
         feats = {s: e.features for s, e in self.engines.items() if s not in (self.base[s].observe_only or ())}
         scale = {s: getattr(getattr(e.feed, 'cfg', None), 'usd_scale', 1.0) for s, e in self.engines.items()}
         r = capital_router.route(feats, scale)
+        now = self.clock()
+        # 10-16: leaving CHOP needs KER >= 0.40 on some symbol for CHOP_EXIT_HOLD_S unbroken (was immediate; RFC log: 13
+        # NORMAL<->CHOP flips in 230 min on 10-16); BURST waits BURST_COOLDOWN_S after CHOP ends
+        if self.router.get('regime') == 'CHOP' and r['regime'] != 'CHOP':
+            if not capital_router.chop_exit_confirmed(feats):
+                self.chop_exit_since = None
+                return self.router
+            if self.chop_exit_since is None:
+                self.chop_exit_since = now
+            if now - self.chop_exit_since < capital_router.CHOP_EXIT_HOLD_S:
+                return self.router
+            self.chop_left_at = now
+        self.chop_exit_since = None
+        if r['regime'] == 'BURST' and now - self.chop_left_at < capital_router.BURST_COOLDOWN_S:
+            r = {'regime': 'NORMAL', 'scalp_alloc': 1.0, 'trend_trail': False, 'symbols': [],
+                 'why': f'BURST held as NORMAL for {capital_router.BURST_COOLDOWN_S:.0f} s after CHOP'}
         # hysteresis: a new regime must persist ROUTER_HOLD_S before it takes over (no 5 s flapping)
         leaving_chop = self.router.get('regime') == 'CHOP' and r['regime'] != 'CHOP'
-        if r['regime'] != self.router.get('regime') and not leaving_chop:   # resume trading at once
+        if r['regime'] != self.router.get('regime') and not leaving_chop:   # CHOP exit already held above
             if self.router_pending is None or self.router_pending[0] != r['regime']:
                 self.router_pending = (r['regime'], self.clock())
             if self.clock() - self.router_pending[1] < self.router_hold_s:

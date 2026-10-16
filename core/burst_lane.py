@@ -5,6 +5,10 @@ imbalance over >= 20 prints, the replay's proxy for OFI L10 - kept identical so 
 the real depth OFI L10 is reported next to it) OR 1-min volume > 3x the mean minute of the previous 20 min.  Signal MR (fade the 10 s move, DEV-best) or MOM (follow the 10 s CVD).
 Entry: post-only at our touch, re-peg every repeg_s while the burst lasts.  Exits: post-only TP at +/- tp_bps,
 stop at -sl_bps (taker), hold_s time stop -> post-only at the touch for exit_maker_s -> taker.
+10-16 (RFC-Q4.2, shadow-tested only): burst_time_exit='maker' keeps that post-only exit pegged until it fills, the
+SL trips or burst_exit_cap_s passes (TIME-CAP taker); burst_absorb_gate skips an entry on the side the engine's
+ABSORPTION TRAP blocks (micro_signals.absorption: |CVD 15 s| >= $500k x scale without a 0.025 % move).  Both change
+the policy away from the registered replay (tools/burst_scalper_replay.py CFG) - re-run it before any verdict.
 
 Modes (Profile.burst_lane): 'off' | 'shadow' | 'active'.
   shadow  virtual orders filled by the live prints with the replay's conservative rule (a print must trade THROUGH
@@ -27,6 +31,8 @@ import uuid
 from collections import deque
 from pathlib import Path
 from typing import Optional
+
+from core import micro_signals as msig
 
 VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'burst_verdict.json'
 INF = float('inf')
@@ -106,7 +112,7 @@ class BurstLane:
         self.ledger = Path(ledger_dir) / name
         self.pos = None          # {'side', 'qty', 'entry', 't', 'tp', 'sl'}
         self.orders = []         # {'side', 'px', 'qty', 'active', 'dead', 'posted', 'kind', 'cid'}
-        self.exit_phase, self.exit_since = None, 0.0
+        self.exit_phase, self.exit_since, self.exit_how = None, 0.0, 'TIME-TAKER'
         self.day, self.day_pnl, self.n = None, 0.0, 0
         self.last = {}
         e.feed.print_hooks.append(self.on_print)
@@ -152,9 +158,10 @@ class BurstLane:
         return None
 
     # ------------------------------------------------------------------ broker
-    async def _post(self, side: int, px: float, qty: float, kind: str, now: float, why: str = '') -> None:
+    async def _post(self, side: int, px: float, qty: float, kind: str, now: float, why: str = '',
+                    absorb: Optional[str] = None) -> None:
         o = {'side': side, 'px': px, 'qty': qty, 'active': now, 'dead': INF, 'posted': now, 'kind': kind, 'cid': None,
-             'why': why}
+             'why': why, 'absorb': absorb}
         if self.mode == 'active':
             e = self.e
             o['cid'] = 'gB-' + uuid.uuid4().hex[:28]
@@ -222,14 +229,14 @@ class BurstLane:
         p, ps = self.e.p, self.pos
         mk, tk = p.maker_bps, p.taker_bps
         gross = ps['side'] * (px - ps['entry']) / ps['entry'] * 1e4
-        net = gross - mk - (tk if how in ('SL', 'TIME-TAKER') else mk)
+        net = gross - mk - (tk if how in ('SL', 'TIME-TAKER', 'TIME-CAP') else mk)
         usd = net / 1e4 * ps['qty'] * ps['entry']
         self.day_pnl += usd
         self.n += 1
         row = {'t': now, 'lane': 'BURST', 'mode': self.mode, 'symbol': p.symbol, 'side': 'BUY' if ps['side'] > 0 else 'SELL',
                'qty': ps['qty'], 'entry': ps['entry'], 'exit': px, 'exit_how': how, 'hold_s': now - ps['t'],
                'gross_bps': gross, 'net_bps': net, 'net_usd': usd, 'why': ps.get('why'),
-               'partial_qty': ps.get('partial_qty'),
+               'partial_qty': ps.get('partial_qty'), 'absorb': ps.get('absorb'),
                'fees_model': f'maker {mk:g} / taker {tk:g} bps'}
         try:
             self.ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -246,6 +253,7 @@ class BurstLane:
         raw = px * (1 + o['side'] * p.burst_tp_bps / 1e4)
         tp = (math.ceil(raw / tick) if o['side'] > 0 else math.floor(raw / tick)) * tick
         self.pos = {'side': o['side'], 'qty': qty, 'entry': px, 't': now, 'why': o.get('why'), 'tp_px': tp,
+                    'absorb': o.get('absorb'),
                     'sl': px * (1 - o['side'] * p.burst_sl_bps / 1e4)}
         self.orders = []
         await self._post(-o['side'], tp, qty, 'TP', now)
@@ -266,7 +274,7 @@ class BurstLane:
             return
         px = await self._taker(-ps['side'], ps['qty'])
         if not px:
-            self.exit_phase = 'taker'                        # IOC outside its band: retry next pass
+            self.exit_phase, self.exit_how = 'taker', how    # IOC outside its band: retry next pass
             self.e.event(f'BURST {self.e.p.symbol} taker exit not filled -> retry')
             return
         self._close(px, how, now)
@@ -279,8 +287,9 @@ class BurstLane:
         if d != self.day:
             self.day, self.day_pnl = d, 0.0
         st = self.det.state(now, (e.features or {}).get('ofi_10s'))
-        self.last = {**st, 'mode': self.mode, 'pos': self.pos, 'orders': len(self.orders), 'day_pnl': self.day_pnl,
-                     'n': self.n}
+        ab = msig.absorption(e.features or {}, getattr(e, 'sig_cfg', None))
+        self.last = {**st, 'absorb': ab['state'], 'absorb_blocks': ab['blocks'], 'mode': self.mode, 'pos': self.pos,
+                     'orders': len(self.orders), 'day_pnl': self.day_pnl, 'n': self.n}
         bid, ask = self._book()
         if not bid or not ask or not e.spec:
             return self.last
@@ -299,6 +308,9 @@ class BurstLane:
                     want = (st['cvd10'] > 0) - (st['cvd10'] < 0)
                 elif st['move10'] is not None:
                     want = -((st['move10'] > 0) - (st['move10'] < 0))
+                if want and p.burst_absorb_gate and ab['blocks'] == ('BUY' if want > 0 else 'SELL'):
+                    self.last['skip'] = f'ABSORPTION TRAP {ab["blocks"]}: {ab["why"]}'
+                    want = 0
             live = [o for o in self.orders if o['dead'] == INF]
             target = bid if want > 0 else ask
             for o in live:
@@ -312,12 +324,12 @@ class BurstLane:
                 notional = min(p.burst_notional_usdt, p.burst_budget_pct * wallet)
                 qty = math.floor(notional / target / e.spec['step'] + 1e-9) * e.spec['step']
                 if qty * target >= (e.spec or {}).get('min_notional', 5.0):
-                    await self._post(want, target, qty, 'E', now, st['why'])
+                    await self._post(want, target, qty, 'E', now, st['why'], ab['state'])
             return self.last
         # holding
         ps = self.pos
         if self.exit_phase == 'taker':
-            await self._exit_taker('TIME-TAKER', now)
+            await self._exit_taker(self.exit_how, now)
             return self.last
         if ps.get('sl_hit') or (self.mode == 'active' and ((ps['side'] > 0 and bid <= ps['sl']) or
                                                             (ps['side'] < 0 and ask >= ps['sl']))):
@@ -327,8 +339,9 @@ class BurstLane:
             self.exit_phase, self.exit_since = 'maker', now
             await self._flush_exits(now)
         if self.exit_phase == 'maker':
-            if now - self.exit_since >= p.burst_exit_maker_s:
-                await self._exit_taker('TIME-TAKER', now)
+            pegged = p.burst_time_exit == 'maker'            # SL above still trips; only time exits stay passive
+            if now - self.exit_since >= (p.burst_exit_cap_s if pegged else p.burst_exit_maker_s):
+                await self._exit_taker('TIME-CAP' if pegged else 'TIME-TAKER', now)
                 return self.last
             target = ask if ps['side'] > 0 else bid
             live = [o for o in self.orders if o['dead'] == INF]

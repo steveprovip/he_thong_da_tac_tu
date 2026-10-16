@@ -20,6 +20,15 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 CHOP_KER, BURST_KER, BURST_CVD_USD = 0.25, 0.50, 1_000_000.0
+# 10-16 RFC-Q4.2 hysteresis (applied by core/autonomy.Autonomy.route): leaving CHOP needs some symbol at KER >= 0.40
+# continuously for 180 s (3 x 1 m bars); BURST is reported as NORMAL for 300 s (5 bars) after leaving CHOP.
+# Only delays the micro lane's resumption (risk down); no local Hurst feature exists at this 2-minute scale.
+CHOP_EXIT_KER, CHOP_EXIT_HOLD_S, BURST_COOLDOWN_S = 0.40, 180.0, 300.0
+
+
+def chop_exit_confirmed(features: Dict[str, dict]) -> bool:
+    """Some symbol's KER >= CHOP_EXIT_KER (unknown KER never confirms)."""
+    return any((f or {}).get('ker') is not None and f['ker'] >= CHOP_EXIT_KER for f in features.values())
 
 
 def route(features: Dict[str, dict], usd_scale: Optional[Dict[str, float]] = None) -> dict:

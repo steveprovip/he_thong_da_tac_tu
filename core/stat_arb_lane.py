@@ -422,6 +422,7 @@ class StatArbLane:
         z_stop: float = 3.60,
         every_s: float = 1.0,
         z_alpha: Optional[float] = 0.5,
+        quote_every_s: float = 60.0,
     ) -> None:
         self.engines = engines
         self.z_alpha = z_alpha              # None = static z_entry; else DynamicZBand around z_entry
@@ -434,6 +435,11 @@ class StatArbLane:
         self.z_stop = float(z_stop)
         self.every_s = float(every_s)
         self.ledger = self.data_dir / ('stat_arb_trades.jsonl' if mode == 'active' else 'stat_arb_shadow.jsonl')
+        # 10-16: one synthetic-spread snapshot per pair every quote_every_s (why it does / does not enter), kept out
+        # of the trade ledger; the 10-16 session wrote no stat-arb row at all
+        self.quotes = self.data_dir / 'stat_arb_quotes.jsonl'
+        self.quote_every_s = float(quote_every_s)
+        self._quoted: dict[str, float] = {}
 
         if pairs:
             self.pairs = list(pairs)
@@ -570,16 +576,26 @@ class StatArbLane:
                 'in_trade': tracker.current_position != 0,
                 'bars_in_trade': tracker.bars_in_trade,
                 'day_pnl_usd': round(self.day_pnl, 4),
+                'reason': sig.reason,
             }
             self.last[pair_id] = res
+            if now - self._quoted.get(pair_id, -math.inf) >= self.quote_every_s:
+                self._quoted[pair_id] = now
+                self._append(self.quotes, {'type': 'QUOTE', 't': now, 'px_a': px_a, 'px_b': px_b,
+                                           'spread_std_bps_min': 3.5 * self.round_trip_cost_bps,
+                                           'mode': self.mode, **res})
             results[pair_id] = res
 
         return results
 
     def _record_trade(self, row: dict) -> None:
+        self._append(self.ledger, row)
+
+    @staticmethod
+    def _append(path: Path, row: dict) -> None:
         try:
-            self.ledger.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.ledger, 'a', encoding='utf-8') as f:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(row) + '\n')
         except OSError:
             pass

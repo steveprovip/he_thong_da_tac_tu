@@ -381,7 +381,9 @@ def test_router_hysteresis_and_dream_trigger(tmp_path):
     assert es['SOLUSDT'].observer
     for e in es.values():
         e.features = {'ker': 0.45, 'cvd_60s': 0.0}
-    assert a.route()['regime'] == 'NORMAL'                 # leaving CHOP is immediate
+    assert a.route()['regime'] == 'CHOP'                   # 10-16: leaving CHOP needs KER >= 0.40 for 180 s
+    c.t += cr.CHOP_EXIT_HOLD_S
+    assert a.route()['regime'] == 'NORMAL'
     a.settled_since_dream = 3
     assert a.dream_due()
     res = a.dream()

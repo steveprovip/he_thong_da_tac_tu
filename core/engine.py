@@ -483,6 +483,13 @@ class Profile:
     burst_repeg_s: float = 4.0
     burst_hold_s: float = 60.0
     burst_exit_maker_s: float = 10.0
+    # 10-16 RFC-Q4.2: 'taker' = hold_s -> maker exit_maker_s -> TIME-TAKER (the replayed policy) | 'maker' = keep the
+    # post-only exit pegged at our touch until fill, SL, or burst_exit_cap_s (then a TIME-CAP taker).  Replay SOL
+    # 09-05/06/08 MR30 through-fills: taker -7.30 bps/trade, maker+cap 240 s -6.62 (taker share 52 % -> 1 %).
+    burst_time_exit: str = 'taker'
+    burst_exit_cap_s: float = 240.0
+    # 10-16: skip entries the engine's ABSORPTION TRAP (micro_signals.absorption) would block on the same side.
+    burst_absorb_gate: bool = False
     burst_lat_s: float = 0.25               # shadow fills: an order is live / cancelled one latency later
     burst_notional_usdt: float = 75.0
     burst_budget_pct: float = 0.05
@@ -550,6 +557,9 @@ PROFILES = {
                     trend_be_pct=0.3, trend_conv_alloc_pct=0.30, trend_conv_risk_pct=0.02, trend_btc_align='shadow',
                     trend_notional_max=1500.0,
                     burst_lane='shadow',   # 10-10 lane 2 runs virtual (replay: every variant negative after fees)
+                    # 10-16: shadow only - maker-pegged time exit + absorption gate (replay -7.30 -> -6.50 bps/trade,
+                    # still negative: no venue use)
+                    burst_time_exit='maker', burst_absorb_gate=True,
                     intraday_lane='shadow',  # 10-10 b lane 3 runs virtual (replay: every variant negative)
                     stat_arb_lane='shadow'),  # Stat-Arb cointegration Kalman lane (pairs trading)
 

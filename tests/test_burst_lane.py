@@ -139,7 +139,7 @@ async def test_shadow_stop_loss_pays_taker(tmp_path):
 
 
 async def test_shadow_time_stop_maker_then_taker(tmp_path):
-    lane, e, feed, venue, events, clk = setup(tmp_path)
+    lane, e, feed, venue, events, clk = setup(tmp_path, burst_time_exit='taker')     # the replayed policy
     warm(feed, clk)
     spike_up(feed, clk)
     await lane.step()

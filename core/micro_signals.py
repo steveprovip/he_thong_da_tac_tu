@@ -168,14 +168,16 @@ def absorption(f: dict, cfg: 'SignalConfig' = None) -> dict:
     if cvd is None or vel is None:
         return {'state': 'UNKNOWN', 'blocks': None, 'cvd_15s': cvd, 'vel_pct': vel, 'why': 'no 15 s price history'}
     lim, mv = cfg.absorb_usd * cfg.usd_scale, cfg.absorb_min_move_pct
+    # 10-16: Kyle-style price impact per unit flow, bps per scaled $1M of net taker flow (None when flow ~ 0)
+    lam = vel * 100 / (cvd / (1e6 * cfg.usd_scale)) if abs(cvd) >= 1e-6 * lim else None
     why = f'CVD 15s {cvd / 1e6:+.2f}M · giá {vel:+.3f}%'
     if cvd >= lim and vel < mv:
-        return {'state': 'TRAPPED', 'blocks': 'BUY', 'cvd_15s': cvd, 'vel_pct': vel,
+        return {'state': 'TRAPPED', 'blocks': 'BUY', 'cvd_15s': cvd, 'vel_pct': vel, 'lambda_bps_m': lam,
                 'why': f'{why} < +{mv}% (tường Ask hấp thụ lực mua)'}
     if cvd <= -lim and vel > -mv:
-        return {'state': 'TRAPPED', 'blocks': 'SELL', 'cvd_15s': cvd, 'vel_pct': vel,
+        return {'state': 'TRAPPED', 'blocks': 'SELL', 'cvd_15s': cvd, 'vel_pct': vel, 'lambda_bps_m': lam,
                 'why': f'{why} > -{mv}% (tường Bid hấp thụ lực bán)'}
-    return {'state': 'CLEAR', 'blocks': None, 'cvd_15s': cvd, 'vel_pct': vel, 'why': why}
+    return {'state': 'CLEAR', 'blocks': None, 'cvd_15s': cvd, 'vel_pct': vel, 'lambda_bps_m': lam, 'why': why}
 
 
 def macro_bias(f: dict, cfg: 'SignalConfig' = None) -> dict:
