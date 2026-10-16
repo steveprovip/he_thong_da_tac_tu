@@ -357,8 +357,8 @@ h3{font-family:var(--mono);letter-spacing:1.6px;color:#bfeff3}
 
 /* ---- deck grid */
 .deck{display:grid;gap:14px;margin:16px 0 4px;grid-template-columns:1.05fr 1fr 1.25fr;
-  grid-template-areas:"pnl flow swarm" "liq liq swarm" "pm pm pm"}
-.pnl-card{grid-area:pnl}.flow-card{grid-area:flow}.swarm-card{grid-area:swarm}.liq-card{grid-area:liq}.pm-card{grid-area:pm}
+  grid-template-areas:"pnl flow swarm" "liq liq swarm" "pm pm pm" "carry carry carry"}
+.pnl-card{grid-area:pnl}.flow-card{grid-area:flow}.swarm-card{grid-area:swarm}.liq-card{grid-area:liq}.pm-card{grid-area:pm}.carry-card{grid-area:carry}
 .glass{background:var(--glass);border:1px solid var(--line);border-radius:16px;box-shadow:var(--glow);backdrop-filter:blur(14px) saturate(150%);position:relative;overflow:hidden}
 .glass::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,242,254,.55),transparent);opacity:.7}
 .card{padding:14px 16px 12px;min-width:0;display:flex;flex-direction:column;gap:10px}
@@ -436,8 +436,8 @@ canvas{display:block;width:100%}
 .pm-table td.trig{color:var(--gold);font-weight:700}
 .pm-table td.up{color:var(--emerald)}.pm-table td.down{color:var(--crimson)}
 
-@media(max-width:1200px){.deck{grid-template-columns:1fr 1fr;grid-template-areas:"pnl flow" "swarm swarm" "liq liq" "pm pm"}}
-@media(max-width:720px){.deck{grid-template-columns:1fr;grid-template-areas:"pnl" "flow" "swarm" "liq" "pm"}
+@media(max-width:1200px){.deck{grid-template-columns:1fr 1fr;grid-template-areas:"pnl flow" "swarm swarm" "liq liq" "pm pm" "carry carry"}}
+@media(max-width:720px){.deck{grid-template-columns:1fr;grid-template-areas:"pnl" "flow" "swarm" "liq" "pm" "carry"}
   .kv{grid-template-columns:repeat(2,minmax(0,1fr))}.stream li{grid-template-columns:56px 52px 44px 60px}.stream li .px{display:none}
   .mrow{grid-template-columns:52px minmax(0,1fr) 48px 36px}.mconf{display:none}.pnl-hero strong{font-size:32px}}
 @media(prefers-reduced-motion:reduce){.chip.blink,.mvote.veto,.stream li.new,.pnl-card.pulse-win,.pnl-card.pulse-loss{animation:none}}

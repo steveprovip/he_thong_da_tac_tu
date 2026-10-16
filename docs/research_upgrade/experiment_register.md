@@ -228,3 +228,6 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | BL2 | burst | 10-16 engine absorption rule on burst entries (side-matched, |CVD15| >= $50k SOL, move < 2.5 bps) | n 1514 | -7.19 vs -7.30 (cap + gate -6.50 [-6.95,-6.11]) | demo SHADOW only; no per-trade edge |
 | RT1 | router | 10-16 CHOP exit KER >= 0.40 for 180 s + BURST cooldown 300 s | synthetic only | 2-min chop/trend alternation: 1 switch vs ~115 CHOP exits | adopted (risk down, delays micro resumption) |
 | SA1 | stat-arb | 10-16 Kalman process-noise grid SOL/DOGE 1 m (DEV 07-08 / HO 09, 12 bps cost) | 0-25 trades | shipped q: 0 trades (z p99 0.67); HO -44.5..+29.8 bps, no robust cell | params unchanged; QUOTE snapshots added |
+| BL3 | burst | 10-16 (c) CHOP hibernation (KER120 < 0.25 -> no entry) on the demo policy; SOL 09-05/06/08 | n 839 vs 1417 | -6.38 [-6.97,-5.80] vs -6.50; CHOP entries -6.66 vs non-CHOP -6.28 (overlap) | demo SHADOW only; fewer trades, not better trades |
+| BL4 | burst | 10-16 (c) VPIN veto 60 s any side vs engine against-flow 30 s | n 1334 / 1401 | -6.43 / -6.43 vs -6.50 | demo SHADOW only (60 s any side) |
+| FC1 | carry | 10-16 (c) real BN/HL funding 06:54-09:18 UTC, RFC entry rule, 18 coins | 0 eligible | 0.00 U; hindsight best +0.43 bps/leg, all-coin sum -4.36 bps | telemetry only |

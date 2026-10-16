@@ -1,0 +1,195 @@
+{
+ "window_utc": [
+  "06:54",
+  "09:18"
+ ],
+ "rows": [
+  {
+   "coin": "BTC",
+   "short": "HL",
+   "spread_8h_bps": 0.457,
+   "basis_bps": -1.97,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.305
+  },
+  {
+   "coin": "ETH",
+   "short": "HL",
+   "spread_8h_bps": 0.253,
+   "basis_bps": -1.71,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.09
+  },
+  {
+   "coin": "SOL",
+   "short": "HL",
+   "spread_8h_bps": 0.493,
+   "basis_bps": -4.69,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.46
+  },
+  {
+   "coin": "XRP",
+   "short": "HL",
+   "spread_8h_bps": 0.0,
+   "basis_bps": -6.71,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.582
+  },
+  {
+   "coin": "DOGE",
+   "short": "HL",
+   "spread_8h_bps": 0.032,
+   "basis_bps": -1.46,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.43
+  },
+  {
+   "coin": "BNB",
+   "short": "HL",
+   "spread_8h_bps": 0.418,
+   "basis_bps": -13.81,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": 0.151
+  },
+  {
+   "coin": "ADA",
+   "short": "HL",
+   "spread_8h_bps": 0.176,
+   "basis_bps": 3.02,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.308
+  },
+  {
+   "coin": "SUI",
+   "short": "HL",
+   "spread_8h_bps": 0.144,
+   "basis_bps": -12.4,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.625
+  },
+  {
+   "coin": "LINK",
+   "short": "HL",
+   "spread_8h_bps": 0.0,
+   "basis_bps": -3.98,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": 0.428
+  },
+  {
+   "coin": "AVAX",
+   "short": "BN",
+   "spread_8h_bps": 0.662,
+   "basis_bps": 1.97,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": 0.321
+  },
+  {
+   "coin": "ENA",
+   "short": "HL",
+   "spread_8h_bps": 0.5,
+   "basis_bps": -18.39,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.125
+  },
+  {
+   "coin": "AAVE",
+   "short": "HL",
+   "spread_8h_bps": 1.356,
+   "basis_bps": 11.14,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": 0.231
+  },
+  {
+   "coin": "LTC",
+   "short": "HL",
+   "spread_8h_bps": 0.435,
+   "basis_bps": -6.38,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.625
+  },
+  {
+   "coin": "HYPE",
+   "short": "HL",
+   "spread_8h_bps": 0.5,
+   "basis_bps": -15.98,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.125
+  },
+  {
+   "coin": "WLD",
+   "short": "HL",
+   "spread_8h_bps": 0.0,
+   "basis_bps": -10.27,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.625
+  },
+  {
+   "coin": "TAO",
+   "short": "HL",
+   "spread_8h_bps": 0.5,
+   "basis_bps": -4.83,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.125
+  },
+  {
+   "coin": "ZEC",
+   "short": "HL",
+   "spread_8h_bps": 0.516,
+   "basis_bps": 11.43,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.442
+  },
+  {
+   "coin": "1000PEPE",
+   "short": "HL",
+   "spread_8h_bps": 0.0,
+   "basis_bps": 0.24,
+   "bn_prints": 1,
+   "hl_prints": 3,
+   "accrued_bps": -0.625
+  }
+ ],
+ "rfc_rule_selected": [],
+ "excluded": {
+  "BTC": "spread 0.46 < 2.5 bps/8h",
+  "ETH": "spread 0.25 < 2.5 bps/8h",
+  "SOL": "spread 0.49 < 2.5 bps/8h",
+  "XRP": "spread 0.00 < 2.5 bps/8h",
+  "DOGE": "spread 0.03 < 2.5 bps/8h",
+  "BNB": "spread 0.42 < 2.5 bps/8h",
+  "ADA": "spread 0.18 < 2.5 bps/8h",
+  "SUI": "spread 0.14 < 2.5 bps/8h",
+  "LINK": "spread 0.00 < 2.5 bps/8h",
+  "AVAX": "spread 0.66 < 2.5 bps/8h",
+  "ENA": "spread 0.50 < 2.5 bps/8h",
+  "AAVE": "spread 1.36 < 2.5 bps/8h",
+  "LTC": "spread 0.44 < 2.5 bps/8h",
+  "HYPE": "spread 0.50 < 2.5 bps/8h",
+  "WLD": "spread 0.00 < 2.5 bps/8h",
+  "TAO": "spread 0.50 < 2.5 bps/8h",
+  "ZEC": "spread 0.52 < 2.5 bps/8h",
+  "1000PEPE": "spread 0.00 < 2.5 bps/8h"
+ },
+ "notional_per_leg_usdt": 573.91,
+ "book_gross_accrued_usdt": 0.0,
+ "book_round_trip_cost_usdt": 0.0,
+ "all_coins_best_accrued_bps": 0.428
+}

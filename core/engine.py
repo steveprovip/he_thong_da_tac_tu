@@ -490,6 +490,11 @@ class Profile:
     burst_exit_cap_s: float = 240.0
     # 10-16: skip entries the engine's ABSORPTION TRAP (micro_signals.absorption) would block on the same side.
     burst_absorb_gate: bool = False
+    # 10-16 (b) RFC-Q4.3: no burst entry while the capital router is CHOP or the symbol's KER 120 s < 0.25 (unknown KER
+    # does not gate), nor within burst_vpin_veto_s of the engine's last VPIN > vpin_max mark (either side; 0 = off).
+    # Replay SOL 3 d: CHOP entries -6.66 vs others -6.28 bps/trade (CIs overlap) -> fewer trades, not a better trade.
+    burst_chop_gate: bool = False
+    burst_vpin_veto_s: float = 0.0
     burst_lat_s: float = 0.25               # shadow fills: an order is live / cancelled one latency later
     burst_notional_usdt: float = 75.0
     burst_budget_pct: float = 0.05
@@ -525,6 +530,10 @@ class Profile:
     stat_arb_pairs: tuple = (('SOLUSDT', 'DOGEUSDT'),)
     stat_arb_notional_usdt: float = 50.0
     stat_arb_every_s: float = 1.0
+    # 10-16 (b): cross-venue funding carry quotes (Binance premiumIndex + Hyperliquid metaAndAssetCtxs, public, read-only)
+    # -> core.funding_executor.ShadowCarryBook -> telemetry 'funding_carry'.  Virtual book only, never an order.
+    funding_shadow: bool = False
+    funding_every_s: float = 300.0
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -560,8 +569,10 @@ PROFILES = {
                     # 10-16: shadow only - maker-pegged time exit + absorption gate (replay -7.30 -> -6.50 bps/trade,
                     # still negative: no venue use)
                     burst_time_exit='maker', burst_absorb_gate=True,
+                    burst_chop_gate=True, burst_vpin_veto_s=60.0,   # 10-16 (b): shadow only, same caveat
                     intraday_lane='shadow',  # 10-10 b lane 3 runs virtual (replay: every variant negative)
-                    stat_arb_lane='shadow'),  # Stat-Arb cointegration Kalman lane (pairs trading)
+                    stat_arb_lane='shadow',  # Stat-Arb cointegration Kalman lane (pairs trading)
+                    funding_shadow=True),    # 10-16 (b) carry quotes in telemetry (virtual book)
 
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
@@ -3721,6 +3732,7 @@ class Runner:
                 snap['burst_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'burst', None) or {}).items()}
                 snap['intraday_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'intraday', None) or {}).items()}
                 snap['stat_arb_lane'] = self.stat_arb.view() if getattr(self, 'stat_arb', None) is not None else None
+                snap['funding_carry'] = getattr(self, 'carry_state', None)
                 snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
@@ -3801,6 +3813,10 @@ class Runner:
             self.stat_arb = StatArbLane(self.engines, ROOT / 'data', mode=sa_mode)
             self.tasks.append(asyncio.create_task(self.stat_arb_loop(self.stat_arb)))
 
+        self.carry_state = None
+        if any(getattr(x.p, 'funding_shadow', False) for x in self.engines.values()):
+            self.tasks.append(asyncio.create_task(self.funding_loop()))
+
         if any(getattr(x.p, 'autonomy', 'off') != 'off' for x in self.engines.values()):
             from core.autonomy import Autonomy
             self.autonomy = Autonomy(ROOT / 'data', ROOT / 'config', LEDGER)
@@ -3847,6 +3863,32 @@ class Runner:
             if once:
                 return lane.last
             await asyncio.sleep(getattr(lane, 'every_s', 1.0))
+
+    async def funding_loop(self, once: bool = False, fetch=None) -> Optional[dict]:
+        """10-16 (b): every funding_every_s refresh the shadow carry book from public funding quotes; errors are kept
+        in the snapshot (stale quotes are never shown as current), never fatal."""
+        from core import funding_executor as fx
+        book, fetch = None, fetch or fx.fetch_quotes
+        while True:
+            e0 = next(iter(self.engines.values()), None)
+            try:
+                quotes = await asyncio.to_thread(fetch)
+                if book is None:
+                    acct = (e0.account or {}) if e0 else {}
+                    wallet = float(acct.get('wallet') or (e0.p.mock_balance if e0 else 0.0) or 0.0)
+                    book = fx.ShadowCarryBook(wallet)
+                intents = book.step(quotes)
+                self.carry_state = fx.carry_view(book, quotes, intents, time.time())
+                for it in intents:
+                    if e0:
+                        e0.event(f'CARRY SHADOW {it["kind"]} {it["coin"]} short {it["short"]} / long {it["long"]} '
+                                 f'{it["spread_8h_bps"]:+.2f} bps/8h · {it["why"]}')
+            except Exception as exc:
+                self.carry_state = dict(self.carry_state or {}, error=f'{type(exc).__name__}: {exc}'[:160],
+                                        error_t=time.time())
+            if once:
+                return self.carry_state
+            await asyncio.sleep(e0.p.funding_every_s if e0 else 300.0)
 
     async def autonomy_loop(self, every_s: float = 5.0, threaded: bool = True) -> None:
         """10-09 (cc): every 5 s poll config/live_tunables.json (mtime), run the capital router; every 15 min or

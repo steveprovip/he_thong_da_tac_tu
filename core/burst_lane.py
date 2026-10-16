@@ -9,6 +9,8 @@ stop at -sl_bps (taker), hold_s time stop -> post-only at the touch for exit_mak
 SL trips or burst_exit_cap_s passes (TIME-CAP taker); burst_absorb_gate skips an entry on the side the engine's
 ABSORPTION TRAP blocks (micro_signals.absorption: |CVD 15 s| >= $500k x scale without a 0.025 % move).  Both change
 the policy away from the registered replay (tools/burst_scalper_replay.py CFG) - re-run it before any verdict.
+10-16 (b, RFC-Q4.3): burst_chop_gate hibernates entries while the capital router is CHOP or KER 120 s < 0.25;
+burst_vpin_veto_s vetoes entries after the engine's VPIN TOXIC mark (either side).  Open positions are unaffected.
 
 Modes (Profile.burst_lane): 'off' | 'shadow' | 'active'.
   shadow  virtual orders filled by the live prints with the replay's conservative rule (a print must trade THROUGH
@@ -33,6 +35,7 @@ from pathlib import Path
 from typing import Optional
 
 from core import micro_signals as msig
+from core.capital_router import CHOP_KER
 
 VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'burst_verdict.json'
 INF = float('inf')
@@ -115,6 +118,7 @@ class BurstLane:
         self.exit_phase, self.exit_since, self.exit_how = None, 0.0, 'TIME-TAKER'
         self.day, self.day_pnl, self.n = None, 0.0, 0
         self.last = {}
+        self.hibernating = False
         e.feed.print_hooks.append(self.on_print)
 
     # ------------------------------------------------------------------ guards
@@ -155,6 +159,20 @@ class BurstLane:
             return '4H close window reserved for the trend lane'
         if self.day_pnl <= -p.burst_daily_kill_usdt:
             return f'daily loss breaker {self.day_pnl:+.2f} U'
+        return None
+
+    def _gate(self, now: float) -> Optional[str]:
+        """10-16 (b): reason to hold off new entries (CHOP hibernation / VPIN veto), else None."""
+        e, p = self.e, self.e.p
+        if p.burst_chop_gate:
+            r = getattr(getattr(e, 'autonomy', None), 'router', None) or {}
+            k = (e.features or {}).get('ker')
+            if r.get('regime') == 'CHOP' or (k is not None and k < CHOP_KER):
+                return f'CHOP regime active (KER < {CHOP_KER}) -> entry hibernated'
+        if p.burst_vpin_veto_s > 0 and getattr(e, 'toxic_vpin', None) is not None:
+            age = now - (e.toxic_until - p.vpin_pause_s)                      # seconds since the last VPIN mark
+            if 0 <= age < p.burst_vpin_veto_s:
+                return f'VPIN TOXIC {e.toxic_vpin:.2f} {e.toxic_side or "?"} flow {age:.0f}s ago -> entry vetoed'
         return None
 
     # ------------------------------------------------------------------ broker
@@ -311,6 +329,14 @@ class BurstLane:
                 if want and p.burst_absorb_gate and ab['blocks'] == ('BUY' if want > 0 else 'SELL'):
                     self.last['skip'] = f'ABSORPTION TRAP {ab["blocks"]}: {ab["why"]}'
                     want = 0
+            gate = self._gate(now)
+            if gate:
+                self.last['skip'] = gate
+                want = 0
+            hib = bool(gate) and gate.startswith('CHOP')
+            if hib and not self.hibernating:
+                e.event(f'BURST OBSERVE {p.symbol}: {gate}')
+            self.hibernating = hib
             live = [o for o in self.orders if o['dead'] == INF]
             target = bid if want > 0 else ask
             for o in live:

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import urllib.request
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -154,6 +155,65 @@ def scenarios(capital_usdt: float, leverage: float = 1.0, utilization: float = 1
             'threshold_persistent_usdt_per_month': round(monthly_yield_usdt(capital_usdt, thr_bps, leverage,
                                                                             utilization), 2),
             'threshold_persistent_net_bps_per_month': round(thr_bps, 1)}
+
+
+# ------------------------------------------------------------------ 10-16 (b) live shadow telemetry
+CARRY_COINS = ('BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'ADA', 'SUI', 'LINK', 'AVAX', 'ENA', 'AAVE', 'LTC', 'HYPE',
+               'WLD', 'TAO', 'ZEC', '1000PEPE')            # = tools/funding_spread_replay.COINS
+HL_NAME = {'1000PEPE': 'kPEPE'}
+BN_PREMIUM_URL = 'https://fapi.binance.com/fapi/v1/premiumIndex'
+HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
+
+
+def _f(x) -> Optional[float]:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def quotes_from(bn_premium: list, hl_meta: list, coins: Iterable[str] = CARRY_COINS) -> List[FundingQuote]:
+    """Binance GET premiumIndex (all symbols) + Hyperliquid POST {"type": "metaAndAssetCtxs"} -> quotes.
+    A coin missing on a venue keeps None fields (evaluate() reports it UNKNOWN)."""
+    bn = {x.get('symbol'): x for x in (bn_premium or []) if isinstance(x, dict)}
+    hl = {}
+    if isinstance(hl_meta, list) and len(hl_meta) == 2:
+        for u, ctx in zip((hl_meta[0] or {}).get('universe', []), hl_meta[1] or []):
+            hl[u.get('name')] = ctx
+    out = []
+    for c in coins:
+        b, h = bn.get(f'{c}USDT') or {}, hl.get(HL_NAME.get(c, c)) or {}
+        out.append(FundingQuote(c, _f(b.get('lastFundingRate')), _f(h.get('funding')), _f(b.get('markPrice')),
+                                _f(h.get('markPx'))))
+    return out
+
+
+def fetch_quotes(coins: Iterable[str] = CARRY_COINS, timeout: float = 10.0, opener=None) -> List[FundingQuote]:
+    """Two public read-only calls (blocking: run it in a thread).  Raises on network / parse errors."""
+    op = opener or urllib.request.urlopen
+    with op(urllib.request.Request(BN_PREMIUM_URL, headers={'User-Agent': 'groktopus-shadow'}), timeout=timeout) as r:
+        bn = json.load(r)
+    req = urllib.request.Request(HL_INFO_URL, data=json.dumps({'type': 'metaAndAssetCtxs'}).encode(),
+                                 headers={'Content-Type': 'application/json', 'User-Agent': 'groktopus-shadow'})
+    with op(req, timeout=timeout) as r:
+        hl = json.load(r)
+    return quotes_from(bn, hl, coins)
+
+
+def carry_view(book: 'ShadowCarryBook', quotes: Iterable[FundingQuote], intents: List[dict], now: float,
+               top: int = 6) -> dict:
+    """Telemetry snapshot: best spreads (eligible or not) with APR = spread x 3 x 365, the virtual book, why-not."""
+    quotes = list(quotes)
+    cands = sorted((c for c in (evaluate(q)[0] for q in quotes) if c), key=lambda c: c.spread_8h_bps, reverse=True)
+    _, why = scan(quotes, book.min_spread, book.min_basis)
+    return {'t': now, 'mode': 'shadow', 'rule': {'min_spread_bps_8h': book.min_spread, 'min_basis_bps': book.min_basis},
+            'notional_per_leg': round(book.notional_per_leg, 2),
+            'top': [{'coin': c.coin, 'short': c.short_venue, 'long': c.long_venue,
+                     'spread_8h_bps': round(c.spread_8h_bps, 3), 'apr_pct': round(c.spread_8h_bps * 3 * 365 / 100, 2),
+                     'basis_bps': round(c.basis_skew_bps, 2), 'eligible': c.coin not in why}
+                    for c in cands[:top]],
+            'held': sorted(book.held), 'intents': intents[-6:],
+            'unknown': sorted(k for k, v in why.items() if v.startswith('UNKNOWN'))}
 
 
 def main(argv=None) -> None:

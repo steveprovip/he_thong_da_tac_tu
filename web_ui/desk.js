@@ -266,6 +266,20 @@
     }
     const qv = s.quant || {}, br = qv.brackets || {}, kl = qv.kelly || {};
     const chip = (id, text, cls) => { const n = $(id); if (!n) return; if (n.textContent !== text) n.textContent = text; n.className = 'chip ' + (cls || ''); };
+    // 10-16 (b) T6 funding carry (virtual book, public quotes every 5 min): APR is the instantaneous gross spread x 3 x 365
+    const cy = s.funding_carry;
+    if ($('carry-rows')) {
+      const age = cy && fin(cy.t) ? Math.max(0, Date.now() / 1000 - cy.t) : null;
+      chip('carry-state', !cy ? 'CHƯA CÓ' : cy.error && !(cy.top || []).length ? 'LỖI MẠNG'
+        : `${(cy.held || []).length} CẶP · ${age === null ? '—' : fx(age / 60, 0) + ' phút trước'}${cy.error ? ' · LỖI' : ''}`,
+        cy && (cy.held || []).length ? 'green' : cy && cy.error ? 'red' : '');
+      rows('carry-rows', ((cy && cy.top) || []).map(r => ({ cells: [[r.coin], [`${r.short}↓ ${r.long}↑`],
+        [fx(r.spread_8h_bps, 2), 'num'], [fx(r.apr_pct, 1) + '%', 'num'], [sg(r.basis_bps, 1), 'num'],
+        [r.eligible ? 'ĐỦ' : 'CHƯA', r.eligible ? 'buy' : '']] })), 6, cy && cy.error ? 'Lỗi: ' + cy.error : 'Chưa có báo giá');
+      txt('carry-note', cy && cy.rule ? `Vào khi spread ≥ ${fx(cy.rule.min_spread_bps_8h, 1)} bps/8h và basis ≥ +${fx(cy.rule.min_basis_bps, 1)} bps · `
+        + `${fx(cy.notional_per_leg, 0)} U/chân · phí khứ hồi ~15 bps · APR gộp tức thời, chưa trừ phí · chỉ SHADOW`
+        + ((cy.unknown || []).length ? ` · UNKNOWN: ${cy.unknown.join(', ')}` : '') : 'Funding carry BN ↔ HL · chỉ SHADOW');
+    }
     chip('ofi-chip', fin(qv.ofi) ? `OFI L10 ${sg(qv.ofi, 2)}` : `OFI — (${qv.ofi_n || 0} ev)`,
       fin(qv.ofi) && Math.abs(qv.ofi) >= 0.65 ? (qv.ofi > 0 ? 'green' : 'red') : '');
     chip('vpin-chip', fin(qv.vpin) ? `VPIN ${fx(qv.vpin, 2)} · ${qv.tox}${qv.toxic_left > 0 ? ` ${fx(qv.toxic_left, 0)}s` : ''}` : 'VPIN — (warmup)',
