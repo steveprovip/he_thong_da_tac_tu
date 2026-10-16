@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -529,6 +530,7 @@ class RegimeGate:
     vol_mult: float = 1.2
     vol_n: int = 20
     chop_exit: bool = False
+    hurst_n: int = 60                # 10-16 tri-state: variance-ratio Hurst window (log returns), mode 'hurst'
 
 
 def ker_series(closes, n: int = 10) -> List[Optional[float]]:
@@ -592,7 +594,9 @@ def regime_info(bars: dict, g: RegimeGate) -> dict:
             vr[i] = v[i] / base if base > 0 else None
             cvd[i] = 2.0 * tb[i] - v[i]
     share = [x / v[i] if x is not None and v[i] else None for i, x in enumerate(cvd)]
-    return {'regime': reg, 'ker': ker, 'adx': adx, 'vol_ratio': vr, 'cvd': cvd, 'cvd_share': share}
+    hu = hurst_series(c, g.hurst_n)
+    return {'regime': reg, 'ker': ker, 'adx': adx, 'vol_ratio': vr, 'cvd': cvd, 'cvd_share': share,
+            'hurst': hu, 'state3': [tri_state(h) for h in hu]}
 
 
 def gate_entry(info: dict, i: int, side: float, g: Optional[RegimeGate]) -> Tuple[bool, str]:
@@ -600,6 +604,12 @@ def gate_entry(info: dict, i: int, side: float, g: Optional[RegimeGate]) -> Tupl
     if g is None:
         return True, 'no gate'
     reg = info['regime'][i]
+    if g.mode == 'hurst':
+        st = (info.get('state3') or [None] * (i + 1))[i]
+        if st != TRENDING:
+            h = info['hurst'][i]
+            return False, f'H {h:.2f} {st}' if h is not None else 'H UNKNOWN (needs TRENDING)'
+        reg = f'TRENDING H {info["hurst"][i]:.2f}'
     if g.mode == 'trend_only' and reg != 'TREND':
         return False, f'regime {reg or "UNKNOWN"} (needs TREND)'
     if g.mode == 'no_chop' and reg in (None, 'CHOP'):
@@ -613,6 +623,84 @@ def gate_entry(info: dict, i: int, side: float, g: Optional[RegimeGate]) -> Tupl
         if side * cvd <= 0:
             return False, 'CVD against the breakout'
     return True, f'regime {reg} confirmed'
+
+
+# ------------------------------------------------------------------ 10-16 tri-state regime (variance-ratio Hurst)
+TRENDING, RANDOM_WALK, MEAN_REVERTING = 'TRENDING', 'RANDOM_WALK', 'MEAN_REVERTING'
+# lanes a state may route to; a lane still needs its own verdict / Profile switch (this map never activates one)
+STATE_LANES = {TRENDING: ('trend',), RANDOM_WALK: ('funding_carry',), MEAN_REVERTING: ('stat_arb', 'maker_spread')}
+
+
+def tri_state(h: Optional[float], lo: float = 0.45, hi: float = 0.55) -> Optional[str]:
+    """H > hi TRENDING | lo <= H <= hi RANDOM_WALK | H < lo MEAN_REVERTING | None (warm-up) -> UNKNOWN."""
+    if h is None:
+        return None
+    return TRENDING if h > hi else (MEAN_REVERTING if h < lo else RANDOM_WALK)
+
+
+class RollingHurst:
+    """O(1)-per-bar local Hurst exponent from the Lo-MacKinlay (1988) overlapping variance ratio of the last
+    `n` log returns at aggregation q:  VR(q) = sigma_c^2(q) / sigma_a^2,  H = 0.5 + ln VR / (2 ln q).
+    Random walk VR = 1 (H 0.5); positive return autocorrelation VR > 1 (H > 0.5); negative VR < 1.
+    Rolling sums only (deques of r and of q-sums) - no window re-scan.  Unlike KER this does not depend on the
+    path length of one window, but at n = 60 the estimate is noisy: sd(H) ~ 0.09 under a random walk
+    (asymptotic sd(VR) = sqrt(2(2q-1)(q-1) / (3 q n)) = 0.24 at q = 4), so a single bar's state is weak
+    evidence; tests/test_regime_hawkes_carry_2026_10_16.py measures the misclassification rate."""
+
+    def __init__(self, n: int = 60, q: int = 4) -> None:
+        self.n, self.q = max(int(n), 4 * int(q)), max(int(q), 2)
+        self.r: deque = deque()          # last n one-bar returns
+        self.rq: deque = deque()         # last n - q + 1 overlapping q-bar returns
+        self.last_q: deque = deque()     # last q one-bar returns (running q-sum)
+        self.s1 = self.s2 = self.sq1 = self.sq2 = self.run_q = 0.0
+        self.prev: Optional[float] = None
+
+    def update(self, close: float) -> Optional[float]:
+        if close is None or close <= 0:
+            return None
+        lp = math.log(close)
+        if self.prev is None:
+            self.prev = lp
+            return None
+        x, self.prev = lp - self.prev, lp
+        self.r.append(x)
+        self.s1 += x
+        self.s2 += x * x
+        if len(self.r) > self.n:
+            o = self.r.popleft()
+            self.s1 -= o
+            self.s2 -= o * o
+        self.last_q.append(x)
+        self.run_q += x
+        if len(self.last_q) > self.q:
+            self.run_q -= self.last_q.popleft()
+        if len(self.last_q) == self.q:
+            self.rq.append(self.run_q)
+            self.sq1 += self.run_q
+            self.sq2 += self.run_q * self.run_q
+            if len(self.rq) > self.n - self.q + 1:
+                o = self.rq.popleft()
+                self.sq1 -= o
+                self.sq2 -= o * o
+        return self.value()
+
+    def value(self) -> Optional[float]:
+        nq, q = len(self.r), self.q
+        if nq < self.n or len(self.rq) != nq - q + 1:
+            return None
+        mu = self.s1 / nq
+        var_a = (self.s2 - nq * mu * mu) / (nq - 1)
+        m = q * (nq - q + 1) * (1.0 - q / nq)
+        var_c = (self.sq2 - 2 * q * mu * self.sq1 + len(self.rq) * (q * mu) ** 2) / m
+        if var_a <= 1e-18 or var_c <= 1e-18:
+            return None
+        return 0.5 + math.log(var_c / var_a) / (2.0 * math.log(q))
+
+
+def hurst_series(closes: Sequence[float], n: int = 60, q: int = 4) -> List[Optional[float]]:
+    """Per bar the RollingHurst value after that close (None during the warm-up of n + 1 closes)."""
+    rh = RollingHurst(n, q)
+    return [rh.update(c) for c in closes]
 
 
 @dataclass(frozen=True)

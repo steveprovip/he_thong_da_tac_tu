@@ -135,3 +135,8 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - Answer to "switch exchange?": not for the current strategies. Zero fees do not create an edge (report_exchange_pivot_and_zero_fee_2026-10-10.md); MEXC API orders cost 6/8 bps (more than Binance).
 - Before any venue work: verify the account's real fee via the venue API, run tools/venue_probe.py on the trading machine, and require a signal with HOLDOUT gross >= 3 bps and CI > 0 on Binance first.
 - After restart, lane 3 shadow also records P15_rr25atr. Revert: intraday_variants=('R1_SESSION','P15_tp50').
+
+## Handoff — 2026-10-16
+- After restart the demo stat-arb SHADOW lane uses the dynamic Z band (static 2.10 for the first 4 h); trend telemetry shows hurst / state3. No trading behaviour changes otherwise.
+- To evaluate before any use: replay RegimeGate(mode='hurst') with tools/trend_regime_replay.py on the user's machine (data needed); replay the Hawkes FADE on recorded aggTrades; replay the RFC funding rule (2.5 / +1.5 / 4.0) in tools/funding_spread_replay.py beside the pre-registered H28 k2 rule.
+- Revert: StatArbLane(z_alpha=None); RegimeGate 'hurst' is opt-in only. Live carry stays blocked by core/funding_carry.two_leg_capital_gate.

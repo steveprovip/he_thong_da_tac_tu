@@ -264,6 +264,16 @@
       ],
       "status": "done",
       "evidence": "P15_rr25atr 52-symbol HOLDOUT n 11673 net -6.1 [-10.9,-1.2] -> SHADOW; funding XV BN<->HL H28 k2 HOLDOUT n 153 +14.6 bps [+9.2,+19.9] (~1.9 %/yr notional), SP negative; pytest 1552 passed"
+    },
+    {
+      "id": "regime3-hawkes-legs-carry-20261016",
+      "name": "Tri-state Hurst regime gate, Hawkes VPIN exhaustion fade, dynamic Z band + leader/follower legs, shadow funding carry",
+      "description": "core/trend_lane.py (RollingHurst, hurst_series, tri_state, STATE_LANES, RegimeGate mode 'hurst'), core/trend_executor.py (hurst/state3 telemetry), core/micro_signals.py (AsymmetricToxicityGuard.on_toxicity/fade_quote, ToxicityState, FadeQuote), core/stat_arb_lane.py (DynamicZBand, LegQuote, LeaderFollowerExecutor, StatArbLane z_alpha), core/funding_executor.py (scan, ShadowCarryBook, scenarios), tests/test_regime_hawkes_carry_2026_10_16.py (18)",
+      "dependencies": [
+        "universe-replay-funding-phase0-20261010f"
+      ],
+      "status": "done",
+      "evidence": "code tests only; no market data reachable from the session (exchange hosts blocked) -> no replay. Random walk: Hurst(60) state RANDOM_WALK on 40 % of bars only; KER10 < 0.25 on 45 %. Funding on 4919 U: replay-based ~3.9 U/month [2.5, 5.3] at L1. pytest 1548 passed, 2 failed (pre-existing env)"
     }
   ]
 }

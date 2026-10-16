@@ -128,6 +128,7 @@ class TrendExecutor:
             out[s] = {'w': tw[s][-1], 'side': side, 'bar_t': b['t'][-1], 'close': b['c'][-1],
                       'atr': atr, 'comp': comp[s][-1], 'regime': info['regime'][-1], 'ker': info['ker'][-1],
                       'adx': info['adx'][-1], 'vol_ratio': info['vol_ratio'][-1], 'cvd': info['cvd'][-1],
+                      'hurst': info['hurst'][-1], 'state3': info['state3'][-1],
                       'gate_ok': ok, 'gate_why': why, 'conv': conv.get(s, False),
                       'dmid': (max(b['h'][-dn:]) + min(b['l'][-dn:])) / 2 if len(b['c']) >= dn else None}
         lead = tl.BtcAlign().leader
@@ -327,7 +328,8 @@ class TrendExecutor:
                 continue
             t = tg[sym]
             self.last[sym] = {k: t.get(k) for k in ('w', 'side', 'bar_t', 'regime', 'ker', 'adx', 'vol_ratio',
-                                                    'gate_ok', 'gate_why', 'conv', 'btc', 'align_ok', 'align_why')}
+                                                    'hurst', 'state3', 'gate_ok', 'gate_why', 'conv', 'btc',
+                                                    'align_ok', 'align_why')}
             st = self.state.get(sym)
             if st:                                            # the exchange stop may have closed it meanwhile
                 view = await e.venue.position_view(sym)

@@ -766,10 +766,43 @@ class AsymmetricQuotePlan:
     hazard_ask: float
 
 
+@dataclass(frozen=True)
+class ToxicityState:
+    phase: str                 # 'CLEAN' | 'VETO' (cancel every maker quote) | 'FADE' (post-sweep rebound quote allowed)
+    vpin: float
+    slope_per_min: float       # dVPIN / dt, VPIN units per minute
+    tau_half_s: float          # ln 2 / beta, beta = decay rate of the VPIN excess after spikes
+    intensity: float           # Hawkes lambda(t) of toxic prints
+    since_spike_s: Optional[float]
+    sweep_side: Optional[str]  # aggressor side of the last toxic sweep
+    cancel_all: bool
+    fade_side: Optional[str]   # side of the fade quote ('SELL' after a BUY sweep), only in FADE
+
+
+@dataclass(frozen=True)
+class FadeQuote:
+    side: str
+    price: float
+    time_in_force: str = 'GTX'  # post-only: rejected instead of crossing the book
+    ttl_s: float = 0.0
+
+
 class AsymmetricToxicityGuard:
     """
     HFT Microstructure Guard: Volume-Synchronized VPIN + Multi-Level OFI
     Thiết kế theo chuẩn Ponytail YAGNI: O(1) per update, zero external libraries.
+
+    10-16 Hawkes exhaustion (on_toxicity, fade_quote) - a signal, never an order; unvalidated by replay:
+      intensity  lambda(t) = mu + sum alpha exp(-beta (t - t_i)); events t_i = VPIN buckets completed while
+                 VPIN > veto_vpin (or the crossing itself when VPIN comes from outside), kept recursively.
+      half-life  beta = EWMA of the log-decay rate of the VPIN excess (VPIN - vpin_safe_threshold) between
+                 successive VPIN changes after a spike; tau_half = ln 2 / beta, clamped to [tau_min_s, tau_max_s].
+      slope      dVPIN/dt over the last slope_window_s, VPIN units per minute.
+      phase 1    VPIN > veto_vpin -> VETO: cancel_all (and compute_quote_plan cancels both sides).
+      phase 2    since the last toxic print >= fade_k_half x tau_half, dVPIN/dt < fade_slope_per_min and
+                 lambda - mu <= exhaust_frac x alpha (dlambda/dt -> 0-) -> FADE for one tau_half: a post-only
+                 quote on the opposite book edge (SELL at the best ask after a BUY sweep, BUY at the best bid).
+      release    past fade_k_half x tau_half without those conditions and VPIN < vpin_toxic_threshold -> CLEAN.
     """
 
     def __init__(
@@ -781,6 +814,16 @@ class AsymmetricToxicityGuard:
         base_half_spread_bps: float = 2.0,
         vpin_safe_threshold: float = 0.45,
         vpin_toxic_threshold: float = 0.75,
+        veto_vpin: float = 0.80,
+        fade_k_half: float = 2.5,
+        fade_slope_per_min: float = -0.15,
+        tau_half_prior_s: float = 30.0,
+        tau_min_s: float = 2.0,
+        tau_max_s: float = 600.0,
+        hawkes_mu: float = 0.0,
+        hawkes_alpha: float = 1.0,
+        exhaust_frac: float = 0.25,
+        slope_window_s: float = 60.0,
     ) -> None:
         self.bucket_volume = max(float(bucket_volume), 1e-6)
         self.num_buckets = max(int(num_buckets), 5)
@@ -793,6 +836,30 @@ class AsymmetricToxicityGuard:
         self._current_buy_vol: float = 0.0
         self._current_sell_vol: float = 0.0
         self._imbalance_buckets: Deque[float] = deque(maxlen=self.num_buckets)
+        self._signed_buckets: Deque[float] = deque(maxlen=self.num_buckets)   # (buy - sell) / bucket
+        self._signed_sum: float = 0.0
+
+        # 10-16 Hawkes exhaustion state
+        self.veto_vpin = float(veto_vpin)
+        self.fade_k_half = float(fade_k_half)
+        self.fade_slope_per_min = float(fade_slope_per_min)
+        self.tau_min_s, self.tau_max_s = float(tau_min_s), float(tau_max_s)
+        self.hawkes_mu, self.hawkes_alpha = float(hawkes_mu), float(hawkes_alpha)
+        self.exhaust_frac = float(exhaust_frac)
+        self._beta: float = math.log(2.0) / min(max(float(tau_half_prior_s), self.tau_min_s), self.tau_max_s)
+        self._lam: float = self.hawkes_mu
+        self._phase: str = 'CLEAN'
+        self._t_prev: Optional[float] = None
+        self._v_prev: Optional[float] = None
+        self._spike_t: Optional[float] = None
+        self._sweep_side: Optional[str] = None
+        self._fade_until: float = 0.0
+        self.slope_window_s: float = float(slope_window_s)
+        self._vhist: Deque[Tuple[float, float]] = deque()
+        self._ex_t: float = 0.0
+        self._ex_v: Optional[float] = None
+        self._n_buckets: int = 0
+        self._seen_b: int = 0
 
         # Trạng thái Multi-Level OFI
         self._prev_bids: Sequence[Tuple[float, float]] = ()
@@ -821,6 +888,12 @@ class AsymmetricToxicityGuard:
             if (self._current_buy_vol + self._current_sell_vol) >= self.bucket_volume * 0.999999:
                 imbalance = abs(self._current_buy_vol - self._current_sell_vol) / self.bucket_volume
                 self._imbalance_buckets.append(min(max(imbalance, 0.0), 1.0))
+                if len(self._signed_buckets) == self._signed_buckets.maxlen:
+                    self._signed_sum -= self._signed_buckets[0]
+                signed = (self._current_buy_vol - self._current_sell_vol) / self.bucket_volume
+                self._signed_buckets.append(signed)
+                self._signed_sum += signed
+                self._n_buckets += 1
                 self._current_buy_vol = 0.0
                 self._current_sell_vol = 0.0
         return self.current_vpin
@@ -830,6 +903,67 @@ class AsymmetricToxicityGuard:
         if not self._imbalance_buckets:
             return 0.0
         return sum(self._imbalance_buckets) / len(self._imbalance_buckets)
+
+    @property
+    def tau_half_s(self) -> float:
+        return math.log(2.0) / self._beta
+
+    def on_toxicity(self, now: float, vpin: Optional[float] = None) -> ToxicityState:
+        """Advance the VETO / FADE machine to `now` (seconds); `vpin` defaults to current_vpin.  Amortised O(1)."""
+        now = float(now)
+        v = self.current_vpin if vpin is None else float(vpin)
+        if self._t_prev is not None and now > self._t_prev:
+            self._lam = self.hawkes_mu + (self._lam - self.hawkes_mu) * math.exp(-self._beta * (now - self._t_prev))
+        # half-life: log-decay rate of the VPIN excess between two successive VPIN changes after a spike
+        if self._ex_v is not None and v != self._ex_v and now > self._ex_t:
+            e0, e1 = self._ex_v - self.vpin_safe_threshold, v - self.vpin_safe_threshold
+            if self._spike_t is not None and e0 > 0 and 0 < e1 < e0:
+                b_lo, b_hi = math.log(2.0) / self.tau_max_s, math.log(2.0) / self.tau_min_s
+                inst = math.log(e0 / e1) / (now - self._ex_t)
+                self._beta = min(max(0.8 * self._beta + 0.2 * inst, b_lo), b_hi)
+        if self._ex_v is None or v != self._ex_v:
+            self._ex_t, self._ex_v = now, v
+        # dVPIN/dt over the last slope_window_s (VPIN units per minute)
+        self._vhist.append((now, v))
+        while len(self._vhist) > 1 and now - self._vhist[1][0] >= self.slope_window_s:
+            self._vhist.popleft()
+        t0, v0 = self._vhist[0]
+        slope = (v - v0) / ((now - t0) / 60.0) if now - t0 > 0 else 0.0
+        # Hawkes events: VPIN buckets completed while toxic (volume clock), or the crossing itself
+        new_b, self._seen_b = self._n_buckets - self._seen_b, self._n_buckets
+        was_toxic = self._v_prev is not None and self._v_prev > self.veto_vpin
+        crossed = v > self.veto_vpin and not was_toxic
+        new_b = new_b if was_toxic else 0                     # buckets closed before the spike are not events
+        self._t_prev, self._v_prev = now, v
+
+        if v > self.veto_vpin:
+            self._lam += self.hawkes_alpha * max(new_b, 1 if crossed else 0)
+            self._spike_t = now
+            self._sweep_side = 'BUY' if self._signed_sum >= 0 else 'SELL'
+            self._phase = 'VETO'
+        elif self._phase == 'VETO' and self._spike_t is not None:
+            if now - self._spike_t >= self.fade_k_half * self.tau_half_s:
+                exhausted = self._lam - self.hawkes_mu <= self.exhaust_frac * self.hawkes_alpha
+                if slope < self.fade_slope_per_min and exhausted:
+                    self._phase = 'FADE'
+                    self._fade_until = now + self.tau_half_s
+                elif v < self.vpin_toxic_threshold:           # settled without a rebound signal: veto lifts
+                    self._phase = 'CLEAN'
+        elif self._phase == 'FADE' and now >= self._fade_until:
+            self._phase = 'CLEAN'
+
+        fade = {'BUY': 'SELL', 'SELL': 'BUY'}.get(self._sweep_side) if self._phase == 'FADE' else None
+        return ToxicityState(phase=self._phase, vpin=v, slope_per_min=slope, tau_half_s=self.tau_half_s,
+                             intensity=self._lam, since_spike_s=None if self._spike_t is None else now - self._spike_t,
+                             sweep_side=self._sweep_side, cancel_all=self._phase == 'VETO', fade_side=fade)
+
+    def fade_quote(self, bids: Sequence[Tuple[float, float]], asks: Sequence[Tuple[float, float]],
+                   state: ToxicityState) -> Optional[FadeQuote]:
+        """Post-only quote resting on the opposite book edge of the exhausted sweep; None outside FADE."""
+        if state.phase != 'FADE' or not state.fade_side or not bids or not asks:
+            return None
+        px = float(asks[0][0]) if state.fade_side == 'SELL' else float(bids[0][0])
+        return FadeQuote(side=state.fade_side, price=px, ttl_s=state.tau_half_s)
 
     def on_depth(
         self,
@@ -947,13 +1081,16 @@ class AsymmetricToxicityGuard:
             + 0.15 * max(0.0, +float(btc_lead_return_bps) / 8.0)
         )
 
+        veto = self._phase == 'VETO'
         cancel_bid = (
-            hazard_bid >= 1.0
+            veto
+            or hazard_bid >= 1.0
             or (vpin >= self.vpin_toxic_threshold and z_ofi <= -1.5)
             or (depl_bid >= 0.70 and z_ofi <= -1.0)
         )
         cancel_ask = (
-            hazard_ask >= 1.0
+            veto
+            or hazard_ask >= 1.0
             or (vpin >= self.vpin_toxic_threshold and z_ofi >= 1.5)
             or (depl_ask >= 0.70 and z_ofi >= 1.0)
         )
