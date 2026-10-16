@@ -445,6 +445,8 @@ class Profile:
     # 10-09 (ee) regime gate (core/trend_lane.RegimeGate): 'off' | 'trend_only' (KER10 > 0.40 and ADX14 > 25) |
     # 'no_chop' (not KER < 0.25 and ADX < 20); trend_confirm = volume > 1.2 x SMA20 and bar CVD with the entry;
     # trend_chop_exit = flat on a CHOP close.  Replay tools/trend_regime_replay.py (DEV-selected G6).
+    # 10-16: 'hurst' = entries only in the TRENDING tri-state (variance-ratio Hurst(60) > 0.55, trend_lane.tri_state);
+    # unvalidated by replay -> not selected by any Profile.  Telemetry trend_lane targets carry hurst / state3.
     trend_regime: str = 'off'
     trend_confirm: bool = False
     trend_chop_exit: bool = False

@@ -250,6 +250,155 @@ class OnlineKalmanPairTracker:
         )
 
 
+class DynamicZBand:
+    """10-16 volatility-scaled entry band (unvalidated by replay):
+        Z_entry(t) = clamp(lo, base x (sigma_fast / sigma_slow)^alpha, hi)
+    sigma = time-weighted EWMA of the squared Kalman innovation with time constants fast_s (15 m) and slow_s (4 h),
+    weight 1 - exp(-dt / tau) per sample, O(1).  Until slow_s of history the band is `base` (static 2.10):
+    a 4 h sigma from minutes of data would be noise."""
+
+    def __init__(self, base: float = 2.10, lo: float = 1.45, hi: float = 2.60, alpha: float = 0.5,
+                 fast_s: float = 900.0, slow_s: float = 14_400.0) -> None:
+        self.base, self.lo, self.hi, self.alpha = float(base), float(lo), float(hi), float(alpha)
+        self.fast_s, self.slow_s = float(fast_s), float(slow_s)
+        self.var_fast: Optional[float] = None
+        self.var_slow: Optional[float] = None
+        self.t0: Optional[float] = None
+        self.t_prev: Optional[float] = None
+
+    def update(self, now: float, x: float) -> float:
+        now, x2 = float(now), float(x) * float(x)
+        if self.t_prev is None:
+            self.t0 = self.t_prev = now
+            self.var_fast = self.var_slow = x2
+            return self.z_entry(now)
+        dt = max(now - self.t_prev, 0.0)
+        self.t_prev = now
+        wf, ws = 1.0 - math.exp(-dt / self.fast_s), 1.0 - math.exp(-dt / self.slow_s)
+        self.var_fast += wf * (x2 - self.var_fast)
+        self.var_slow += ws * (x2 - self.var_slow)
+        return self.z_entry(now)
+
+    def z_entry(self, now: Optional[float] = None) -> float:
+        if self.t0 is None or now is None or now - self.t0 < self.slow_s or not self.var_slow or self.var_slow <= 0:
+            return self.base
+        ratio = math.sqrt(max(self.var_fast, 0.0) / self.var_slow)
+        return max(self.lo, min(self.base * ratio ** self.alpha, self.hi))
+
+
+@dataclass(frozen=True)
+class LegQuote:
+    symbol: str
+    bid: float
+    ask: float
+    depth_usd: float               # resting size near the touch (UNKNOWN -> pass 0: the leg is treated as thinnest)
+
+    @property
+    def spread_bps(self) -> float:
+        mid = 0.5 * (self.bid + self.ask)
+        return (self.ask - self.bid) / mid * 1e4 if mid > 0 else math.inf
+
+
+class LeaderFollowerExecutor:
+    """10-16 two-leg entry as order INTENTS (dicts in Binance USD-M fields); nothing is sent from here.
+      leader    the leg with the wider spread (tie: less depth) rests as LIMIT GTX (post-only) on its own touch
+      follower  every leader fill -> LIMIT IOC for the beta-scaled quantity, priced through the far touch by at
+                most ioc_slip_bps, due within hedge_deadline_ms of the fill
+      naked     a fill not hedged by its deadline, or an IOC that fills short, -> reduce-only MARKET flattening
+                the unhedged leader quantity (risk exit, not a directional entry; the spread is abandoned); an
+                IOC that still fills after that is flattened the same way
+      ttl       an unfilled leader quote is cancelled after quote_ttl_s
+    Latency is the caller's: the intent carries the deadline; check(now) enforces it."""
+
+    def __init__(self, hedge_deadline_ms: float = 150.0, quote_ttl_s: float = 5.0, ioc_slip_bps: float = 3.0) -> None:
+        self.hedge_deadline_ms = float(hedge_deadline_ms)
+        self.quote_ttl_s = float(quote_ttl_s)
+        self.ioc_slip_bps = float(ioc_slip_bps)
+        self.state = 'IDLE'
+        self.lead: Optional[dict] = None
+        self.follow: Optional[dict] = None
+        self.lead_filled = self.hedged = self.hedge_sent = 0.0
+        self.t_quote = 0.0
+        self.pending: list = []                 # [(fill_t, follower_qty)] awaiting an IOC result
+        self.latency_ms: list = []
+
+    @staticmethod
+    def pick_leader(qa: LegQuote, qb: LegQuote) -> str:
+        if qa.spread_bps != qb.spread_bps:
+            return 'A' if qa.spread_bps > qb.spread_bps else 'B'
+        return 'A' if qa.depth_usd <= qb.depth_usd else 'B'
+
+    def plan(self, side: int, qty_a: float, qty_b: float, qa: LegQuote, qb: LegQuote, now: float) -> dict:
+        """side +1 = long spread (BUY A, SELL B), -1 = short spread.  -> leader GTX intent."""
+        if self.state != 'IDLE':
+            raise RuntimeError(f'executor busy ({self.state})')
+        if not (qty_a > 0 and qty_b > 0):
+            raise ValueError('both leg quantities must be > 0')
+        legs = {'A': (qa, 'BUY' if side > 0 else 'SELL', float(qty_a)),
+                'B': (qb, 'SELL' if side > 0 else 'BUY', float(qty_b))}
+        k = self.pick_leader(qa, qb)
+        (lq, ls, lqty), (fq, fs, fqty) = legs[k], legs['B' if k == 'A' else 'A']
+        self.lead = {'symbol': lq.symbol, 'side': ls, 'qty': lqty}
+        self.follow = {'symbol': fq.symbol, 'side': fs, 'qty': fqty, 'quote': fq}
+        self.lead_filled = self.hedged = self.hedge_sent = 0.0
+        self.pending, self.state, self.t_quote = [], 'QUOTING', float(now)
+        return {'symbol': lq.symbol, 'side': ls, 'type': 'LIMIT', 'timeInForce': 'GTX', 'quantity': lqty,
+                'price': lq.bid if ls == 'BUY' else lq.ask, 'leg': 'leader'}
+
+    def on_leader_fill(self, qty: float, now: float, follower_quote: Optional[LegQuote] = None) -> dict:
+        """A (partial) leader fill -> follower IOC intent for its beta-scaled share."""
+        if self.state not in ('QUOTING', 'HEDGING'):
+            raise RuntimeError(f'fill in state {self.state}')
+        q = follower_quote or self.follow['quote']
+        self.follow['quote'] = q
+        add = min(float(qty), self.lead['qty'] - self.lead_filled)
+        self.lead_filled += add
+        f_qty = add * self.follow['qty'] / self.lead['qty']
+        self.hedge_sent += f_qty
+        self.pending.append((float(now), f_qty))
+        self.state = 'HEDGING'
+        slip = self.ioc_slip_bps * 1e-4
+        px = q.ask * (1 + slip) if self.follow['side'] == 'BUY' else q.bid * (1 - slip)
+        return {'symbol': q.symbol, 'side': self.follow['side'], 'type': 'LIMIT', 'timeInForce': 'IOC',
+                'quantity': f_qty, 'price': px, 'leg': 'follower',
+                'deadline_ms': self.hedge_deadline_ms}
+
+    def on_hedge_result(self, filled_qty: float, now: float) -> Optional[dict]:
+        """Result of the oldest pending IOC.  A short fill -> flatten intent for the unhedged leader quantity."""
+        if not self.pending:
+            return None
+        t_fill, want = self.pending.pop(0)
+        self.latency_ms.append((float(now) - t_fill) * 1e3)
+        got = min(max(float(filled_qty), 0.0), want)
+        if self.state == 'NAKED':                   # late IOC fill after the leader was flattened -> undo it
+            return None if got <= 0 else {
+                'symbol': self.follow['symbol'], 'side': 'SELL' if self.follow['side'] == 'BUY' else 'BUY',
+                'type': 'MARKET', 'reduceOnly': True, 'quantity': got, 'leg': 'flatten', 'reason': 'LATE_HEDGE'}
+        self.hedged += got
+        if got < want * (1 - 1e-9):
+            return self._flatten('IOC_SHORT')
+        if not self.pending and self.lead_filled >= self.lead['qty'] * (1 - 1e-9):
+            self.state = 'DONE'
+        return None
+
+    def check(self, now: float) -> Optional[dict]:
+        """Enforce the hedge deadline and the quote TTL.  -> flatten / cancel intent or None."""
+        late = self.pending and (float(now) - self.pending[0][0]) * 1e3 > self.hedge_deadline_ms
+        if self.state == 'HEDGING' and late:
+            return self._flatten('HEDGE_DEADLINE')
+        if self.state == 'QUOTING' and float(now) - self.t_quote > self.quote_ttl_s:
+            self.state = 'CANCELLED'
+            return {'symbol': self.lead['symbol'], 'action': 'CANCEL', 'leg': 'leader', 'reason': 'QUOTE_TTL'}
+        return None
+
+    def _flatten(self, reason: str) -> dict:
+        unhedged_lead = self.lead_filled - self.hedged * self.lead['qty'] / self.follow['qty']
+        self.state = 'NAKED'
+        return {'symbol': self.lead['symbol'], 'side': 'SELL' if self.lead['side'] == 'BUY' else 'BUY',
+                'type': 'MARKET', 'reduceOnly': True, 'quantity': max(unhedged_lead, 0.0), 'leg': 'flatten',
+                'reason': reason, 'cancel_leader_rest': True}
+
+
 class StatArbLane:
     """
     Stat-Arb Cointegration Lane:
@@ -272,8 +421,10 @@ class StatArbLane:
         z_exit: float = 0.25,
         z_stop: float = 3.60,
         every_s: float = 1.0,
+        z_alpha: Optional[float] = 0.5,
     ) -> None:
         self.engines = engines
+        self.z_alpha = z_alpha              # None = static z_entry; else DynamicZBand around z_entry
         self.data_dir = Path(data_dir)
         self.mode = mode
         self.notional_usdt = float(notional_usdt)
@@ -297,6 +448,7 @@ class StatArbLane:
                 self.pairs = []
 
         self.trackers: dict[str, OnlineKalmanPairTracker] = {}
+        self.bands: dict[str, DynamicZBand] = {}
         self.positions: dict[str, dict] = {}
         self.last: dict[str, dict] = {}
         self.day_pnl: float = 0.0
@@ -308,6 +460,8 @@ class StatArbLane:
                 asset_a=a, asset_b=b,
                 delta_alpha=1e-5, delta_beta=1e-4, obs_var_init=1e-3, ou_window=120
             )
+            if self.z_alpha is not None:
+                self.bands[pair_id] = DynamicZBand(base=self.z_entry, alpha=self.z_alpha)
 
     async def step(self, now: Optional[float] = None) -> dict:
         now = time.time() if now is None else now
@@ -326,13 +480,17 @@ class StatArbLane:
                 continue
 
             tracker = self.trackers[pair_id]
+            band = self.bands.get(pair_id)
+            z_entry = band.z_entry(now) if band else self.z_entry
             sig = tracker.evaluate_signal(
                 px_a, px_b,
                 round_trip_cost_bps=self.round_trip_cost_bps,
-                z_entry=self.z_entry,
+                z_entry=z_entry,
                 z_exit=self.z_exit,
                 z_stop=self.z_stop,
             )
+            if band and tracker._spread_history:
+                band.update(now, tracker._spread_history[-1])
 
             pos = self.positions.get(pair_id)
 
@@ -362,6 +520,7 @@ class StatArbLane:
                     'px_b': px_b,
                     'beta': sig.hedge_ratio,
                     'z_score': sig.z_score,
+                    'z_entry_used': z_entry,
                     'half_life': sig.half_life_bars,
                     'mode': self.mode,
                 })
@@ -404,6 +563,7 @@ class StatArbLane:
                 'pair_id': pair_id,
                 'action': sig.action,
                 'z_score': round(sig.z_score, 2),
+                'z_entry': round(z_entry, 2),
                 'beta': round(sig.hedge_ratio, 3),
                 'spread_std_bps': round(sig.spread_std_bps, 1),
                 'half_life': round(sig.half_life_bars, 1),
