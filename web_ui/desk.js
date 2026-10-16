@@ -278,6 +278,8 @@
         [r.eligible ? 'ĐỦ' : 'CHƯA', r.eligible ? 'buy' : '']] })), 6, cy && cy.error ? 'Lỗi: ' + cy.error : 'Chưa có báo giá');
       txt('carry-note', cy && cy.rule ? `Vào khi spread ≥ ${fx(cy.rule.min_spread_bps_8h, 1)} bps/8h và basis ≥ +${fx(cy.rule.min_basis_bps, 1)} bps · `
         + `${fx(cy.notional_per_leg, 0)} U/chân · phí khứ hồi ~15 bps · APR gộp tức thời, chưa trừ phí · chỉ SHADOW`
+        + (fin(cy.net_delta_usdt) ? ` · Δ ròng ${fx(cy.net_delta_usdt, 2)} U (${cy.legs || 0} chân)` : '')
+        + (fin(cy.est_net_usdt) ? ` · funding ước tính ${sg(cy.est_accrued_usdt, 4)} − phí ${fx(cy.cost_usdt, 4)} = ${sg(cy.est_net_usdt, 4)} U` : '')
         + ((cy.unknown || []).length ? ` · UNKNOWN: ${cy.unknown.join(', ')}` : '') : 'Funding carry BN ↔ HL · chỉ SHADOW');
     }
     chip('ofi-chip', fin(qv.ofi) ? `OFI L10 ${sg(qv.ofi, 2)}` : `OFI — (${qv.ofi_n || 0} ev)`,

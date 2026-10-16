@@ -92,18 +92,19 @@ def summ(name, tr):
           f'{np.percentile(bs, 97.5):6.2f}] win={np.mean(net > 0):.2f} sum={net.sum():8.0f}')
 
 
-D = [prep(p) for p in DAYS]
-base = sum((run(d) for d in D), [])
-summ('base (demo policy)', base)
-kn = [x for x in base if not np.isnan(x['ker'])]
-summ('  entry KER < 0.25 (CHOP)', [x for x in kn if x['ker'] < 0.25])
-summ('  entry KER >= 0.25', [x for x in kn if x['ker'] >= 0.25])
-summ('  entry KER >= 0.40', [x for x in kn if x['ker'] >= 0.40])
-summ('  entry within 60 s of VPIN > 0.8', [x for x in base if x['tox_age'] <= 60])
-summ('  entry not within 60 s of VPIN > 0.8', [x for x in base if x['tox_age'] > 60])
-summ('gate CHOP (KER < 0.25 -> no entry)', sum((run(d, np.nan_to_num(d['ker'], nan=0.0) < 0.25) for d in D), []))
-summ('gate VPIN any side 60 s', sum((run(d, (np.arange(len(d['ker'])) - d['last_tox']) <= 60) for d in D), []))
-summ('gate VPIN against flow 30 s (engine)',
-     sum((run(d, ((np.arange(len(d['ker'])) - d['last_tox']) <= 30) & (d['want'] != d['last_tox_side'])) for d in D),
-         []))
-print('VPIN > 0.8 bucket-closes per day:', [int(np.sum(np.diff(d['last_tox']) > 0)) for d in D])
+if __name__ == '__main__':
+    D = [prep(p) for p in DAYS]
+    base = sum((run(d) for d in D), [])
+    summ('base (demo policy)', base)
+    kn = [x for x in base if not np.isnan(x['ker'])]
+    summ('  entry KER < 0.25 (CHOP)', [x for x in kn if x['ker'] < 0.25])
+    summ('  entry KER >= 0.25', [x for x in kn if x['ker'] >= 0.25])
+    summ('  entry KER >= 0.40', [x for x in kn if x['ker'] >= 0.40])
+    summ('  entry within 60 s of VPIN > 0.8', [x for x in base if x['tox_age'] <= 60])
+    summ('  entry not within 60 s of VPIN > 0.8', [x for x in base if x['tox_age'] > 60])
+    summ('gate CHOP (KER < 0.25 -> no entry)', sum((run(d, np.nan_to_num(d['ker'], nan=0.0) < 0.25) for d in D), []))
+    summ('gate VPIN any side 60 s', sum((run(d, (np.arange(len(d['ker'])) - d['last_tox']) <= 60) for d in D), []))
+    summ('gate VPIN against flow 30 s (engine)',
+         sum((run(d, ((np.arange(len(d['ker'])) - d['last_tox']) <= 30) & (d['want'] != d['last_tox_side'])) for d in D),
+             []))
+    print('VPIN > 0.8 bucket-closes per day:', [int(np.sum(np.diff(d['last_tox']) > 0)) for d in D])

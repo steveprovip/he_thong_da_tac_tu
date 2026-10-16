@@ -11,6 +11,8 @@ ABSORPTION TRAP blocks (micro_signals.absorption: |CVD 15 s| >= $500k x scale wi
 the policy away from the registered replay (tools/burst_scalper_replay.py CFG) - re-run it before any verdict.
 10-16 (b, RFC-Q4.3): burst_chop_gate hibernates entries while the capital router is CHOP or KER 120 s < 0.25;
 burst_vpin_veto_s vetoes entries after the engine's VPIN TOXIC mark (either side).  Open positions are unaffected.
+10-16 (c, RFC-Q4.4): hibernation has the router's hysteresis - it starts at router CHOP or KER < 0.25 and ends only
+when the router is not CHOP AND KER >= 0.40 (unknown KER never wakes it); one OBSERVE line per episode, one WAKE line.
 
 Modes (Profile.burst_lane): 'off' | 'shadow' | 'active'.
   shadow  virtual orders filled by the live prints with the replay's conservative rule (a print must trade THROUGH
@@ -35,7 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from core import micro_signals as msig
-from core.capital_router import CHOP_KER
+from core.capital_router import CHOP_EXIT_KER, CHOP_KER
 
 VERDICT = Path(__file__).resolve().parents[1] / 'config' / 'burst_verdict.json'
 INF = float('inf')
@@ -162,13 +164,22 @@ class BurstLane:
         return None
 
     def _gate(self, now: float) -> Optional[str]:
-        """10-16 (b): reason to hold off new entries (CHOP hibernation / VPIN veto), else None."""
+        """10-16 (b): reason to hold off new entries (CHOP hibernation / VPIN veto), else None.
+        10-16 (c): hibernation is a state with hysteresis (was re-armed on every KER flicker: 30 OBSERVE lines in
+        under a minute on the 16:51 run, and 4 entries slipped through 17:01-17:03)."""
         e, p = self.e, self.e.p
         if p.burst_chop_gate:
             r = getattr(getattr(e, 'autonomy', None), 'router', None) or {}
             k = (e.features or {}).get('ker')
-            if r.get('regime') == 'CHOP' or (k is not None and k < CHOP_KER):
-                return f'CHOP regime active (KER < {CHOP_KER}) -> entry hibernated'
+            chop = r.get('regime') == 'CHOP' or (k is not None and k < CHOP_KER)
+            hib = chop or (self.hibernating and (k is None or k < CHOP_EXIT_KER))
+            if hib and not self.hibernating:
+                e.event(f'BURST OBSERVE {p.symbol}: CHOP regime active (KER < {CHOP_KER}) -> entry hibernated')
+            elif self.hibernating and not hib:
+                e.event(f'BURST WAKE {p.symbol}: router {r.get("regime", "—")} · KER {k:.2f} >= {CHOP_EXIT_KER}')
+            self.hibernating = hib
+            if hib:
+                return f'CHOP hibernation (enter KER < {CHOP_KER} / router CHOP, wake KER >= {CHOP_EXIT_KER})'
         if p.burst_vpin_veto_s > 0 and getattr(e, 'toxic_vpin', None) is not None:
             age = now - (e.toxic_until - p.vpin_pause_s)                      # seconds since the last VPIN mark
             if 0 <= age < p.burst_vpin_veto_s:
@@ -333,10 +344,6 @@ class BurstLane:
             if gate:
                 self.last['skip'] = gate
                 want = 0
-            hib = bool(gate) and gate.startswith('CHOP')
-            if hib and not self.hibernating:
-                e.event(f'BURST OBSERVE {p.symbol}: {gate}')
-            self.hibernating = hib
             live = [o for o in self.orders if o['dead'] == INF]
             target = bid if want > 0 else ask
             for o in live:

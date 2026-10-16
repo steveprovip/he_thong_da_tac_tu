@@ -231,3 +231,5 @@ Số cấu hình đã thử ở V6: 8 policy × 3 mô hình × 2 bộ cơ hội,
 | BL3 | burst | 10-16 (c) CHOP hibernation (KER120 < 0.25 -> no entry) on the demo policy; SOL 09-05/06/08 | n 839 vs 1417 | -6.38 [-6.97,-5.80] vs -6.50; CHOP entries -6.66 vs non-CHOP -6.28 (overlap) | demo SHADOW only; fewer trades, not better trades |
 | BL4 | burst | 10-16 (c) VPIN veto 60 s any side vs engine against-flow 30 s | n 1334 / 1401 | -6.43 / -6.43 vs -6.50 | demo SHADOW only (60 s any side) |
 | FC1 | carry | 10-16 (c) real BN/HL funding 06:54-09:18 UTC, RFC entry rule, 18 coins | 0 eligible | 0.00 U; hindsight best +0.43 bps/leg, all-coin sum -4.36 bps | telemetry only |
+| SW1 | swing | 10-16 (d) 15m trend + 1H MACD/TSMOM + VR > 1.5, TP 80/SL 30 and 200/80, TK/MK entry (pre-registered 00b16ed) | DEV-best MK_B200 HO n 2505 | -5.75 [-11.33,-0.29], gross +1.67, win 0.37; all 4 variants negative on HOLDOUT | REJECT (not wired) |
+| VF1 | burst | 10-16 (d) VPIN >= 0.85 climax fade after -0.15/min decay, post-only against the flow, SOL 3 d | n 69 | -5.75 [-8.04,-3.56] win 0.23; with-flow control -7.80 | REJECT (not wired) |

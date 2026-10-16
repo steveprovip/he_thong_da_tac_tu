@@ -3868,17 +3868,25 @@ class Runner:
         """10-16 (b): every funding_every_s refresh the shadow carry book from public funding quotes; errors are kept
         in the snapshot (stale quotes are never shown as current), never fatal."""
         from core import funding_executor as fx
-        book, fetch = None, fetch or fx.fetch_quotes
+        fetch = fetch or fx.fetch_quotes
         while True:
             e0 = next(iter(self.engines.values()), None)
             try:
                 quotes = await asyncio.to_thread(fetch)
+                now = time.time()
+                # 10-16 (c): size from the synced wallet every pass (the first pass ran before the account sync and
+                # froze the book at mock_balance: 116.67 U/leg instead of ~574); mock only until the wallet is known
+                acct = (e0.account or {}) if e0 else {}
+                wallet = float(acct.get('wallet') or 0.0) or float((e0.p.mock_balance if e0 else 0.0) or 0.0)
+                book = getattr(self, 'carry_book', None)
                 if book is None:
-                    acct = (e0.account or {}) if e0 else {}
-                    wallet = float(acct.get('wallet') or (e0.p.mock_balance if e0 else 0.0) or 0.0)
-                    book = fx.ShadowCarryBook(wallet)
+                    book = self.carry_book = fx.ShadowCarryBook(wallet)
+                    self.carry_t = now
+                book.capital = wallet or book.capital
+                book.accrue(now - getattr(self, 'carry_t', now))
+                self.carry_t = now
                 intents = book.step(quotes)
-                self.carry_state = fx.carry_view(book, quotes, intents, time.time())
+                self.carry_state = fx.carry_view(book, quotes, intents, now)
                 for it in intents:
                     if e0:
                         e0.event(f'CARRY SHADOW {it["kind"]} {it["coin"]} short {it["short"]} / long {it["long"]} '

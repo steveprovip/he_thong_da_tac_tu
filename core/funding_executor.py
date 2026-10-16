@@ -94,6 +94,23 @@ class ShadowCarryBook:
         self.min_spread, self.min_basis = float(min_spread_bps), float(min_basis_bps)
         self.rotate_delta, self.exit_spread = float(rotate_delta_bps), float(exit_spread_bps)
         self.held: Dict[str, CarryCandidate] = {}
+        # 10-16 (c) virtual cash flow: funding integrated at the last observed spread (an ESTIMATE between settlement
+        # prints, not the settled amount) and the HEDGE round trip charged once per OPEN / ROTATE
+        self.est_accrued_usdt = 0.0
+        self.cost_usdt = 0.0
+        self.opened = 0
+
+    def accrue(self, dt_s: float) -> float:
+        """Add dt_s of funding on every held pair at its last spread; -> USDT added."""
+        dt = max(float(dt_s), 0.0)
+        add = sum(h.spread_8h_bps for h in self.held.values()) * dt / 28_800.0 / 1e4 * self.notional_per_leg
+        self.est_accrued_usdt += add
+        return add
+
+    def legs(self) -> List[Tuple[str, str, float]]:
+        """(coin, venue, signed notional): -N on the short venue, +N on the long venue of every held pair."""
+        n = self.notional_per_leg
+        return [x for h in self.held.values() for x in ((h.coin, h.short_venue, -n), (h.coin, h.long_venue, n))]
 
     @property
     def notional_per_leg(self) -> float:
@@ -122,6 +139,8 @@ class ShadowCarryBook:
             if len(self.held) < self.slots:
                 self.held[c.coin] = c
                 out.append(self._intent('OPEN', c, 'entry criteria met'))
+                self.opened += 1
+                self.cost_usdt += HEDGE_ROUND_TRIP_BPS / 1e4 * self.notional_per_leg
                 continue
             worst = min(self.held.values(), key=lambda h: h.spread_8h_bps)
             if c.spread_8h_bps - worst.spread_8h_bps >= self.rotate_delta:
@@ -130,6 +149,8 @@ class ShadowCarryBook:
                 gain = c.spread_8h_bps - worst.spread_8h_bps
                 out.append(dict(self._intent('ROTATE', c, f'replaces {worst.coin} (+{gain:.2f} bps)'),
                                 replaces=worst.coin))
+                self.opened += 1
+                self.cost_usdt += HEDGE_ROUND_TRIP_BPS / 1e4 * self.notional_per_leg
             else:
                 break                                       # sorted: no later candidate can clear the hysteresis
         return out
@@ -213,6 +234,9 @@ def carry_view(book: 'ShadowCarryBook', quotes: Iterable[FundingQuote], intents:
                      'basis_bps': round(c.basis_skew_bps, 2), 'eligible': c.coin not in why}
                     for c in cands[:top]],
             'held': sorted(book.held), 'intents': intents[-6:],
+            'net_delta_usdt': round(sum(x[2] for x in book.legs()), 6), 'legs': len(book.legs()),
+            'est_accrued_usdt': round(book.est_accrued_usdt, 4), 'cost_usdt': round(book.cost_usdt, 4),
+            'est_net_usdt': round(book.est_accrued_usdt - book.cost_usdt, 4), 'opened': book.opened,
             'unknown': sorted(k for k, v in why.items() if v.startswith('UNKNOWN'))}
 
 
