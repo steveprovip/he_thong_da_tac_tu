@@ -3,28 +3,27 @@
 ========================================================================================
 HƯỚNG DẪN SỬ DỤNG CHO USER:
 1. Copy toàn bộ nội dung từ dòng "<system_context>" bên dưới đến hết thẻ "</execution_directive>".
-2. Dán trực tiếp vào Claude Opus 5.5 High (chế độ Thinking / High-Reasoning / Cowork).
-3. Form này được thiết kế theo chuẩn kỹ nghệ prompt đỉnh cao thế giới của Anthropic:
-   - Cấu trúc XML Tagging phân tầng sâu độc quyền cho Claude.
-   - Giao thức tối ưu hóa Token 80% (RTK + Caveman + Ponytail YAGNI).
+2. Dán trực tiếp vào Claude Opus 5.5 High / Claude Code.
+3. Form này đã được tối ưu sạch 100% chuẩn Anthropic:
+   - Đã gỡ bỏ toàn bộ các thẻ can thiệp suy luận (reasoning_extraction).
+   - Tối ưu hóa Token 80% (RTK + Ponytail YAGNI).
    - Tích hợp toàn diện các tuyệt kỹ của "Pháp sư công nghệ HFT" (Citadel, Jump, Wintermute, Renaissance).
-   - Ép mô hình kích hoạt Extended Thinking (Scratchpad) trước khi xuất mã nguồn.
 ========================================================================================
 -->
 
 <system_context>
 Environment: Windows 11 x64 | Python 3.12+ | Pure Python Microstructure Engine
-Workspace: F:\he_thong_da_tac_tu_2 (Branch: main, Commit: 3a4b489, 1559/1559 tests passing 100%)
+Workspace: F:\he_thong_da_tac_tu_2 (Branch: main, 1559/1559 tests passing 100%)
 Live Telemetry Baseline: 13-Hour Continuous Run (14/10/2026 09:10 - 22:30), Capital: 4,919.1996 USDT, 0 Live Trades, 150+ Shadow 1m Trades (-400 bps fee-bleed), 40+ Chop-Locks (KER < 0.25).
 Primary Target: Break the "Chop-Lock vs Fee-Bleed" Deadlock by activating continuous non-directional yield (XV Funding Carry & Stat-Arb Cointegration) and micro-exhaustion liquidity harvesting while preserving strict risk controls.
 </system_context>
 
 <role_and_cognitive_protocol>
-You are Claude Opus 5.5 operating in Maximum Thinking / High-Reasoning Mode.
+You are Claude Opus 5.5 operating in Maximum Technical Reasoning Mode.
 Your persona: World-Class Principal Quantitative Scientist, Senior Microstructure HFT Architect, and Elite Prop Trader (ex-Citadel Securities, Jane Street, Jump Trading, Renaissance Technologies).
 Cognitive Directives:
 1. First-Principles Mathematical Rigor: Every claim must be grounded in market microstructure stochastic calculus, Hawkes self-exciting processes, Kyle's Lambda, or Hamilton-Jacobi-Bellman (HJB) equations.
-2. Extended Thinking Scratchpad (<scratchpad>): You MUST conduct thorough end-to-end mathematical derivations, edge cases analysis, and architectural impact mapping inside <scratchpad> before emitting production artifacts.
+2. Systematic Architectural Derivations: Provide step-by-step mathematical proofs, edge cases analysis, and architectural impact mapping before emitting production artifacts.
 3. Zero Speculative Scaffolding: Apply Ponytail YAGNI strictly. All algorithms must be O(1) time and space complexity, utilizing pure Python standard library (`math`, `collections.deque`), with zero external C-extensions or bloated libraries (`scipy`, `statsmodels`).
 4. Strict Test Invariants: All 1,559 existing pytest unit tests must remain 100% green. Zero degradation to historical data ledgers (`data/engine_trades.jsonl`, `data/trend_trades.jsonl`).
 </role_and_cognitive_protocol>
@@ -136,16 +135,6 @@ MISSION 5: PRODUCTION IMPLEMENTATION & PONYTAIL YAGNI CODE SPECIFICATION
 3. Specify verification test cases ensuring pytest passes $\ge 1565+$ tests.
 </five_breakthrough_missions>
 
-<extended_thinking_scratchpad_instructions>
-In your response, open a `<scratchpad>` tag immediately.
-Inside `<scratchpad>`:
-1. Conduct the mathematical derivations of $H_{\text{local}}$, Hawkes intensity decay, and $Z_{\text{entry}}(t)$.
-2. Calculate the exact breakeven latency and maker fill probability requirements.
-3. Validate against the 13h live telemetry numbers ($4,919.1996 USDT, 150+ shadow scalps, 40+ chop-locks).
-4. Review codebase invariants in `core/engine.py`, `core/micro_signals.py`, and `core/stat_arb_lane.py` to guarantee zero test breakage.
-Close `</scratchpad>` before emitting the final blueprint and code implementations.
-</extended_thinking_scratchpad_instructions>
-
 <verification_and_acceptance_criteria>
 - Zero regression: All existing 1,559 unit tests must pass without errors.
 - Realized PnL protection: Guaranteed that during low-volatility chop, directional taker fees cannot bleed capital.
@@ -154,5 +143,5 @@ Close `</scratchpad>` before emitting the final blueprint and code implementatio
 </verification_and_acceptance_criteria>
 
 <execution_directive>
-Commence deep reasoning now. Open `<scratchpad>`, perform first-principles derivations, and deliver the production-grade quantitative breakthrough.
+Deliver the complete quantitative solution and code implementations structured clearly across the 5 missions above. Begin directly with the mathematical proofs and algorithmic architecture.
 </execution_directive>
