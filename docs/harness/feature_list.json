@@ -274,6 +274,26 @@
       ],
       "status": "done",
       "evidence": "code tests only; no market data reachable from the session (exchange hosts blocked) -> no replay. Random walk: Hurst(60) state RANDOM_WALK on 40 % of bars only; KER10 < 0.25 on 45 %. Funding on 4919 U: replay-based ~3.9 U/month [2.5, 5.3] at L1. pytest 1548 passed, 2 failed (pre-existing env)"
+    },
+    {
+      "id": "arch-h2-regime-sandbox-20261024",
+      "name": "Architecture: Harness2 regime-adaptive loop (H2-Regime) + MiroFish-style adversarial sandbox (1000 scenarios)",
+      "description": "docs/architecture/ (README, 01 analysis, 02 H2-Regime design, 03 sandbox design, 04 implementation plan P0-P7, h2_surface_v0.yaml, sandbox_suite_v0.yaml, tools/check_arch_docs.py). Design only: no runtime code, no runtime change.",
+      "dependencies": [
+        "regime3-hawkes-legs-carry-20261016"
+      ],
+      "status": "design",
+      "evidence": "pytest 1608 passed / 0 failed (baseline, 126.7 s); engine_replay SOL agg 6 h = 93,003 msgs in 74.8 s (0.08 sim-h/s); surface spec 84 levers / 29 frozen fields match Profile+SignalConfig (0 errors); suite total 1000 (P3 650 / P5 350); 85/85 file:line refs resolve; JEV FAST lifts raw consensus 0.60 to an issued token (reproduced)"
+    },
+    {
+      "id": "invariants-lock-p0a-20261024",
+      "name": "P0a: architectural invariants I1-I8 in core/invariants.py + characterization tests (not wired into runtime)",
+      "description": "core/invariants.py (constants + check_consensus/check_token_authority/check_profile/check_runtime_args, violation lists, never raise), tests/test_invariants_lock.py (19). P0b (Engine start-up, core.runtime mainnet refusal, sandbox hard gates) waits for owner decisions D1/D2.",
+      "dependencies": [
+        "arch-h2-regime-sandbox-20261024"
+      ],
+      "status": "done",
+      "evidence": "tests red first (ImportError) then 19 passed; python -m pytest -q 1627 passed / 0 failed / 0 errors (124.1 s, junitxml); no runtime module imports core.invariants"
     }
   ]
 }

@@ -1,0 +1,106 @@
+# Adversarial Market Sandbox (AMS) suite, version 0 (ARCH-2026-10-24).
+#
+# 1000 pre-registered scenarios. A scenario is a deterministic spec (family, generator, params, seed),
+# never a stored tape: the tape is regenerated from the spec, and its rolling SHA-256 is recorded so a
+# rerun can prove it saw the same events. Freeze this file (commit + hash) BEFORE the first candidate
+# is evaluated; any change is suite v1 and invalidates cached baselines and verdicts.
+#
+# Stage: P3 = available once research/sandbox core exists (real tapes + perturbation + SandboxVenue);
+#        P5 = needs the agent-based market (ABM) and, for N, cached MiroFish narratives or templates.
+# See docs/architecture/03_THIET_KE_SANDBOX_MIROFISH_1000.md for every generator.
+
+version: 0
+total: 1000
+seed_rule: "seed = int(sha256(f'{suite_sha}|{family}|{index}').hexdigest()[:16], 16)"
+window: {warmup_min: 60, eval_min: 120}          # every scenario: 60 min warm-up (no entries) + 120 min scored
+symbols:
+  tradable: [SOLUSDT, DOGEUSDT]                   # demo Profile observe_only = ('BTCUSDT',)
+  observer: [BTCUSDT]                             # scored only for "observer must not trade" (hard gate)
+regime_cells:                                     # 3 x 3 x 2 = 18 cells, same key as RegimeEpisode (doc 02)
+  vol: {feature: atr15_pct, buckets: [LO, MID, HI], rule: "per-symbol terciles of the last 30 days"}
+  trend: {feature: ker, buckets: {CHOP: "< 0.30", MID: "0.30-0.40", TREND: ">= 0.40"}, source: core/param_bandit.py:32}
+  tox: {feature: vpin, buckets: {CLEAN: "share(vpin > vpin_max) < 0.20", TOXIC: ">= 0.20"}}
+
+families:
+  H:   # real tapes (rec > l2 > agg source), stratified by regime cell; time-disjoint from every H2 probe window
+    count: 300
+    stage: P3
+    generator: historical_window
+    by_symbol: {SOLUSDT: 150, DOGEUSDT: 120, BTCUSDT: 30}
+    strata: "min 8 per (symbol, cell) where data exists; remainder proportional to observed cell frequency"
+    data_need: "about 14 days of tools/record_market.py tapes per symbol (data/recordings is empty on 2026-10-24)"
+  B:   # stationary block bootstrap of real event streams (1-min blocks, mean block 10 min)
+    count: 150
+    stage: P3
+    generator: block_bootstrap
+    by_symbol: {SOLUSDT: 75, DOGEUSDT: 75}
+  A:   # calibrated agent-based market, nominal (no adversary); realism gate decides if a cell counts economically
+    count: 200
+    stage: P5
+    generator: abm_nominal
+    by_type: {cells_18_x_10: 180, stylized_fact_controls: 20}
+  X:   # red-team adversaries, 25 each, spread over 5 regime cells x 5 seeds
+    count: 250
+    generator: adversary
+    by_type:
+      X1_spoof_wall:          {count: 25, target: LUMEN (OBI) / WALL veto,   method: perturb, stage: P3}
+      X2_ignition_reversal:   {count: 25, target: TIDAL / MARIN stops,       method: abm,     stage: P5}
+      X3_vwap_stretch_trap:   {count: 25, target: NORO MR lane,              method: abm,     stage: P5}
+      X4_ker_flicker:         {count: 25, target: CHOP LOCK / router hysteresis, method: splice, stage: P3}
+      X5_vpin_hugging:        {count: 25, target: RUNE / ZEPHR toxicity gates, method: perturb, stage: P3}
+      X6_quote_fade:          {count: 25, target: VESKA GTX maker (adverse selection), method: venue, stage: P3}
+      X7_absorption_iceberg:  {count: 25, target: absorption gate / LUMEN,   method: abm,     stage: P5}
+      X8_liquidation_cascade: {count: 25, target: TIDAL LIQ / STOP_MARKET gap, method: abm,   stage: P5}
+      X9_liquidity_vacuum:    {count: 25, target: ZEPHR cost gate / MARIN maker exits, method: perturb, stage: P3}
+      X10_regime_whipsaw:     {count: 25, target: H2 playbooks / router / learner, method: splice, stage: P3}
+    stage_counts: {P3: 150, P5: 100}
+  F:   # venue / infrastructure faults, overlaid on H or B tapes
+    count: 50
+    stage: P3
+    generator: fault_overlay
+    by_type:
+      F1_postonly_reject_storm: 8     # -5022 on every k-th GTX while the book moves 1-2 ticks per 100 ms
+      F2_partial_fill_cancel_race: 8
+      F3_ws_gap: 8                    # 5-60 s without depth/aggTrade (stale_s = 3 s)
+      F4_rest_timeout_uncertain: 8    # TRANSPORT error, order may or may not exist (orphans / reconcile path)
+      F5_stop_rejected_2021: 6        # exchange stop refused at entry -> NO_STOP path
+      F6_clock_skew_1021: 4
+      F7_mark_last_divergence: 4
+      F8_funding_spike: 4
+  N:   # narrative shocks: cached MiroFish runs on PUBLIC seeds (or parametric templates), mapped to flow shocks
+    count: 50
+    stage: P5
+    generator: narrative_shock
+    by_type: {seeds_5_x_intensity_2_x_expansion_5: 50}
+    seeds: [exchange_hack_rumor, etf_decision, macro_surprise_cpi, token_unlock, regulatory_crackdown]
+
+gates:   # pre-registered; evaluated by research/sandbox/scorecard.py with core/fast_eval.py
+  hard:  # any count > 0 -> REJECT (report the rule-of-three bound 3/n alongside)
+    - authorization_below_0768        # TokenAuthority issued for decision.score < 0.768 or threshold < 0.768
+    - hard_veto_bypass                # an order sent while any gate vote carried veto=True (ZEPHR/RUNE/OKAPI/MARIN/VESKA)
+                                      # or a token issued for a Decision with veto=True. NOT the raw score < 0.70 case:
+                                      # micro_swarm's JEV FAST path lifts that by design (see monitored below)
+    - non_gtx_entry                   # entry not LIMIT GTX while Profile.entry == 'gtx' (IOC only if super_edge/super_cross 'on')
+    - order_without_token             # VESKA placement without a consumed single-use token
+    - missing_exchange_stop_s5        # filled position without an acknowledged exchange stop after 5 s (NO_STOP handled path excepted)
+    - observer_entry                  # any entry on an observe_only symbol
+    - risk_cap_breach                 # portfolio_risk_usdt / daily_kill_usdt / max_positions exceeded
+    - unhandled_exception
+    - ledger_schema_error
+  monitored:    # reported per arm, never a pass/fail until the owner decides (doc 01 F3, doc 04 D4)
+    - jev_override_of_statistical_veto   # path == 'JEV' with raw consensus (diag['consensus']) < 0.70
+    - jev_path_trades_and_net_bps
+    - single_source_consensus            # authorized with one alpha trigger (N_eff < 1.2, doc 02 C2)
+  robustness:   # paired B vs A on X + F + N (350 scenarios)
+    cvar5_net_u: "CVaR5%(B) >= CVaR5%(A) - 0.10 * |CVaR5%(A)|"
+    drawdown: "share(DD_B > DD_A + 0.05 U) <= 5%"
+    kill_events: "count(B daily-kill or KILL) <= count(A) + 2"
+  economic:     # only for a candidate that claims to be better, on H + B (450); A must agree in sign
+    paired_mean_diff_ci95_low: "> 0 (circular block bootstrap by day, core/fast_eval.paired_diff)"
+    dsr: ">= 0.95 with n_trials = experiment_register rows + trial_log rows + 1 (tools/ab_bench.py:261)"
+    pbo_cscv: "<= 0.20 (core/fast_eval.pbo_cscv, 10 blocks)"
+    abm_sign_agreement: "mean diff on A (realism-passing cells) >= 0"
+  non_inferiority:  # for a candidate that only claims to be safer
+    paired_mean_diff_ci95_low: ">= -0.10 * SD_A(per-scenario net U)"
+verdict_file: config/sandbox_verdict.json
+verdict_key: "(policy_id(Profile), code_version, suite_sha)"   # core/engine.py:66 policy_id

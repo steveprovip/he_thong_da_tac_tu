@@ -140,3 +140,109 @@ No new automatic model loading or paid agent runs. Existing app launchers remain
 - After restart the demo stat-arb SHADOW lane uses the dynamic Z band (static 2.10 for the first 4 h); trend telemetry shows hurst / state3. No trading behaviour changes otherwise.
 - To evaluate before any use: replay RegimeGate(mode='hurst') with tools/trend_regime_replay.py on the user's machine (data needed); replay the Hawkes FADE on recorded aggTrades; replay the RFC funding rule (2.5 / +1.5 / 4.0) in tools/funding_spread_replay.py beside the pre-registered H28 k2 rule.
 - Revert: StatArbLane(z_alpha=None); RegimeGate 'hurst' is opt-in only. Live carry stays blocked by core/funding_carry.two_leg_capital_gate.
+
+## Handoff 6C — 2026-10-18 (harness: handoff + Engram + backup)
+
+### 1. Mục tiêu (Goal)
+Đưa chuẩn bàn giao 6 thành phần, bộ nhớ Engram và backup SQLite vào repo này mà không đụng tới runtime giao dịch. DoD: quy tắc và template nằm đúng chỗ, Engram MCP chạy được, backup có restore-check, bộ test không regression.
+
+### 2. Ràng buộc (Constraints)
+Không khởi động hay restart engine, không đặt lệnh, không sửa third_party/, không commit (chờ người dùng duyệt). Chỉ ghi trong F:\he_thong_da_tac_tu_2 và hub F:\1tr_AI_agent.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `main` @ 91ad6ff, chưa commit.
+- File mới: `.mcp.json`, `.engram/` (config.json, manifest.json, chunks/cf104684.jsonl.gz), `docs/harness/HANDOFF_PROTOCOL.md`, `docs/harness/templates/handoff_6c.md`.
+- File sửa: `AGENTS.md` (+2 dòng), `CLAUDE.md` (+1 dòng), `tests/test_upgrade_2026_10.py` (thêm `.mcp.json` vào allowlist), cùng file này và `docs/harness/progress.md`.
+- Untracked có từ trước, không thuộc phiên này: `prompts/FORM_CLAUDE_OPUS5.5_TEST_MANAGER_AND_10K_LUXURY_SPA.md`, `prompts/MASTER_FORM_OPUS_5_5.md`, `third_party/{Hexis,Paymenter,PersonalJarvis,airllm,databasus,docker-mailserver,engram,kyojin,twelve-dollar-server-challenge}/`.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q` sau khi thêm `.mcp.json`: 1607 passed, 1 failed (`test_root_is_clean_and_launchers_live_in_scripts`, allowlist chưa có `.mcp.json`), 130 s. Sau khi cập nhật allowlist: `tests/test_upgrade_2026_10.py` 18 passed.
+- `mcp_smoke.py .mcp.json engram --expect mem_search mem_save mem_session_summary` → ok: 26 tools, server engram vendored-4d7f2a2.
+- `engram search "bàn giao" --project he_thong_da_tac_tu_2` → Found 1 (#1). `engram sync` → `.engram/chunks/cf104684.jsonl.gz`.
+- `sqlite_backup.py`: `data/testnet-journal.sqlite` 2,244,608 B, 14,541 dòng, integrity ok, restore ok, sha256 a03a9d37e2d7…
+- Bộ test đầy đủ sau khi cập nhật allowlist: `python -m pytest -q` → 1608 tests, 0 failed, 123.4 s (run_checks C4.2, 2026-10-18 10:38 UTC; hub checks 14/14 PASS).
+- Lệnh đọc lại toàn bộ: `F:\1tr_AI_agent\.venv\Scripts\python F:\1tr_AI_agent\tools\harness\run_checks.py`
+
+### 5. Bước tiếp theo (Next Steps)
+1. Sau khi người dùng duyệt commit: `git add .mcp.json .engram docs/harness AGENTS.md CLAUDE.md tests/test_upgrade_2026_10.py`. Không add third_party/ hay prompts/ có từ trước.
+2. Lần đầu mở Claude Code trong repo này: duyệt MCP server `engram` khai báo trong `.mcp.json`.
+3. Cuối mỗi phiên: `engram save` tóm tắt 6C → `engram sync` → viết entry 6C mới → validate bằng `check_handoff.py --entry`.
+4. Muốn backup theo lịch thì người dùng tự đăng ký trong Task Scheduler: `F:\1tr_AI_agent\.venv\Scripts\python F:\1tr_AI_agent\tools\harness\sqlite_backup.py`.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Engram được build từ source vendored trong Docker `golang:1.25` (CGO off), không dùng release zip (Defender từng báo nhầm bản này). `third_party/engram` giữ nguyên, git status sạch.
+- Databasus không hỗ trợ SQLite, nên backup bằng online-backup của sqlite3 kèm restore-check. Databasus để dành khi có PG/MariaDB (Paymenter, Engram Cloud).
+- `.mcp.json` buộc phải ở gốc repo, nên allowlist của test layout được cập nhật (verdict: Wrong expectation, spec đã được duyệt). Quy tắc FORM_*/CHAY_* không nới.
+- Bản backup nằm cùng ổ vật lý SATA với dữ liệu: chỉ chống hỏng logic. Muốn chống hỏng đĩa thì cần thêm một bản sao ngoài ổ.
+- Đặt `ENGRAM_NO_UPDATE_CHECK=1` trong `.mcp.json` để server MCP không gọi GitHub mỗi lần khởi động.
+
+## Handoff 6C — 2026-10-24 (arch: H2-Regime + sandbox 1000)
+
+### 1. Mục tiêu (Goal)
+Nghiên cứu và xuất tài liệu thiết kế + kế hoạch triển khai cho ba việc: thuật toán đồng thuận 8 agent; module Harness² (H2-Regime) trong vòng thích ứng khi chuyển regime; sandbox đối kháng 1000 kịch bản theo quy trình MiroFish, chạy trước khi cho đẩy lệnh DEMO/LIVE. DoD: tài liệu nằm trong `docs/architecture/`, spec máy đọc được đã kiểm với code, không regression, không đổi runtime.
+
+### 2. Ràng buộc (Constraints)
+- Giữ nguyên ngưỡng 76.8 % / veto 70 % và Post-Only GTX (`core/consensus_engine.py`, `core/engine.py`).
+- Không quét mạng, không khai thác lỗ hổng, không khởi động lại engine, không đặt lệnh, không sửa `third_party/`.
+- Không commit/push (chờ người dùng duyệt). MiroFish là AGPL: không import, không chép code.
+
+### 3. Trạng thái thực tế (Real State)
+Nhánh `docs/h2-regime-sandbox-arch` tạo từ `main` @ 91ad6ff, chưa commit.
+- File mới: `docs/architecture/{README.md, 01_PHAN_TICH_KIEN_TRUC_HIEN_TAI.md, 02_THIET_KE_HARNESS2_REGIME.md, 03_THIET_KE_SANDBOX_MIROFISH_1000.md, 04_KE_HOACH_TRIEN_KHAI.md, h2_surface_v0.yaml, sandbox_suite_v0.yaml, tools/check_arch_docs.py}`.
+- File sửa trong phiên này: `docs/harness/progress.md` (+ mục 2026-10-24), `docs/harness/feature_list.json` (+ entry `arch-h2-regime-sandbox-20261024`, status `design`), và file này.
+- Thay đổi có từ trước, không thuộc phiên này, giữ nguyên: `AGENTS.md`, `CLAUDE.md`, `tests/test_upgrade_2026_10.py`, `docs/harness/HANDOFF_PROTOCOL.md`, `docs/harness/templates/`, `.mcp.json`, `.engram/`, `prompts/*`, `third_party/*`.
+- Ngoài repo: thêm một bài học YAML vào `C:\Users\Admin\.claude\memory\learnings.md`.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q`: trước khi viết 1608 passed, 0 failed, 126.7 s; sau khi viết 1608 passed, 0 failed, 0 errors, 126.3 s (đếm từ `--junitxml`).
+- `python tools/engine_replay.py --source agg --data data/replay_cache/agg_zips --symbols SOLUSDT --start 2026-09-08T00:00 --end 2026-09-08T06:00 --warmup-min 60 --quiet` → 93,003 msgs, wall 74.8 s (0.08 sim-h/s), 0 vị thế.
+- `python docs/architecture/tools/check_arch_docs.py` → exit 0: surface 84 lever (GUARD 23 / INV 27 / DOM 34), 29 field đóng băng; suite 1000 (P3 650 / P5 350); 85 tham chiếu `file:line` hợp lệ.
+- Tái hiện JEV FAST: `micro_swarm.evaluate` với 1 trigger FLOW, năm gate xanh, cost 6 bps → consensus thô 0.60, path JEV, score 0.998, allowed. TokenAuthority issue + consume OK; consume lần 2 → `Unknown or replayed token`. `Gates(rune=False)` → `RUNE VETO [RUNE]`. `ConsensusEngine().threshold_for('TREND')` = 0.70.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Chủ sở hữu đọc `docs/architecture/README.md` và chốt D1, D4, D5, D7 (doc 04 §5).
+2. D5: chạy `tools/record_market.py` liên tục cho SOL/DOGE/BTC để có ≥ 14 ngày băng. Đây là đường găng.
+3. Sau khi duyệt: `git add docs/architecture docs/harness/progress.md docs/harness/feature_list.json docs/harness/session-handoff.md`. Không add `third_party/` hay `prompts/` có từ trước.
+4. P0 (khóa bất biến) trên nhánh `feat/h2-p0-invariants`: TDD, pytest xanh, replay cố định giống hệt trước–sau.
+5. Tiếp P1, P2, rồi P3 theo doc 04.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Chốt: **port** phương pháp harness2 (Apache-2.0) thay vì import. Lý do: Python ≥ 3.12, `fcntl`, proposer chạy `claude --dangerously-skip-permissions`. Đã loại: chạy harness2 nguyên bản trên host có `.env.local`.
+- Chốt: Monte Carlo 1000 kịch bản là sandbox tất định trên engine production (`engine_replay` + `SandboxVenue`). MiroFish chỉ sinh cú sốc tường thuật từ seed công khai, chạy cô lập. Đã loại: 1000 mô phỏng OASIS (không tái lập, tốn LLM, là mạng xã hội chứ không phải sổ lệnh, dữ liệu phải qua Zep Cloud).
+- Chốt: judge là holdout **tương lai** (băng ghi sau lúc commit) + sandbox. Chọn mù theo scorecard, không thấy số holdout hay sandbox.
+- Phát hiện, chưa sửa code: veto < 70 % không tuyệt đối trên đường engine (JEV FAST); CLI `core.runtime` hạ được ngưỡng ở mainnet; trend_floor mặc định 0.70 là cố ý → chờ D1, D2, D4.
+- Lỗi đã gặp: PyYAML đọc `off` không nháy thành `False`, đã quote; loader ở P2 phải từ chối enum không phải chuỗi. Định nghĩa `veto_bypass` ban đầu sẽ đánh trượt chính baseline (lệnh JEV), nên đổi thành `hard_veto_bypass` cộng một chỉ số chỉ theo dõi.
+
+## Handoff 6C — 2026-10-24 (P0a: invariants lock)
+
+### 1. Mục tiêu (Goal)
+Làm P0a theo `docs/architecture/04_KE_HOACH_TRIEN_KHAI.md`: gom bất biến I1–I8 vào `core/invariants.py` (hằng số + hàm kiểm trả danh sách vi phạm) và ghim chúng cùng hành vi JEV FAST hiện tại bằng `tests/test_invariants_lock.py`. DoD: chưa nối vào runtime; test đỏ trước, xanh sau; toàn bộ pytest không regression.
+
+### 2. Ràng buộc (Constraints)
+- Không nối module vào Engine hay `core.runtime`. P0b cần quyết định D1/D2.
+- Không đổi hành vi giao dịch, không khởi động engine, không đặt lệnh, không commit/push khi chưa được duyệt.
+- Giữ nguyên 76.8 % / 70 % / Post-Only GTX.
+
+### 3. Trạng thái thực tế (Real State)
+Nhánh `docs/h2-regime-sandbox-arch` @ 91ad6ff, chưa commit.
+- File mới: `core/invariants.py` (102 dòng), `tests/test_invariants_lock.py` (145 dòng, 19 test).
+- File sửa: `docs/architecture/README.md`, `docs/architecture/04_KE_HOACH_TRIEN_KHAI.md` (dòng trạng thái P0), `docs/harness/progress.md`, `docs/harness/feature_list.json` (entry `invariants-lock-p0a-20261024`), và file này.
+- `rg invariants` trên `core/`, `live/`, `scripts/`, `tools/`, `research/`: chỉ có `core/invariants.py`; `core/micro_swarm.py` chỉ nhắc chữ này trong docstring. Không có import nào.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/test_invariants_lock.py` trước khi có module → ImportError (đỏ); sau khi có module → 19 passed.
+- Cùng `tests/test_consensus_engine.py`, `tests/test_policy_lock.py`, `tests/test_quant_risk.py` → 49 passed.
+- `python -m pytest -q` (toàn bộ, đếm từ `--junitxml`) → 1627 passed, 0 failed, 0 errors, 124.1 s (1608 cũ + 19 mới).
+- `python docs/architecture/tools/check_arch_docs.py` → OK: 0 errors.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Chủ sở hữu chốt D1 (mainnet từ chối ngưỡng thấp), D2 (giữ trend_floor 0.70 mặc định + kiểm tra ở đường production) và D4 (cách hiểu veto < 70 %).
+2. P0b: gọi `check_profile` và `check_consensus(regimes=('NORMAL',))` lúc Engine khởi tạo; gọi `check_runtime_args(args, mode)` trong parser của `core.runtime` (D1); đưa các hàm này vào hard gate của sandbox (P3).
+3. Commit sau khi duyệt, tách hai commit: (a) `docs/architecture` + harness, (b) `core/invariants.py` + `tests/test_invariants_lock.py`.
+4. P1/P2 theo doc 04.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Hàm kiểm trả list, không raise. Người gọi tự quyết refuse, log hay test, nên P0b có thể nối từng chỗ một.
+- `check_consensus` mặc định xét đủ 4 regime. Với `ConsensusEngine()` nó báo đúng 1 vi phạm (TREND 0.70), tức F3 được ghim như hành vi cố ý của class. Đường engine chỉ xét NORMAL.
+- Test JEV FAST mô tả hành vi **hiện tại** (consensus thô 0.60 vẫn được cấp token), không phải hành vi mong muốn. Đổi hành vi đó là quyết định D4, test phải đổi theo một cách có chủ ý.
+- Lỗi đã gặp: so sánh nối chuỗi `approx(0.60) < VETO` gây TypeError trong pytest; đã tách thành hai vế.

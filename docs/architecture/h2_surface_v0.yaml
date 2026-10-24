@@ -1,0 +1,184 @@
+# H2-Regime editable surface, version 0 (ARCH-2026-10-24).
+#
+# The "harness" that Harness² may edit for the 8-agent swarm. Everything not listed under `levers` is
+# FROZEN by omission (omitted-is-frozen, the inverse of harness2's omitted-is-inherited edit contract).
+# Field names and baselines were read from core/engine.py Profile (288 fields) and
+# core/micro_signals.py SignalConfig (60 fields) on main@91ad6ff and are checked by the validation in
+# docs/architecture/04_KE_HOACH_TRIEN_KHAI.md (Phase 2 turns that check into tests/test_h2_surface.py).
+#
+# kind:
+#   range   any value in [lo, hi]                     sandbox/probe: yes   demo: after gates   live: no
+#   cap     lower = safer, value in [lo, baseline]    sandbox/probe: yes   demo: yes           live: risk-down only*
+#   floor   higher = safer, value in [baseline, hi]   sandbox/probe: yes   demo: yes           live: risk-down only*
+#   gate    bool, True = safer                        True always allowed; False only in probes, never promoted
+#                                                     without an owner decision
+#   enum    value restricted to `allowed`
+#   owned   owned by another controller (param_bandit): H2 may propose its arm set, never a value
+# YAML 1.1 note: quote 'off' / 'on' / 'yes' / 'no' (PyYAML reads bare off as False). The Phase 2 loader
+# must reject a non-string enum value instead of coercing it.
+# * live: H2 never writes live config. Eligibility only; the live path is config/live_tunables.json
+#   (core/tunables.py LIMITS), which today accepts 9 fields.
+
+version: 0
+source:
+  profile: core/engine.py:157 (Profile), core/engine.py:554 (PROFILES demo/live)
+  signal_config: core/micro_signals.py (SignalConfig), per-symbol KER via config_for/KER_GATES (core/micro_signals.py:340)
+  commit: 91ad6ff
+limits:
+  max_changed_fields_per_candidate: 6     # more than 6 and the edit rows become `confounded` by construction
+  max_dom_fields_per_candidate: 4
+  max_inv_fields_per_candidate: 4
+
+# ---------------------------------------------------------------------------------------- invariants
+# Code constants, not Profile fields. Any diff touching them is rejected before a rollout.
+consensus_frozen:
+  - {name: WEIGHTS, where: core/consensus_engine.py:12, value: {NORO: 0.20, LUMEN: 0.20, TIDAL: 0.20, ZEPHR: 0.10, RUNE: 0.10, OKAPI: 0.08, MARIN: 0.07, VESKA: 0.05}}
+  - {name: supermajority_threshold, where: core/consensus_engine.py:41, value: 0.768}
+  - {name: rune_veto_threshold, where: core/consensus_engine.py:41, value: 0.70}
+  - {name: trend_floor, where: core/runtime.py:171, rule: "== threshold on every caller (runtime sets it; ConsensusEngine default is 0.70)"}
+  - {name: token_authority, where: core/consensus_engine.py:106, rule: "HMAC-SHA256, nonce, 5 s TTL, single use, bound to the intent digest; engine path TokenAuthority() threshold 0.768"}
+  - {name: gate_agents_not_reweightable, where: core/tunables.py:76, rule: "ZEPHR, RUNE, OKAPI, MARIN, VESKA never re-weighted or muted"}
+
+frozen_profile_fields:
+  - {field: mode,             why: venue/mode is never a harness edit}
+  - {field: symbol,           why: venue}
+  - {field: leverage,         why: binance-futures-algo-guard, CLAUDE.md}
+  - {field: margin_type,      why: venue}
+  - {field: entry,            value: gtx,   why: "Post-Only GTX invariant (core/engine.py:163)"}
+  - {field: super_edge,       value: false, why: "IOC taker entry; off since 10-07p"}
+  - {field: super_cross,      allowed: ['off', 'shadow'], why: "LIMIT IOC on the remaining quantity = taker path"}
+  - {field: maker_bps,        why: cost model, stressed by the sandbox, never tuned}
+  - {field: taker_bps,        why: cost model}
+  - {field: slip_bps,         why: cost model}
+  - {field: mock_balance,     why: accounting}
+  - {field: equity_cap,       why: "live micro-capital gate 3.85 U"}
+  - {field: max_loss_usdt,    why: "live 0.05 U per trade"}
+  - {field: autonomy,         why: "live stays 'off'"}
+  - {field: observe_only,     why: "v0: BTC stays observer"}
+  - {field: conviction_sizing, why: sizing is not a harness edit in v0}
+  - {field: convex_sizing,    why: sizing}
+  - {field: alt_size_boost,   why: sizing}
+  - {field: super_size,       why: sizing}
+  - {field: kelly,            why: sizing}
+  - {field: cs_tiers,         why: sizing}
+  - {field: trend_lane,       allowed_change: none, why: "'active' needs its own verdict"}
+  - {field: burst_lane,       allowed: ['off', 'shadow'], why: "replay negative after fees (config/burst_verdict.json)"}
+  - {field: intraday_lane,    allowed: ['off', 'shadow'], why: "config/intraday_verdict.json: no ACTIVE-ELIGIBLE variant"}
+  - {field: stat_arb_lane,    allowed: ['off', 'shadow'], why: shadow lane}
+  - {field: chop_scalper,     allowed: ['off', 'shadow'], why: "replay -6.3..-7.5 bps/scalp"}
+  - {field: dyn_ttl,          allowed: ['off', 'shadow'], why: v0 conservative}
+  - {field: adaptive_ker,     allowed: ['off', 'shadow'], why: v0 conservative}
+  - {field: order_log,        value: true,  why: instrumentation}
+
+owned_by_bandit:            # core/param_bandit.py:24 ARMS; H2 may propose a new arm tuple per regime, never a value
+  cs_super_ofi:      {arms: [0.85, 0.90, 0.95]}
+  hurdle_min_hold_s: {arms: [30.0, 60.0, 90.0]}
+  tp1_scaled_pct:    {arms: [0.30, 0.40, 0.50]}
+
+# ---------------------------------------------------------------------------------------- levers
+# component = the Harness² component this lever plays the role of (README of harness2: system prompt,
+# guardrails, memory, tool guidance, subagents, skills, scripts, plugins).
+# dim = INV (how the swarm works: execution, exits, procedure) | DOM (regime knowledge: signal
+# thresholds, gates) | GUARD (risk, tighten-only).
+levers:
+  # ---- GUARD: guardrails (RUNE / OKAPI / ZEPHR budgets). Tighten-only everywhere.
+  - {field: portfolio_risk_usdt, scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: cap,   lo: 0.5,  baseline: {demo: 5.0,  live: 1.0}}
+  - {field: daily_kill_usdt,     scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: cap,   lo: 0.15, baseline: {demo: 5.0,  live: 0.15}}
+  - {field: max_trades_hour,     scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: cap,   lo: 1,    baseline: {demo: 8,    live: 6}}
+  - {field: max_positions,       scope: profile, component: guardrails, dim: GUARD, agent: OKAPI, kind: cap,   lo: 1,    baseline: {demo: 3,    live: 3}}
+  - {field: cs_max_notional,     scope: profile, component: guardrails, dim: GUARD, agent: OKAPI, kind: cap,   lo: 100.0, baseline: {demo: 350.0, live: null}}
+  - {field: risk_target_usdt,    scope: profile, component: guardrails, dim: GUARD, agent: OKAPI, kind: cap,   lo: 0.05, baseline: {demo: 0.15, live: 0.15}}
+  - {field: max_consec_losses,   scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: cap,   lo: 1,    baseline: {demo: 3,    live: 3}}
+  - {field: max_spread_bps,      scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: cap,   lo: 1.0,  baseline: {demo: 3.0,  live: 8.0}}
+  - {field: cooldown_s,          scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: floor, hi: 1800.0, baseline: {demo: 30.0, live: 60.0}}
+  - {field: loss_pause_s,        scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: floor, hi: 1800.0, baseline: {demo: 300.0, live: 300.0}}
+  - {field: jev_min,             scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: floor, hi: 9.5,  baseline: {demo: 8.0,  live: 8.0}, note: "jev/10 must stay >= 0.768; below 8.0 the JEV path emits decisions TokenAuthority refuses"}
+  - {field: peg_min_score,       scope: profile, component: guardrails, dim: GUARD, agent: VESKA, kind: floor, hi: 0.95, baseline: {demo: 0.768, live: 0.768}, note: "duplicates the supermajority value"}
+  - {field: edge_ratio_min,      scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: floor, hi: 4.0,  baseline: {demo: 2.5,  live: 2.5}}
+  - {field: min_confluence,      scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: floor, hi: 4,    baseline: {demo: 2,    live: 2}}
+  - {field: net_rr_min,          scope: profile, component: guardrails, dim: GUARD, agent: MARIN, kind: floor, hi: 2.5,  baseline: {demo: 1.3,  live: 1.3}}
+  - {field: min_score,           scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: floor, hi: 0.95, baseline: {demo: 0.82, live: 0.82}, note: churn gate score}
+  - {field: min_edge_bps,        scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: floor, hi: 60.0, baseline: {demo: 30.0, live: 30.0}}
+  - {field: mr_min_score,        scope: profile, component: guardrails, dim: GUARD, agent: NORO,  kind: floor, hi: 0.95, baseline: {demo: 0.80, live: 0.80}}
+  - {field: vfr_min,             scope: profile, component: guardrails, dim: GUARD, agent: ZEPHR, kind: floor, hi: 6.0,  baseline: {demo: 3.0,  live: 3.0}}
+  - {field: tp_fee_mult,         scope: profile, component: guardrails, dim: GUARD, agent: MARIN, kind: floor, hi: 5.0,  baseline: {demo: 3.0,  live: 3.0}}
+  - {field: vpin_pause_s,        scope: profile, component: guardrails, dim: GUARD, agent: RUNE,  kind: floor, hi: 120.0, baseline: {demo: 30.0, live: 30.0}}
+  - {field: vpin_max,            scope: signal,  component: guardrails, dim: GUARD, agent: RUNE,  kind: cap,   lo: 0.65, baseline: {demo: 0.80, live: 0.80}}
+  - {field: stale_s,             scope: signal,  component: guardrails, dim: GUARD, agent: ZEPHR, kind: cap,   lo: 1.0,  baseline: {demo: 3.0,  live: 3.0}}
+
+  # ---- INV / tool guidance: VESKA execution procedure (maker-only, never a taker switch).
+  - {field: gtx_ttl_s,           scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: range, lo: 1.5,  hi: 5.0,  baseline: {demo: 3.0,  live: 3.0}}
+  - {field: peg_interval_s,      scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: range, lo: 0.25, hi: 1.0,  baseline: {demo: 0.5,  live: 0.5}}
+  - {field: peg_max_drift_pct,   scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: range, lo: 0.05, hi: 0.20, baseline: {demo: 0.15, live: 0.15}}
+  - {field: gtx_backoff_ticks,   scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: range, lo: 1,    hi: 3,    baseline: {demo: 2,    live: 2}}
+  - {field: aggressive_quote,    scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: enum,  allowed: [true, false], baseline: {demo: true, live: true}}
+  - {field: unfilled_cooldown_s, scope: profile, component: tool_guidance, dim: INV, agent: VESKA, kind: range, lo: 0.5,  hi: 5.0,  baseline: {demo: 1.0,  live: 1.0}}
+  - {field: exit_repeg_s,        scope: profile, component: tool_guidance, dim: INV, agent: MARIN, kind: range, lo: 0.25, hi: 1.0,  baseline: {demo: 0.5,  live: 0.5}}
+
+  # ---- INV / skills: MARIN exit procedures (triggered sub-policies).
+  - {field: microbe_trigger_pct,  scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.08, hi: 0.15, baseline: {demo: 0.10, live: 0.10}}
+  - {field: be_trigger_pct,       scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.10, hi: 0.20, baseline: {demo: 0.12, live: 0.12}}
+  - {field: be_offset_pct,        scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.01, hi: 0.04, baseline: {demo: 0.02, live: 0.02}}
+  - {field: ratchet_trigger_pct,  scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.12, hi: 0.25, baseline: {demo: 0.15, live: 0.15}}
+  - {field: ratchet_lock_pct,     scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.05, hi: 0.12, baseline: {demo: 0.08, live: 0.08}}
+  - {field: lock_trigger_pct,     scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.20, hi: 0.35, baseline: {demo: 0.25, live: 0.25}}
+  - {field: lock_pct,             scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.10, hi: 0.20, baseline: {demo: 0.15, live: 0.15}}
+  - {field: eject_s,              scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 120.0, hi: 300.0, baseline: {demo: 180.0, live: 180.0}}
+  - {field: eject_mfe_pct,        scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.04, hi: 0.10, baseline: {demo: 0.06, live: 0.06}}
+  - {field: eject_hard_s,         scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 240.0, hi: 480.0, baseline: {demo: 360.0, live: 360.0}}
+  - {field: eject_fast_s,         scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 90.0, hi: 180.0, baseline: {demo: 120.0, live: 120.0}}
+  - {field: eject_fast_mfe_pct,   scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.05, hi: 0.12, baseline: {demo: 0.08, live: 0.08}}
+  - {field: hurdle_pct,           scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.06, hi: 0.12, baseline: {demo: 0.08, live: 0.08}}
+  - {field: flow_breath_s,        scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 15.0, hi: 45.0, baseline: {demo: 30.0, live: 30.0}}
+  - {field: regime_flip_min_hold_s, scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 30.0, hi: 120.0, baseline: {demo: 60.0, live: 60.0}}
+  - {field: regime_flip_debounce_s, scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 10.0, hi: 40.0, baseline: {demo: 20.0, live: 20.0}}
+  - {field: soft_exit_deadline_s, scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 3.0,  hi: 10.0, baseline: {demo: 5.0,  live: 5.0}}
+  - {field: pre_stop_gap_pct,     scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.02, hi: 0.08, baseline: {demo: 0.04, live: 0.04}}
+  - {field: trail_activate_pct,   scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.35, hi: 0.70, baseline: {demo: 0.50, live: 0.50}}
+  - {field: trail_gap_pct,        scope: profile, component: skills, dim: INV, agent: MARIN, kind: range, lo: 0.12, hi: 0.30, baseline: {demo: 0.20, live: 0.20}}
+
+  # ---- DOM / scripts: alpha-agent feature thresholds (what a practitioner knows about this regime).
+  # USD thresholds are BTC-scale; the code multiplies them by SignalConfig.usd_scale (SOL/DOGE 0.1).
+  - {field: obi_min,             scope: signal, component: scripts, dim: DOM, agent: LUMEN, kind: range, lo: 0.15, hi: 0.35, baseline: {demo: 0.20, live: 0.20}}
+  - {field: cvd_min,             scope: signal, component: scripts, dim: DOM, agent: LUMEN, kind: range, lo: 0.15, hi: 0.35, baseline: {demo: 0.20, live: 0.20}}
+  - {field: ofi_min,             scope: signal, component: scripts, dim: DOM, agent: TIDAL, kind: range, lo: 0.50, hi: 0.80, baseline: {demo: 0.65, live: 0.65}}
+  - {field: surge_ratio,         scope: signal, component: scripts, dim: DOM, agent: LUMEN, kind: range, lo: 1.5,  hi: 3.0,  baseline: {demo: 2.0,  live: 2.0}}
+  - {field: liq_usd,             scope: signal, component: scripts, dim: DOM, agent: TIDAL, kind: range, lo: 5000.0, hi: 30000.0, baseline: {demo: 10000.0, live: 10000.0}}
+  - {field: trend_usd,           scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 200000.0, hi: 500000.0, baseline: {demo: 300000.0, live: 300000.0}}
+  - {field: trend_obi,           scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 0.10, hi: 0.25, baseline: {demo: 0.15, live: 0.15}}
+  - {field: vwap_dev_pct,        scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 0.06, hi: 0.15, baseline: {demo: 0.08, live: 0.08}}
+  - {field: mr_dev_pct,          scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 0.08, hi: 0.20, baseline: {demo: 0.12, live: 0.12}}
+  - {field: regime_usd,          scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 300000.0, hi: 600000.0, baseline: {demo: 400000.0, live: 400000.0}}
+  - {field: regime_long_usd,     scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 400000.0, hi: 900000.0, baseline: {demo: 600000.0, live: 600000.0}}
+  - {field: macro_slope_pct,     scope: signal, component: scripts, dim: DOM, agent: NORO,  kind: range, lo: 0.03, hi: 0.08, baseline: {demo: 0.05, live: 0.05}}
+  - {field: min_velocity_pct,    scope: profile, component: scripts, dim: DOM, agent: TIDAL, kind: range, lo: 0.015, hi: 0.05, baseline: {demo: 0.025, live: 0.025}}
+
+  # ---- DOM / plugins: regime gates (middleware between the vote and VESKA).
+  - {field: ker_lock,            scope: signal, per_symbol: true, component: plugins, dim: DOM, agent: ZEPHR, kind: range, lo: 0.30, hi: 0.60,
+     baseline: {BTCUSDT: 0.55, SOLUSDT: 0.38, DOGEUSDT: 0.38}, constraint: "ker_unlock >= ker_lock"}
+  - {field: ker_unlock,          scope: signal, per_symbol: true, component: plugins, dim: DOM, agent: ZEPHR, kind: range, lo: 0.32, hi: 0.62,
+     baseline: {BTCUSDT: 0.55, SOLUSDT: 0.42, DOGEUSDT: 0.42}}
+  - {field: mr_ker_max,          scope: signal, per_symbol: true, component: plugins, dim: DOM, agent: NORO,  kind: range, lo: 0.0,  hi: 0.40,
+     baseline: {BTCUSDT: 0.0, SOLUSDT: 0.38, DOGEUSDT: 0.38}, constraint: "mr_ker_max <= ker_lock"}
+  - {field: conc_ofi,            scope: signal, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 0.25, hi: 0.50, baseline: {demo: 0.35, live: 0.35}}
+  - {field: conc_cvd60_usd,      scope: signal, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 200000.0, hi: 500000.0, baseline: {demo: 300000.0, live: 300000.0}}
+  - {field: absorb_usd,          scope: signal, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 300000.0, hi: 800000.0, baseline: {demo: 500000.0, live: 500000.0}}
+  - {field: absorb_min_move_pct, scope: signal, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 0.015, hi: 0.04, baseline: {demo: 0.025, live: 0.025}}
+  - {field: mr_ofi_max,          scope: profile, component: plugins, dim: DOM, agent: NORO,  kind: range, lo: 0.20, hi: 0.40, baseline: {demo: 0.30, live: 0.30}}
+  - {field: mr_cvd60_usd,        scope: profile, component: plugins, dim: DOM, agent: NORO,  kind: range, lo: 50000.0, hi: 200000.0, baseline: {demo: 100000.0, live: 100000.0}}
+  - {field: cvd_shield_60s_usd,  scope: profile, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 200000.0, hi: 500000.0, baseline: {demo: 300000.0, live: 300000.0}}
+  - {field: cvd_shield_3m_usd,   scope: profile, component: plugins, dim: DOM, agent: LUMEN, kind: range, lo: 300000.0, hi: 800000.0, baseline: {demo: 500000.0, live: 500000.0}}
+  - {field: drift_accel_ratio,   scope: profile, component: plugins, dim: DOM, agent: TIDAL, kind: range, lo: 2.0,  hi: 4.0,  baseline: {demo: 3.0,  live: 3.0}}
+  - {field: ker_gate,            scope: profile, component: plugins, dim: DOM, agent: ZEPHR, kind: gate, baseline: {demo: true, live: true}}
+  - {field: absorb_gate,         scope: profile, component: plugins, dim: DOM, agent: LUMEN, kind: gate, baseline: {demo: true, live: true}}
+  - {field: concordance_gate,    scope: profile, component: plugins, dim: DOM, agent: LUMEN, kind: gate, baseline: {demo: true, live: true}}
+  - {field: drift_lock,          scope: profile, component: plugins, dim: DOM, agent: NORO,  kind: gate, baseline: {demo: true, live: true}}
+  - {field: vfr_gate,            scope: profile, component: plugins, dim: DOM, agent: ZEPHR, kind: gate, baseline: {demo: true, live: true}}
+  - {field: macro_gate,          scope: profile, component: plugins, dim: DOM, agent: NORO,  kind: gate, baseline: {demo: true, live: true}}
+  - {field: mr_flow_gate,        scope: profile, component: plugins, dim: DOM, agent: NORO,  kind: gate, baseline: {demo: true, live: true}}
+  - {field: vpin_gate,           scope: profile, component: plugins, dim: DOM, agent: RUNE,  kind: gate, baseline: {demo: true, live: true}}
+  - {field: fee_hurdle,          scope: profile, component: plugins, dim: DOM, agent: MARIN, kind: gate, baseline: {demo: true, live: true}}
+
+# memory  -> the per-regime library (data/harness2/library/<regime_cell>/), not a field.
+# subagents -> lane enum fields above (frozen_profile_fields: burst/intraday/stat_arb/chop_scalper).
+# system_prompt -> the baseline Profile itself (PROFILES['demo']); never edited, only overlaid.
