@@ -234,7 +234,7 @@ class MicroCapitalSizer:
         """Money lost when the stop is hit: notional x (stop distance + entry / exit fees and slip), both in percent."""
         return notional * (sl_pct + fees_pct) / 100.0
 
-    def halt_until(self, rows, now=None):
+    def halt_until(self, rows, now=None, lookback_s=None):
         """Wall time until which entries stay halted by consecutive losses, else None.
 
         Same counter as the engine: AUTO-tag settled losses in a row since the last winner (other tags neither add nor
@@ -245,6 +245,8 @@ class MicroCapitalSizer:
             pnl = r.get('pnl')
             if pnl is None:
                 continue
+            if now is not None and lookback_s and r.get('t') is not None and float(r['t']) < now - lookback_s:
+                break                      # older than the window: not part of this streak (a 31 h old loss halted a fresh run)
             if float(pnl) > 0:
                 break
             if r.get('tag') == 'AUTO' and float(pnl) < 0:

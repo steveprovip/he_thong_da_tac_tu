@@ -44,6 +44,7 @@ async def doge_micro(tmp_path, wallet=5.0, vpin=0.2, frozen=None, **prof):
     feed = msig.MicroFeed(DOGE, msig.config_for(DOGE))
     book(feed, PX)
     feed.vpin_now = lambda: vpin
+    prof.setdefault('micro_align', False)          # the KER / alignment gate and the noise-floor bracket have their own tests (tests/test_micro_noise.py)
     prof.setdefault('gtx_ttl_s', 0.3)
     prof.setdefault('micro_ttl_s', 1.2)
     prof.setdefault('micro_ttl_max_s', 2.0)
@@ -194,6 +195,7 @@ async def test_the_unfilled_message_prints_the_time_really_waited(tmp_path):
 
 # ============================================================================= pillar 2: hybrid IOC
 def burst_engine(tmp_path, wallet=5.0, **prof):
+    prof.setdefault('micro_align', False)          # the KER / alignment gate and the noise-floor bracket have their own tests (tests/test_micro_noise.py)
     e, venue, feed = mock_engine(tmp_path, mock_balance=wallet, **prof)
     e.p = replace(e.p, symbol=DOGE, qty=0.0)
     e.spec = dict(SPEC[DOGE])
@@ -256,7 +258,7 @@ async def test_an_ioc_entry_is_sent_as_a_bounded_taker_and_sized_into_the_window
     book(feed, PX)
     orig = feed.features
     feed.features = lambda *a, **k: {**orig(*a, **k), 'ofi_10s': -0.94}
-    e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=5.0, micro_ioc='on', gtx_ttl_s=0.3)
+    e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=5.0, micro_ioc='on', gtx_ttl_s=0.3, micro_align=False)
     e.p = replace(e.p, symbol=DOGE, qty=0.0)
     e.spec = dict(SPEC[DOGE])
     await e.sync()
@@ -395,7 +397,7 @@ async def test_a_non_alt_micro_coin_gets_a_micro_lot_not_the_btc_probe(tmp_path)
     feed = msig.MicroFeed(XRP, msig.config_for(XRP))
     book(feed, 2.0, sym=XRP)
     e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=5.0, gtx_ttl_s=0.2, alt_boost=True,
-                              btc_probe_qty=0.001)
+                              btc_probe_qty=0.001, micro_align=False)
     e.p = replace(e.p, symbol=XRP, qty=0.0)
     e.spec = dict(SPEC[XRP])
     await e.sync()

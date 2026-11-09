@@ -122,6 +122,7 @@ def test_halt_ignores_rows_it_cannot_date_and_a_fourth_loss_extends_it():
 
 # ============================================================================= engine: mode follows the wallet
 def micro_engine(tmp_path, sym=DOGE, wallet=5.0, **prof):
+    prof.setdefault('micro_align', False)          # the KER / alignment gate and the noise-floor bracket have their own tests (tests/test_micro_noise.py)
     e, venue, feed = mock_engine(tmp_path, mock_balance=wallet, **prof)
     e.p = replace(e.p, symbol=sym, qty=0.0)
     e.spec = dict(SPEC[sym])
@@ -175,6 +176,7 @@ def book(feed, bid, sym=DOGE):
 
 
 async def doge_funnel(tmp_path, px, wallet=5.0, **prof):
+    prof.setdefault('micro_align', False)          # the KER / alignment gate and the noise-floor bracket have their own tests (tests/test_micro_noise.py)
     feed = msig.MicroFeed(DOGE, msig.config_for(DOGE))
     book(feed, px)
     e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=wallet, gtx_ttl_s=0.2, **prof)
@@ -213,7 +215,8 @@ async def test_a_coarse_lot_symbol_is_refused_by_the_funnel(tmp_path):
     feed = msig.MicroFeed(SOL, msig.config_for(SOL))
     for _ in range(3):
         feed.on_message(depth(86.0, 86.01, bq=900.0, aq=900.0, sym=SOL))
-    e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=5.0, micro_symbols=(SOL,), micro_capital='on')
+    e, venue, _ = mock_engine(tmp_path, feed=feed, mock_balance=5.0, micro_symbols=(SOL,), micro_capital='on',
+                              micro_align=False)
     e.p = replace(e.p, symbol=SOL, qty=0.0, observe_only=())
     e.spec = {**SPEC[SOL], 'step': 0.1, 'min_qty': 0.1}                   # a venue whose SOL lot is 0.1
     await e.sync()
@@ -263,7 +266,7 @@ def write_ledger(tmp_path, rows):
 
 
 def ledger_row(t, pnl, tag='AUTO'):
-    return {'t': t, 'mode': 'demo', 'symbol': DOGE, 'tag': tag, 'pnl': pnl, 'day': '1999-01-01', 'side': 'BUY'}
+    return {'t': t, 'mode': 'demo', 'symbol': DOGE, 'tag': tag, 'pnl': pnl, 'day': '1999-01-01', 'side': 'BUY', 'micro': True}
 
 
 def test_the_24h_halt_survives_a_restart_and_clears_after_24h_or_a_win(tmp_path):

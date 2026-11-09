@@ -343,6 +343,16 @@ class Profile:
                                         # break-even win rate is 1 / (1 + RR) = 47.6 %, not a guaranteed edge
     micro_tp_lift: bool = True          # micro mode: after the regime x0.75 / x1.5 multipliers raise TP back toward the unscaled
                                         # TP until the net-RR floor holds (never above it), instead of refusing the setup
+    micro_bracket: bool = True          # 11-09d micro brackets: the stop never under the noise floor, TP sized for net RR 1.40
+    micro_sl_floor_pct: float = 0.22    # SL >= 0.22 % (the 0.075 % stops of the 21:33 trades were 5-8 ticks: stopped in 7 s / 11 s)
+    micro_sl_atr_mult: float = 1.2      # ... or 1.2 x ATR 1 m, whichever is larger
+    micro_bracket_rr: float = 1.40      # TP = (SL + in + taker out + slip) x 1.40 + (in + maker out): 0.46 % at SL 0.22 %
+    micro_tp_atr_mult: float = 1.8      # ... and at least 1.8 x ATR 1 m (non-scalp)
+    micro_align: bool = True            # 11-09d micro entries need KER and a triple alignment (below)
+    micro_ker_min: float = 0.30         # KER (2 min) >= 0.30: the TP has to be reachable by a directional move
+    micro_ofi_min: float = 0.65         # OFI L10 WITH the trade >= 0.65 ...
+    micro_cvd3m_usd: float = 0.0        # ... CVD 3 m must not oppose the trade (x usd_scale; 0 = any opposing sign blocks) ...
+                                        # ... and the 5 m macro must not forbid the side. Unknown = not shown = blocked
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
     micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
     micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
@@ -1377,7 +1387,10 @@ class Engine:
 
     def micro_halt_until(self) -> Optional[float]:
         """Entries halted until this wall time by max_consec_losses AUTO losses, derived from the ledger (restart-proof)."""
-        return self.micro_sizer().halt_until(self.all_rows, self.clock()) if self.micro_active() else None
+        if not self.micro_active():
+            return None
+        rows = [r for r in self.all_rows if r.get('micro')]      # only trades taken under the micro rules (11-09d)
+        return self.micro_sizer().halt_until(rows, self.clock(), lookback_s=self.p.micro_loss_pause_s)
 
     def micro_equity(self) -> Optional[float]:
         """Equity the compounding sizes from: the wallet; a FORCED run on a wallet above micro_equity_max (a demo
@@ -1399,6 +1412,48 @@ class Engine:
             return (f'MICRO: loss at the stop {pl["loss_at_sl"]:.4f} U > {p.micro_max_loss_usdt:g} U '
                     f'(SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}% on {pl["notional"]:.2f} U)')
         return None
+
+    def micro_bracket(self, sl: float, tp: float, f: dict, route: str = 'gtx', scalp: bool = False) -> tuple:
+        """11-09d noise floor -> (sl, tp). SL >= max(micro_sl_floor_pct, micro_sl_atr_mult x ATR 1 m): a stop of 5-8 ticks is
+        hit by bid-ask jitter before any alpha shows (the 21:33 PEPE / XRP stops: 7 s and 11 s). TP is only ever raised, to the
+        TP whose fee-true net RR at that stop is micro_bracket_rr (micro_net_rr_min for the scalp lane, whose timers cannot
+        wait for 0.46 %) and, outside the scalp lane, to micro_tp_atr_mult x ATR 1 m. Loss at the stop stays checked by
+        micro_check (<= 0.05 U)."""
+        p, atr = self.p, (f or {}).get('atr_pct')
+        floor = max(p.micro_sl_floor_pct, p.micro_sl_atr_mult * atr) if atr else p.micro_sl_floor_pct
+        sl2 = max(sl, floor)
+        rr = p.micro_net_rr_min if scalp else p.micro_bracket_rr
+        tp2 = max(tp, self.min_tp_for(sl2, route, rr) if rr else 0.0, p.micro_tp_atr_mult * atr if atr and not scalp else 0.0)
+        return sl2, tp2
+
+    def micro_entry_block(self, side: str, f: dict) -> list:
+        """11-09d micro entry filter -> [(gate, reason), ...] (empty = pass).  MICRO_KER: KER (2 min) known and >= micro_ker_min.
+        MICRO_ALIGN: the 5 m macro does not forbid the side, CVD 3 m does not oppose it, OFI L10 is WITH the trade by at least
+        micro_ofi_min.  A missing feature cannot show alignment and blocks (UNKNOWN is not zero).  A fade of the last move
+        (the MR lane) has flow against it by construction, so this filter effectively closes the MR lane in micro mode."""
+        p, f = self.p, f or {}
+        if not (p.micro_align and self.micro_active()) or side not in ('BUY', 'SELL'):
+            return []
+        d, out = (1 if side == 'BUY' else -1), []
+        k = f.get('ker')
+        if k is None or k < p.micro_ker_min - 1e-12:
+            out.append(('MICRO_KER', f'MICRO KER {"—" if k is None else f"{k:.2f}"} < {p.micro_ker_min:g}: no directional move to reach the TP'))
+        bad = []
+        if side not in self.macro.get('allow', ('BUY', 'SELL')):
+            bad.append(f'macro 5m {self.macro.get("name")} forbids {side}')
+        c3, lim = f.get('cvd_3m'), p.micro_cvd3m_usd * self.feed.cfg.usd_scale
+        if c3 is None:
+            bad.append('CVD 3m unknown')
+        elif d * c3 < -lim - 1e-9:
+            bad.append(f'CVD 3m {c3 / 1e3:+.0f}k opposes {side}')
+        o = f.get('ofi_10s')
+        if o is None:
+            bad.append('OFI unknown')
+        elif d * o < p.micro_ofi_min - 1e-12:
+            bad.append(f'OFI {o:+.2f} not <= -{p.micro_ofi_min:g}' if side == 'SELL' else f'OFI {o:+.2f} not >= +{p.micro_ofi_min:g}')
+        if bad:
+            out.append(('MICRO_ALIGN', f'MICRO ALIGN {side}: ' + '; '.join(bad)))
+        return out
 
     def micro_scores(self) -> dict:
         """Router: Momentum Quality = KER x |OFI L10| of every micro coin, re-ranked at most every micro_rank_s and
@@ -2146,6 +2201,11 @@ class Engine:
             prof = replace(p, sl_pct=sl, tp_pct=tp)
         else:
             tp, sl, src, prof = p.tp_pct, p.sl_pct, 'STATIC', p
+        if p.max_loss_usdt is None and p.micro_bracket and self.micro_active():      # 11-09d noise floor (live derives SL from the loss budget)
+            sl2, tp2 = self.micro_bracket(sl, tp, f, route, scalp=path == 'SCALP')
+            if (sl2, tp2) != (sl, tp):
+                sl, tp = sl2, tp2
+                prof = replace(prof, sl_pct=sl, tp_pct=tp)
         e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
         tp_floor = p.tp_fee_mult * (e_in + p.maker_bps) / 100.0       # gross TP1 >= 3 x round-trip fee
         if tp < tp_floor - 1e-12 and path != 'SCALP':             # the scalper's 0.08 % TP is its spec
@@ -2523,6 +2583,7 @@ class Engine:
         self.align3_last = al
         if al and self.p.align3 == 'on':
             out.append(('ALIGN3', al))
+        out.extend(self.micro_entry_block(d.side, self.features or {}))      # 11-09d (empty outside micro mode)
         if self.p.vfr_gate:
             vv = self.vfr_view()
             if vv['frozen']:
@@ -2741,6 +2802,7 @@ class Engine:
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
                'micro_floor': xm.get('micro_floor'), 'tp_lift': xm.get('tp_lift'),
+               'bracket': xm.get('bracket'), 'micro_bracket': xm.get('micro_bracket'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
@@ -2782,6 +2844,14 @@ class Engine:
             px = self.gtx_price(side, f)
             if px is None:
                 return {'ok': False, 'error': 'no book'}
+            blk = self.micro_entry_block(side, f) if tag == 'AUTO' else []
+            if blk:                                              # 11-09d: KER + triple alignment, every AUTO path
+                for gate, _ in blk:
+                    self.funnel.outcome(gate)
+                if self.clock() - getattr(self, '_align_evt_t', -1e9) >= 30.0:
+                    self._align_evt_t = self.clock()
+                    self.event(f'OKAPI refused {side} {path}: ' + ' | '.join(w for _, w in blk))
+                return {'ok': False, 'error': blk[0][1]}
             route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
             if route == 'gtx' and tag == 'AUTO' and path not in ('MR', 'SCALP'):
                 route = self.micro_ioc_route(decision, f, side, path, xm)       # 11-09 hybrid IOC (micro mode only)
@@ -2815,7 +2885,8 @@ class Engine:
                     # Maker TP costs 0.04%; maker entry + taker stop + slip cost 0.08%.
                     min_tp = self.scalp_min_tp(new_sl, route)       # (new_sl + 0.08) x scalp_rr_min() + 0.04
                     new_tp = max(new_tp, min_tp)
-                elif self.p.micro_tp_lift and path != 'SCALP' and self.micro_active() and self.net_rr_eff():
+                elif (self.p.micro_tp_lift and path != 'SCALP' and self.micro_active() and self.net_rr_eff()
+                      and not self.p.micro_bracket):
                     # 11-09c: the regime scales TP and SL together while the fees stay fixed (MR 0.29 / 0.10 x SIDEWAYS 0.75 =
                     # RR 1.15). Lift TP back until the floor holds, never above the unscaled TP (the regime may only tighten);
                     # if even that cannot reach the floor, the RR gate below refuses honestly.
@@ -2824,6 +2895,11 @@ class Engine:
                         lifted = min(min_tp, base.tp_pct)
                         xm['tp_lift'] = f'{new_tp:.4f}->{lifted:.4f} (floor TP {min_tp:.4f}, unscaled {base.tp_pct:.4f})'
                         new_tp = lifted
+                if self.p.micro_bracket and self.micro_active():     # 11-09d: x0.75 (SIDEWAYS) may not undo the noise floor
+                    sl3, tp3 = self.micro_bracket(new_sl, new_tp, f, route, scalp=path == 'SCALP')
+                    if (sl3, tp3) != (new_sl, new_tp):
+                        xm['micro_bracket'] = f'{new_sl:.3f}/{new_tp:.3f}->{sl3:.3f}/{tp3:.3f}'
+                        new_sl, new_tp = sl3, tp3
                 base = replace(base, sl_pct=new_sl, tp_pct=new_tp)
                 bp.update(sl_pct=new_sl, tp_pct=new_tp, rr_gross=new_tp / new_sl if new_sl > 0 else None)
             touch = f.get('ask') if side == 'BUY' else f.get('bid')
@@ -2928,6 +3004,7 @@ class Engine:
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
+            xm['bracket'] = [round(pl['sl_pct'], 4), round(pl['tp_pct'], 4)]
             why_micro = self.micro_check(pl) if self.micro_active() else None
             if why_micro:
                 self.event(f'OKAPI refused {side}: {why_micro}')
@@ -3195,6 +3272,7 @@ class Engine:
                             'eject_mfe': 1e9, 'scalp_risk_mult': sr_mult} if path == 'SCALP' else {}),
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
+                        'micro': self.micro_active(),
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
                         'tp_pct': pl['tp_pct'], 'sl_pct': pl['sl_pct'],
                         'entry_type': xm.get('entry_type') or route.upper(),
@@ -4068,6 +4146,7 @@ class Engine:
                'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
+               'micro': bool(p.get('micro')),
                'scalp_risk_mult': p.get('scalp_risk_mult'),          # 11-08: SCALP size vs the stop floor
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),

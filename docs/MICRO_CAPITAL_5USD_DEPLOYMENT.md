@@ -17,11 +17,13 @@ It switches on by itself while the known wallet is **<= 15 USDT** (`MICRO_CAPITA
 | size as the bankroll grows | largest lot <= min(0.85, 0.20) x equity x leverage (E = 10 U -> 10 U), never under the venue floor, never over the 0.05 U loss ceiling (DOGE's 0.50 % SL floor: 8.6 U; a 0.20 % stop: 17.9 U) | `MicroCapitalSizer.qty` |
 | resting time of the maker entry | HARD FLOOR 10 s (VPIN warm-up, dirty VPIN and toxic markouts do not cancel inside it); 15 s only on a clean book (VPIN known < 0.65, markout QUOTE); cut at once on spread > 3 bps, mid -3 bps against the trade, touch beyond the 0.15 % peg cap; at most 2 re-pegs | `Engine.micro_keep` |
 | net-RR floor | 1.10 for every AUTO entry in micro mode (1.30 / scalp 1.35 otherwise): break-even win rate 47.6 %, not a guaranteed edge | `Engine.net_rr_eff`, `scalp_rr_min` |
+| bracket | SL >= max(0.22 %, 1.2 x ATR 1 m); TP for fee-true net RR 1.40 (0.46 % at SL 0.22 %) and >= 1.8 x ATR 1 m; re-applied after the regime multipliers; a wider bracket is kept; scalp lane: floor yes, TP to RR 1.10 | `Engine.micro_bracket` |
+| entry filter | KER (2 min) >= 0.30 AND 5 m macro does not forbid the side AND CVD 3 m does not oppose AND OFI L10 with the trade >= 0.65; unknown = blocked. Effectively closes the MR (fade) lane | `Engine.micro_entry_block` |
 | JUMPY regime | the scalp lane is not frozen when spread < 2 bps and VPIN is known and < 0.70 (venue lot kept, stop x1.5 kept); CRASH / UNKNOWN unchanged | `Engine.micro_jumpy_scalp` |
 | taker (IOC) entry | opt-in (`MICRO_IOC=on`): RAW consensus >= 0.78, OFI with the trade >= 0.70, TP >= 0.20 % AND fee-true net RR with a taker entry >= 1.05 (that needs TP >= 1.05 x SL + 0.206 %: 0.29-0.42 % for SL 0.075-0.20 %), tape guard QUOTE; else Post-Only GTX | `Engine.micro_ioc_route` |
 | margin guard | one lot of the window may use up to 6.0 U / 5x = 1.2 U (20 % of 5 U was 1.0 U and refused every lot) | `Engine.portfolio_check` |
 | daily loss kill | 0.15 U | `Engine.daily_kill_eff` |
-| 3 AUTO losses in a row | no entry for 24 h from the last loss; derived from the ledger, so a restart does not erase it | `MicroCapitalSizer.halt_until` |
+| 3 AUTO losses in a row | no entry for 24 h from the last loss; counts only trades taken under the micro rules (`micro` flag in the ledger) of the last 24 h; derived from the ledger, so a restart does not erase it | `MicroCapitalSizer.halt_until` |
 
 Sizing is price-driven. DOGE at 0.0711 U needs **72-84 DOGE** (25-30 DOGE is 1.8-2.1 U and Binance rejects it with -4164). The size
 replaces the Kelly / conviction / boost chain, which is built for hundreds of USDT. Kelly NO EDGE gate, shadow path, raw-quorum gate,

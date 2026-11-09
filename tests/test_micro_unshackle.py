@@ -40,7 +40,8 @@ def test_the_scalp_tp_lift_follows_the_micro_floor(tmp_path):
 
 async def _mr_buy(tmp_path, **prof):
     """The logged setup: an MR entry (fixed bracket 0.29 / 0.10) in a SIDEWAYS regime (stop and TP x0.75)."""
-    e, venue, feed = await doge_micro(tmp_path, regime_gate='on', mr_bracket='fixed', gtx_ttl_s=0.2, **prof)
+    prof.setdefault('micro_bracket', False)        # these tests pin the 11-09b/c mechanics on the raw MR bracket;
+    e, venue, feed = await doge_micro(tmp_path, regime_gate='on', mr_bracket='fixed', gtx_ttl_s=0.2, **prof)   # the floor: test_micro_noise.py
     regime(e, rc.SIDEWAYS)
     return e, await e.execute('BUY', BUY, 'MR')
 
