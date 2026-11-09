@@ -363,7 +363,7 @@ def test_the_router_ranks_ker_times_abs_ofi_every_5_seconds(tmp_path):
 
 
 def test_the_best_ranked_candidate_takes_the_single_slot_and_the_others_yield(tmp_path):
-    es, t = scanner(tmp_path)
+    es, t = scanner(tmp_path, micro_max_positions=1)      # 11-09f: the Demo profile has 3 slots (test_micro_profit_scale.py)
     feats(es[DOGE], 0.3, 0.5), feats(es[XRP], 0.8, 0.9), feats(es[ADA], 0.2, 0.2), feats(es[PEPE], 0.5, 0.4)
     diag = {'consensus': 0.9}
     q = {s: es[s].quality(BUY, diag) for s in (DOGE, XRP, ADA, PEPE)}
@@ -386,7 +386,7 @@ def test_outside_micro_mode_nobody_yields(tmp_path):
 
 
 def test_one_position_in_total_across_the_four_coins(tmp_path):
-    es, _ = scanner(tmp_path)
+    es, _ = scanner(tmp_path, micro_max_positions=1)
     es[DOGE].pos = {'side': 'BUY'}
     assert es[XRP].slot_block() == 'PORTFOLIO FULL 1/1' and es[PEPE].slot_block() == 'PORTFOLIO FULL 1/1'
     es[DOGE].pos = None
@@ -470,7 +470,7 @@ async def test_the_funnel_compounds_a_real_small_wallet_and_rehearses_a_bankroll
 
 
 def test_the_margin_guard_follows_the_compounded_window(tmp_path):
-    e = burst_engine(tmp_path, wallet=10.0)
+    e = burst_engine(tmp_path, wallet=10.0, micro_max_positions=1)
     assert e.portfolio_check({'loss_at_sl': 0.04, 'margin': 2.0}) is None            # 20 % of 10 U
     assert e.portfolio_check({'loss_at_sl': 0.04, 'margin': 2.01}).startswith('PORTFOLIO MARGIN 2.01 U > 2.00 U')
 

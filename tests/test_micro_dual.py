@@ -204,9 +204,14 @@ async def test_harvester_off_and_a_trend_tape_leave_the_old_scalper_rules(tmp_pa
     await e.chop_scalp(BUY, {**feed.features(), **CHOP_F})
     [r] = rows(tmp_path)
     assert r['outcome'] == 'SHADOW_SCALP' and 'harvest' not in r              # legacy shadow row, mode from chop_scalper
+    (tmp_path / 'b').mkdir()                                                  # _shadow_row does not create its directory
+    (tmp_path / 'c').mkdir()
     e2, _, feed2 = await doge_micro(tmp_path / 'b', chop_scalper='off')
     await e2.chop_scalp(BUY, {**feed2.features(), **CHOP_F, 'ker': 0.35})     # TREND lane + scalper off: nothing
     assert rows(tmp_path / 'b') == []
+    e3, _, feed3 = await doge_micro(tmp_path / 'c', chop_scalper='shadow')    # control: the same tape logs when the old switch is on
+    await e3.chop_scalp(BUY, {**feed3.features(), **CHOP_F, 'ker': 0.35})
+    assert [r['outcome'] for r in rows(tmp_path / 'c')] == ['SHADOW_SCALP'] and 'harvest' not in rows(tmp_path / 'c')[0]
 
 
 async def test_dead_tape_coin_does_not_harvest(tmp_path):

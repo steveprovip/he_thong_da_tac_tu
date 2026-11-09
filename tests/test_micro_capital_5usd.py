@@ -241,7 +241,7 @@ def test_micro_check_enforces_the_window_and_the_loss_budget(tmp_path):
 def test_one_position_at_a_time_on_a_small_wallet_three_on_a_big_one(tmp_path):
     peer = SimpleNamespace(pos={'x': 1}, busy=False, view={}, risk_at_stop=lambda: 0.0, margin_used=lambda: 0.0,
                            p=SimpleNamespace(symbol=SOL))
-    small, _, _ = micro_engine(tmp_path, wallet=5.0)
+    small, _, _ = micro_engine(tmp_path, wallet=5.0, micro_max_positions=1)     # 11-09f: the Demo profile now allows 3 (test_micro_profit_scale.py)
     small.risk.engines = [small, peer]
     assert small.max_positions_eff() == 1 and small.slot_block() == 'PORTFOLIO FULL 1/1'
     big, _, _ = micro_engine(tmp_path / 'b', wallet=5000.0)
@@ -326,7 +326,7 @@ def test_the_reported_sol_short_was_demo_sized_and_the_new_guards_do_not_touch_i
 def test_one_micro_lot_passes_the_portfolio_margin_guard(tmp_path, wallet):
     """20 % of a 5 U wallet is 1.0 U < the 1.02 U margin (5.10 U / 5x) of the smallest lot: every micro entry, and every
     entry of the shipped live profile (0.77 U on 3.85 U), used to be refused by RUNE before it reached the venue."""
-    e, _, _ = micro_engine(tmp_path, wallet=wallet)
+    e, _, _ = micro_engine(tmp_path, wallet=wallet, micro_max_positions=1)     # the live-profile rule: one lot
     assert e.portfolio_check({'loss_at_sl': 0.014, 'margin': 1.02}) is None
     assert e.portfolio_check({'loss_at_sl': 0.017, 'margin': 1.2}) is None          # the largest lot of the window
     why = e.portfolio_check({'loss_at_sl': 0.017, 'margin': 1.21})

@@ -508,6 +508,8 @@ class CarrySim:
         self.last_rotation_t: Optional[float] = None
         self.rotation_targets: list = []
         self.basis_eject_until: dict = {}
+        self.first_t: Optional[float] = None
+        self.funding_closed = 0.0                            # simulated funding already banked by closed pairs
 
     @property
     def notional_per_leg(self) -> float:
@@ -557,7 +559,9 @@ class CarrySim:
         got = p['bn'].equity() + p['hl'].equity()
         self.cash += got
         self.pairs.pop(coin)
-        self.closed.append({'coin': coin, 'why': why, 'net_usdt': round(got - 2 * n, 4),
+        fund = p['bn'].funding + p['hl'].funding
+        self.funding_closed += fund
+        self.closed.append({'coin': coin, 'why': why, 'net_usdt': round(got - 2 * n, 4), 'funding_usdt': round(fund, 4),
                             'days': round((self.clock() - p['opened']) / 86400, 3)})
         self.events.append(f'CARRY SIM CLOSE {coin}: {why} · net {got - 2 * n:+.4f} USDT (simulated)')
 
@@ -578,6 +582,7 @@ class CarrySim:
         """One refresh: accrue, mark, guard and exit the held pairs, then open new ones. -> telemetry view."""
         now = self.clock()
         dt_h = 0.0 if self.last_t is None else max(now - self.last_t, 0.0) / 3600.0
+        self.first_t = now if self.first_t is None else self.first_t
         self.last_t, self.events = now, []
         rotation_due = (self.last_rotation_t is None or
                         now - self.last_rotation_t >= self.rotation_interval_s - EPS)
@@ -655,6 +660,9 @@ class CarrySim:
                          'status': ('HELD' if coin in self.pairs else 'TARGET' if eligible and coin in self.rotation_targets
                                     else 'ENTRY' if eligible else 'BELOW')})
         rows.sort(key=lambda r: -r.get('net_apr_pct', -1e9))
+        fund_open = sum(p['bn'].funding + p['hl'].funding for p in self.pairs.values())
+        fund_total = fund_open + self.funding_closed
+        days = 0.0 if self.first_t is None else max(self.clock() - self.first_t, 0.0) / 86400.0
         pos = [{'coin': c, 'short': p['short'], 'long': p['long'], 'notional_per_leg': round(n, 2),
                 'opened': p['opened'], 'spread_8h_entry': round(p['spread_8h_entry'], 3),
                 'spread_8h': round(p['spread_8h'], 3), 'apr_pct': round(p['net_apr_pct'], 2),
@@ -674,6 +682,11 @@ class CarrySim:
                              self.last_rotation_t + self.rotation_interval_s,
                              'targets': list(self.rotation_targets), 'basis_stop_bps': self.basis_stop_bps},
                 'equity': round(eq, 4), 'start': round(self.start, 4), 'pnl': round(eq - self.start, 4),
+                # accumulated SIMULATED funding (no real order, no real settlement): estimates at the current rate between
+                # prints; the APR below is that yield on the book's start capital, None until an hour of run time (UNKNOWN)
+                'funding_total_usdt': round(fund_total, 4), 'funding_open_usdt': round(fund_open, 4),
+                'funding_closed_usdt': round(self.funding_closed, 4), 'run_days': round(days, 4),
+                'funding_apr_pct': round(fund_total / self.start / days * 365 * 100, 2) if days >= 1 / 24 else None,
                 'drawdown': round(1 - eq / self.kill.peak, 6) if self.kill.peak else None,
                 'kill': None if ok else kill_why, 'positions': pos, 'top': rows[:8],
                 'closed': self.closed[-5:], 'new_events': list(self.events)}

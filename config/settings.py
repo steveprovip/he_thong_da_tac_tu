@@ -53,15 +53,32 @@ def micro_capital_env(env):
         if harvester not in ('off', 'shadow', 'on'):
             raise ValueError('MICRO_HARVESTER must be off, shadow or on')
         out['micro_harvester'] = harvester
-    raw = str(env.get('MICRO_CAPITAL_BANKROLL', '')).strip()
+    banks = {k: str(env.get(k, '')).strip() for k in ('MICRO_CAPITAL_BANKROLL', 'MICRO_BANKROLL_DEMO')}   # 11-09f: same knob, 2 names
+    for key, raw in banks.items():
+        if raw:
+            try:
+                bank = float(raw)
+            except ValueError:
+                raise ValueError(f'{key} must be a number') from None
+            if not 0 < bank <= 1000:
+                raise ValueError(f'{key} must be in (0, 1000] USDT')
+            if out.get('micro_bankroll', bank) != bank:
+                raise ValueError('MICRO_CAPITAL_BANKROLL and MICRO_BANKROLL_DEMO disagree: set one')
+            out['micro_bankroll'] = bank
+    raw = str(env.get('MICRO_MAX_POSITIONS', '')).strip()           # 11-09f: concurrent micro positions (one per coin)
+    if raw:
+        if raw not in ('1', '2', '3'):
+            raise ValueError('MICRO_MAX_POSITIONS must be 1, 2 or 3')
+        out['micro_max_positions'] = int(raw)
+    raw = str(env.get('MICRO_ACCEL_K', '')).strip()                 # 11-09f: lot growth per realized USDT (0 = off)
     if raw:
         try:
-            bank = float(raw)
+            k = float(raw)
         except ValueError:
-            raise ValueError('MICRO_CAPITAL_BANKROLL must be a number') from None
-        if not 0 < bank <= 1000:
-            raise ValueError('MICRO_CAPITAL_BANKROLL must be in (0, 1000] USDT')
-        out['micro_bankroll'] = bank
+            raise ValueError('MICRO_ACCEL_K must be a number') from None
+        if not 0 <= k <= 10:
+            raise ValueError('MICRO_ACCEL_K must be in [0, 10]')
+        out['micro_accel_k'] = k
     raw = str(env.get('MICRO_CAPITAL_SYMBOLS', '')).strip().upper()
     if raw:
         syms = tuple(s.strip() for s in raw.split(',') if s.strip())

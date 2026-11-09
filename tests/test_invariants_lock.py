@@ -178,7 +178,9 @@ def test_demo_and_unarmed_engines_run_research_toggles_and_announce_them(tmp_pat
     assert len(e.invariant_errors) == 1 and 'super_cross' in e.invariant_errors[0]
     assert any(x['message'] == f'INVARIANT WARN {e.invariant_errors[0]}' for x in e.events)
     unarmed = _engine(tmp_path, replace(eng.PROFILES['demo'], mode='live'), tag='unarmed')   # cannot reach mainnet
-    assert len(unarmed.invariant_errors) == 3
+    # equity cap, loss budget, autonomy + (11-09f) the Demo-only 3 micro slots and PnL-linked lot a live profile may not carry
+    assert len(unarmed.invariant_errors) == 5
+    assert any('micro_max_positions' in x for x in unarmed.invariant_errors) and any('micro_accel_k' in x for x in unarmed.invariant_errors)
 
 
 def test_engine_refuses_a_broken_quorum_or_token_in_every_mode(tmp_path, monkeypatch):

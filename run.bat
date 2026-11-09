@@ -53,6 +53,9 @@ rem --no-scan): BTC/SOL observe, DOGE/XRP/ADA/1000PEPE rotate, one position. MIC
 rem (invariant I5 prints an INVARIANT WARN on demo; an armed live engine refuses it).
 set "MICRO_CAPITAL_MODE=on"
 set "MICRO_IOC=on"
+rem 11-09e: MICRO_HARVESTER=on = chop-lane maker harvester (KER < 0.28, TP 0.15 / SL 0.15 %) rehearsal; Demo only (a live
+rem profile with it on is an invariant error). Replay of the sister scalper is negative: delete this line to go back to shadow.
+set "MICRO_HARVESTER=on"
 call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
 start "" "http://127.0.0.1:8765"
 "%PY%" -m core.engine --mode demo

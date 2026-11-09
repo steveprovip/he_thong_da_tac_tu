@@ -156,17 +156,18 @@ class MicroCapitalSizer:
 
     def __init__(self, equity_max=15.0, notional_min=5.05, notional_max=6.0, max_loss_usdt=0.05, daily_kill_usdt=0.15,
                  loss_pause_s=86_400.0, max_consec_losses=3, max_positions=1, symbols=('DOGEUSDT',),
-                 min_notional_buffer=1.02, margin_frac=0.85, growth_frac=0.20):
+                 min_notional_buffer=1.02, margin_frac=0.85, growth_frac=0.20, accel_k=0.0):
         vals = (equity_max, notional_min, notional_max, max_loss_usdt, daily_kill_usdt, loss_pause_s, min_notional_buffer,
                 margin_frac, growth_frac)
         if not all(math.isfinite(v) and v > 0 for v in vals) or notional_min > notional_max or max_positions < 1 \
-                or max_consec_losses < 1 or not symbols or margin_frac > 1 or growth_frac > 1:
+                or max_consec_losses < 1 or not symbols or margin_frac > 1 or growth_frac > 1 \
+                or not (math.isfinite(accel_k) and accel_k >= 0):
             raise ValueError('Invalid micro-capital parameters')
         self.equity_max, self.notional_min, self.notional_max = equity_max, notional_min, notional_max
         self.max_loss_usdt, self.daily_kill_usdt, self.loss_pause_s = max_loss_usdt, daily_kill_usdt, loss_pause_s
         self.max_consec_losses, self.max_positions = int(max_consec_losses), int(max_positions)
         self.symbols, self.min_notional_buffer = tuple(symbols), min_notional_buffer
-        self.margin_frac, self.growth_frac = margin_frac, growth_frac
+        self.margin_frac, self.growth_frac, self.accel_k = margin_frac, growth_frac, float(accel_k)
 
     def active(self, wallet, mode='auto') -> bool:
         """'on' / 'off' force it; 'auto' = a known, positive wallet <= equity_max (an unknown wallet is not a small one)."""
@@ -184,20 +185,29 @@ class MicroCapitalSizer:
     def floor_notional(self, min_notional) -> float:
         return max(self.notional_min, float(min_notional) * self.min_notional_buffer)
 
-    def compound_target(self, equity, leverage=5.0):
+    def compound_target(self, equity, leverage=5.0, pnl=None):
         """11-09 compounding target notional = min(margin_frac, growth_frac) x equity x leverage (None = equity unknown).
 
         The directive's max(5.10, min(0.85 x E x L, 0.25 x wallet_cap)) cannot scale as written (wallet_cap is
         undefined; a constant cap gives a constant, buying power as the cap gives 6.25 U at E = 5, above the 6.0 U window).
         margin_frac is the share of equity that may ever be margin (0.85); growth_frac (0.20) is the share of BUYING POWER
-        the position tracks, so E = 5 -> 5.0 (under the venue floor: the smallest lot), E = 10 -> 10, E = 15 -> 15."""
+        the position tracks, so E = 5 -> 5.0 (under the venue floor: the smallest lot), E = 10 -> 10, E = 15 -> 15.
+
+        11-09f accelerator (accel_k > 0 and a known realized `pnl`, USDT): target = base x max(0, 1 + accel_k x pnl), base = the
+        plain target above (the pasted `notional_base` is undefined; this is the only reading that needs no extra input),
+        capped by the margin share of ONE of max_positions slots (margin_frac x E x L / max_positions).  A realized loss
+        shrinks it (factor < 1, to 0 at pnl = -1 / accel_k); a gain grows it faster than equity alone.  pnl None = off."""
         if equity is None or not (math.isfinite(equity) and equity > 0 and math.isfinite(leverage) and leverage > 0):
             return None
-        return min(self.margin_frac, self.growth_frac) * equity * leverage
+        plain = min(self.margin_frac, self.growth_frac) * equity * leverage
+        if self.accel_k > 0 and pnl is not None and math.isfinite(pnl):
+            share = self.margin_frac * equity * leverage / self.max_positions
+            return min(plain * max(0.0, 1.0 + self.accel_k * pnl), max(plain, share))
+        return plain
 
-    def window_hi(self, equity=None, leverage=5.0):
+    def window_hi(self, equity=None, leverage=5.0, pnl=None):
         """Largest entry notional allowed now: the static cap, or the compounding target once it is higher."""
-        t = self.compound_target(equity, leverage)
+        t = self.compound_target(equity, leverage, pnl)
         return self.notional_max if t is None else max(self.notional_max, t)
 
     def risk_notional(self, sl_pct, fees_pct):
@@ -205,7 +215,7 @@ class MicroCapitalSizer:
         d = sl_pct + fees_pct
         return self.max_loss_usdt / (d / 100.0) if d > 0 else None
 
-    def qty(self, price, step, min_qty, min_notional, equity=None, leverage=5.0, risk_notional=None):
+    def qty(self, price, step, min_qty, min_notional, equity=None, leverage=5.0, risk_notional=None, pnl=None):
         """-> (qty, '') or (None, why).  Without a known equity above the venue floor: the smallest lot inside the
         notional window.  With one: the largest lot <= compound_target, never over window_hi, risk_notional (the loss
         ceiling) or below the venue floor."""
@@ -215,13 +225,13 @@ class MicroCapitalSizer:
         if floor > self.notional_max + 1e-9:
             return None, (f'MICRO: venue minimum notional {min_notional:g} U needs {floor:.2f} U > cap '
                           f'{self.notional_max:g} U')
-        hi = self.window_hi(equity, leverage)
+        hi = self.window_hi(equity, leverage, pnl)
         if risk_notional is not None:
             hi = min(hi, risk_notional)
         if floor > hi + 1e-9:
             return None, f'MICRO: loss ceiling {hi:.2f} U is under the venue floor {floor:.2f} U'
         q = max(float(min_qty), round(math.ceil(round(floor / price / step, 9)) * step, 12))
-        target = self.compound_target(equity, leverage)
+        target = self.compound_target(equity, leverage, pnl)
         if target is not None and min(target, hi) > floor:
             q = max(q, round(math.floor(round(min(target, hi) / price / step, 9)) * step, 12))
         notional = q * price
@@ -264,7 +274,7 @@ class MicroCapitalSizer:
                 'symbols': list(self.symbols), 'notional': [self.notional_min, self.notional_max],
                 'max_loss_usdt': self.max_loss_usdt, 'daily_kill_usdt': self.daily_kill_usdt,
                 'max_positions': self.max_positions, 'loss_pause_s': self.loss_pause_s,
-                'margin_frac': self.margin_frac, 'growth_frac': self.growth_frac}
+                'margin_frac': self.margin_frac, 'growth_frac': self.growth_frac, 'accel_k': self.accel_k}
 
 
 class DrawdownBrake:

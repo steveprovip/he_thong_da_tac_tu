@@ -371,7 +371,11 @@ class Profile:
     micro_sniper_tp_max_pct: float = 0.70   # TREND lane: TP slides from the RR-1.40 TP (0.46 %) to 0.70 % as KER goes ...
     micro_sniper_ker_full: float = 0.60     # ... from micro_ker_min to this (the MARIN trail takes over from +0.50 % MFE)
     micro_equity_track: bool = True     # forced micro on a big (Demo) wallet: virtual equity = micro_bankroll + realized micro
-                                        # PnL (capped at micro_equity_max), so every won USDT raises the lot (it was constant)
+                                        # PnL (capped at max(micro_equity_max, micro_bankroll)): every won USDT raises the lot
+    micro_accel_k: float = 0.0          # 11-09f lot = plain compounding target x (1 + k x realized micro PnL USDT), capped at one
+                                        # slot's margin share; 0 = off. Demo profile 5.0; live must stay 0 (invariant)
+    micro_harvest_macro_soft: bool = True   # 11-09f chop harvester: a 5 m macro that forbids the side no longer blocks when ...
+    micro_harvest_macro_ofi: float = 0.55   # ... OFI L10 is WITH the trade by >= 0.55 (resting post-only maker only)
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
     micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
     micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
@@ -726,6 +730,7 @@ PROFILES = {
                     stat_arb_lane='shadow',  # Stat-Arb cointegration Kalman lane (pairs trading)
                     funding_shadow=True, carry_sim=True, tox_guard='on',
                     scalp_tp_pct=0.32, scalp_net_rr=True, scalp_min_edge_bps=10.0,
+                    micro_max_positions=3, micro_accel_k=5.0,   # 11-09f Demo rehearsal: 3 coins at once (<= 0.15 U at all stops), PnL-linked lot
                     regime_gate='on', regime_trend_window_s=60.0, regime_er_bucket_s=5.0,
                     regime_er_min_span_s=45.0,
                     swarm_chop_override=True, swarm_override_min_score=0.80),
@@ -1315,6 +1320,10 @@ class Engine:
 
     def risk_cap(self) -> float:
         """Money-at-stop budget for a new trade on this coin: BTC gets (1 - alt_risk_share) of the pool."""
+        if self.micro_active():
+            # 11-09f: with several slots the money at ALL stops, on top of what the day already lost, may not go past the
+            # daily kill, so three simultaneous stop-outs cannot overshoot the 0.15 U meter
+            return max(0.0, min(self.p.portfolio_risk_usdt, self.daily_kill_eff() + self.day_pnl))
         if self.is_alt() or not self.p.alt_boost:
             return self.p.portfolio_risk_usdt
         return max(0.0, self.p.portfolio_risk_usdt * (1.0 - self.p.alt_risk_share))
@@ -1387,7 +1396,7 @@ class Engine:
             c = self._micro_cache = (p, MicroCapitalSizer(
                 p.micro_equity_max, p.micro_notional_min, p.micro_notional_max, p.micro_max_loss_usdt,
                 p.micro_daily_kill_usdt, p.micro_loss_pause_s, p.max_consec_losses, p.micro_max_positions,
-                p.micro_symbols, margin_frac=p.micro_margin_frac, growth_frac=p.micro_growth_frac))
+                p.micro_symbols, margin_frac=p.micro_margin_frac, growth_frac=p.micro_growth_frac, accel_k=p.micro_accel_k))
         return c[1]
 
     def micro_wallet(self) -> Optional[float]:
@@ -1411,22 +1420,24 @@ class Engine:
         rows = [r for r in self.all_rows if r.get('micro')]      # only trades taken under the micro rules (11-09d)
         return self.micro_sizer().halt_until(rows, self.clock(), lookback_s=self.p.micro_loss_pause_s)
 
+    def micro_pnl(self) -> float:
+        """Realized NET pnl (USDT) of the settled `micro`-flagged ledger rows (restart-proof); unknown pnl is skipped, never 0."""
+        return math.fsum(float(r['pnl']) for r in self.all_rows if r.get('micro') and r.get('pnl') is not None)
+
     def micro_equity(self) -> Optional[float]:
         """Equity the compounding sizes from: the wallet; a FORCED run on a wallet above micro_equity_max (a demo
-        account) rehearses a micro_bankroll account instead of sizing from thousands of virtual USDT."""
+        account) rehearses a micro_bankroll account instead of sizing from thousands of virtual USDT.  11-09e: that
+        bankroll compounds the realized micro PnL (it was a constant, so a won USDT never raised the lot), capped at
+        max(micro_equity_max, micro_bankroll) so an explicit bankroll above 15 U (MICRO_CAPITAL_BANKROLL) is honoured."""
         w = self.micro_wallet()
         if self.p.micro_capital == 'on' and (w is None or w > self.p.micro_equity_max):
             if not self.p.micro_equity_track:
                 return self.p.micro_bankroll
-            # 11-09e compounding: the bankroll was a constant, so a won USDT never raised the lot on the Demo account.
-            # Realized NET pnl of the micro-flagged settled trades (the ledger, restart-proof); unknown pnl is skipped,
-            # never zero-filled; capped at the micro ceiling (above it the small-account rules end anyway).
-            pnl = math.fsum(float(r['pnl']) for r in self.all_rows if r.get('micro') and r.get('pnl') is not None)
-            return min(self.p.micro_equity_max, max(0.0, self.p.micro_bankroll + pnl))
+            return min(max(self.p.micro_equity_max, self.p.micro_bankroll), max(0.0, self.p.micro_bankroll + self.micro_pnl()))
         return w
 
     def micro_window_hi(self) -> float:
-        return self.micro_sizer().window_hi(self.micro_equity(), self.p.leverage)
+        return self.micro_sizer().window_hi(self.micro_equity(), self.p.leverage, self.micro_pnl())
 
     def micro_check(self, pl: dict) -> Optional[str]:
         """A sized plan outside the notional window, or whose loss at the stop exceeds the budget -> reason."""
@@ -1667,15 +1678,24 @@ class Engine:
         side = 'BUY' if ofi > 0 else 'SELL'
         if self.toxic_blocks(side):
             return None, 'VPIN toxic against the side'
+        macro_note = ''
         if self.p.scalp_macro_lock:     # 11-08: a 10 s OFI blip may not fight the 5 m macro or the CVD regime
+            # 11-09f: in the CHOP harvester lane (KER < micro_ker_min) the 5 m macro does not block a resting maker whose
+            # side has OFI L10 >= micro_harvest_macro_ofi behind it.  Only the 5 m macro: the CVD flow regime (self.reg,
+            # 'STRONG DOWNTREND (SHORT ONLY)') stays a block - it is a different guard and the swarm bans that side in it.
+            soft = (self.p.micro_harvest_macro_soft and self.harvest_lane(f)
+                    and abs(ofi) >= self.p.micro_harvest_macro_ofi - 1e-12)
             for m in (self.macro or {}, self.reg or {}):
                 if side not in m.get('allow', ('BUY', 'SELL')):
+                    if soft and m is self.macro:
+                        macro_note = f' · macro {m.get("name")} softened (OFI {ofi:+.2f})'
+                        continue
                     return None, f'MACRO {m.get("label") or m.get("name")} forbids {side} scalp'
         c3, lim = f.get('cvd_3m', 0.0), self.p.scalp_cvd3m_usd
         if lim and c3 is not None and (c3 > lim if side == 'SELL' else c3 < -lim):   # UNKNOWN: ALIGN3 ('on')
             if self.cvd3m_soft(side, f) is None:        # 11-09e micro: lagging CVD 3 m + strong OFI / 1 m move = size penalty
                 return None, f'CVD_3M conflict ({c3:+.0f}) with {side}'
-        return side, f'CHOP SCALP {side}: KER {k:.2f} · spread {spread:.2f} bps · OFI {ofi:+.2f}'
+        return side, f'CHOP SCALP {side}: KER {k:.2f} · spread {spread:.2f} bps · OFI {ofi:+.2f}{macro_note}'
 
     async def chop_scalp(self, d: Decision, f: dict) -> None:
         """Second engine for chop: maker scalp at the touch (on) or a logged would-be scalp (shadow)."""
@@ -1752,11 +1772,13 @@ class Engine:
                               'touch': b.get('bid') if side == 'BUY' else b.get('ask'), 'ker': f.get('ker'),
                               'spread_bps': f.get('spread_bps'), 'ofi': f.get('ofi_10s'),
                               **({'harvest': True, 'tp_pct': hbp['tp_pct'], 'sl_pct': hbp['sl_pct'], 'be_wr': hbp['be_wr'],
-                                  'atr_pct': f.get('atr_pct'), 'cvd_soft': self.cvd3m_soft(side, f)} if harvest else {})})
+                                  'atr_pct': f.get('atr_pct'), 'cvd_soft': self.cvd3m_soft(side, f),
+                                  'macro_soft': 'softened' in why} if harvest else {})})
             return
         self.event(why)
         sd = replace(d, side=side, allowed=True, veto=False, reason=why)
         self._harvest_next = harvest                # consumed (and cleared) at the top of _execute
+        self._harvest_macro = harvest and 'softened' in why
         await self.execute(side, sd, 'SCALP')
 
     def scalp_lock(self, outcome: str, why: str) -> None:
@@ -1920,9 +1942,12 @@ class Engine:
             # 11-09: 20 % of a 5 U wallet is 1.0 U, below the 1.02-1.2 U margin of the smallest legal lot at 5x, so every
             # micro entry (and every entry of the shipped live profile: 0.77 U on 3.85 U) was refused. One position
             # (micro_max_positions) may use the margin of the largest lot of the notional window.
-            cap_m = max(cap_m, self.micro_window_hi() / self.p.leverage)
+            # 11-09f: n slots = n lots of the window, and never more than micro_margin_frac of the (rehearsed) equity -
+            # the 5 000 U Demo wallet must not be the limit of a 5 U bankroll rehearsal
+            lot_m, eq = self.micro_window_hi() / self.p.leverage, self.micro_equity()
+            cap_m = max(lot_m, min(self.max_positions_eff() * lot_m, self.p.micro_margin_frac * eq if eq else math.inf))
             if margin > cap_m + 1e-9:
-                return f'PORTFOLIO MARGIN {margin:.2f} U > {cap_m:.2f} U (micro: one lot of the window)'
+                return f'PORTFOLIO MARGIN {margin:.2f} U > {cap_m:.2f} U (micro: {self.max_positions_eff()} lot(s) of the window)'
             return None
         if wallet and margin > cap_m + 1e-9:
             return f'PORTFOLIO MARGIN {margin:.2f} U > {self.p.portfolio_margin_frac * 100:.0f}% ví'
@@ -2262,16 +2287,20 @@ class Engine:
         micro = self.micro_active()                              # 11-09: one position in total -> the best coin takes it
         if not self.p.slot_yield or (self.p.multi_slot and not micro):   # one slot per symbol: nobody has to yield
             return None
-        now, best = self.clock(), None
+        now, ahead_all = self.clock(), []
         order = {s: i for i, s in enumerate(scan_universe(True, self.p.micro_symbols))}
         for o in self.risk.engines:
             c = o.candidate
             if o is self or c is None or now - c[0] > max_age or o.pos or o.busy:
                 continue
             ahead = c[1] > q + 1e-9 or (abs(c[1] - q) <= 1e-9 and order.get(o.p.symbol, 9) < order.get(self.p.symbol, 9))
-            if ahead and (best is None or c[1] > best[1]):
-                best = (o, c[1])
-        return best
+            if ahead:
+                ahead_all.append((o, c[1]))
+        # 11-09f: with n micro slots a coin yields only when the better-ranked candidates fill every FREE slot
+        free = max(1, self.max_positions_eff() - len(self.open_peers())) if micro else 1
+        if len(ahead_all) < free:
+            return None
+        return max(ahead_all, key=lambda x: x[1])
 
     def lane(self, d: Decision) -> str:
         """'MR' when the decision is the mean-reversion setup (MR signal on the decision side), else 'TREND'."""
@@ -2929,7 +2958,7 @@ class Engine:
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
                'micro_floor': xm.get('micro_floor'), 'tp_lift': xm.get('tp_lift'),
-               'harvest': xm.get('harvest'), 'cvd_soft': xm.get('cvd_soft'),
+               'harvest': xm.get('harvest'), 'cvd_soft': xm.get('cvd_soft'), 'macro_soft': xm.get('macro_soft'),
                'bracket': xm.get('bracket'), 'micro_bracket': xm.get('micro_bracket'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
@@ -2945,7 +2974,8 @@ class Engine:
     async def _execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                        entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
         harvest = path == 'SCALP' and tag == 'AUTO' and bool(getattr(self, '_harvest_next', False))   # 11-09e chop harvester
-        self._harvest_next = False                          # one-shot: set by chop_scalp right before execute()
+        macro_soft = harvest and bool(getattr(self, '_harvest_macro', False))     # 11-09f: entered through the soft 5 m macro
+        self._harvest_next = self._harvest_macro = False    # one-shot: set by chop_scalp right before execute()
         if self.observer:
             return {'ok': False, 'error': f'OBSERVER: {self.p.symbol} is observe-only (no entries)'}
         if self.busy or self.pos or self.slot_block():
@@ -2962,7 +2992,8 @@ class Engine:
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
-        xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag, **({'harvest': True} if harvest else {})}
+        xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag, **({'harvest': True} if harvest else {}),
+                         **({'macro_soft': True} if macro_soft else {})}
         try:
             why_regime, rpol = self.regime_check(path, tag, decision)
             if why_regime:
@@ -3122,7 +3153,8 @@ class Engine:
                 if self.p.equity_cap is not None:
                     cap_n = min(cap_n, self.p.equity_cap * self.p.leverage) if cap_n else self.p.equity_cap * self.p.leverage
                 q_micro, why_micro = msz.qty(ref, step, self.spec['min_qty'], self.spec['min_notional'],
-                                             equity=self.micro_equity(), leverage=self.p.leverage, risk_notional=cap_n)
+                                             equity=self.micro_equity(), leverage=self.p.leverage, risk_notional=cap_n,
+                                             pnl=self.micro_pnl())
                 if q_micro is None:
                     self.event(f'OKAPI refused {side}: {why_micro}')
                     return {'ok': False, 'error': why_micro}
@@ -4473,7 +4505,10 @@ class Engine:
                                   'ioc': self.p.micro_ioc, 'ttl': self.p.micro_ttl,
                                   'lane': self.micro_lane(f) if self.micro_active() else None,      # 11-09e dual mode
                                   'harvester': self.p.micro_harvester,
-                                  'harvest_score': self.harvest_score(f) if self.micro_active() else None}}
+                                  'harvest_score': self.harvest_score(f) if self.micro_active() else None,
+                                  'pnl': self.micro_pnl() if self.micro_active() else None,          # 11-09f
+                                  'slots': self.max_positions_eff(), 'open': len(self.open_peers()) + (1 if self.pos else 0),
+                                  'accel_k': self.p.micro_accel_k, 'risk_cap': self.risk_cap() if self.micro_active() else None}}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')
@@ -4872,6 +4907,7 @@ class Runner:
                 snap['intraday_lane'] = {s_: ln.last for s_, ln in (getattr(self, 'intraday', None) or {}).items()}
                 snap['stat_arb_lane'] = self.stat_arb.view() if getattr(self, 'stat_arb', None) is not None else None
                 snap['funding_carry'] = getattr(self, 'carry_state', None)
+                snap['carry_sim'] = getattr(self, 'carry_sim_state', None)     # 11-09f: accumulated simulated funding yield
                 snap['autonomy'] = self.autonomy.view() if getattr(self, 'autonomy', None) is not None else None
                 live_ok, live_why = self.live_ready()
                 snap.update(ws=dict(self.ws), live_ready=live_ok, live_reason=live_why,
