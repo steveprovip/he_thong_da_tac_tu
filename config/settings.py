@@ -18,6 +18,31 @@ def read_env(path=ROOT / '.env.local'):
     return values
 
 
+MICRO_CAPITAL_MODES = ('auto', 'on', 'off')
+
+
+def micro_capital_env(env):
+    """11-09 micro-capital flag from MICRO_CAPITAL_MODE (auto | on | off) and MICRO_CAPITAL_EQUITY_MAX (USDT, default
+    15): -> {'micro_capital': ..., 'micro_equity_max': ...} for the keys that are SET, {} when none is.  A bad value
+    raises, so a typo cannot silently leave the small-account guard off."""
+    out = {}
+    mode = str(env.get('MICRO_CAPITAL_MODE', '')).strip().lower()
+    if mode:
+        if mode not in MICRO_CAPITAL_MODES:
+            raise ValueError('MICRO_CAPITAL_MODE must be auto, on or off')
+        out['micro_capital'] = mode
+    raw = str(env.get('MICRO_CAPITAL_EQUITY_MAX', '')).strip()
+    if raw:
+        try:
+            limit = float(raw)
+        except ValueError:
+            raise ValueError('MICRO_CAPITAL_EQUITY_MAX must be a number') from None
+        if not 0 < limit <= 1000:
+            raise ValueError('MICRO_CAPITAL_EQUITY_MAX must be in (0, 1000] USDT')
+        out['micro_equity_max'] = limit
+    return out
+
+
 @dataclass(frozen=True)
 class Settings:
     mode: str
@@ -28,6 +53,8 @@ class Settings:
     armed: bool = False
     host: str = '127.0.0.1'
     port: int = 8765
+    micro_capital_mode: str = 'auto'            # 11-09: auto = small-account rules while the wallet <= the limit below
+    micro_capital_equity_max: float = 15.0
 
     @classmethod
     def load(cls, mode='testnet', arm=False, env=None):
@@ -50,5 +77,7 @@ class Settings:
         if host not in ('127.0.0.1', 'localhost'):
             raise ValueError('Telemetry must bind to loopback')
         armed = mode == 'testnet' or (mode == 'mainnet' and (arm or env.get('ARM_LIVE_EXECUTION', '').lower() == 'true'))
+        micro = micro_capital_env(env)
         return cls(mode, rest, ws.removesuffix('/ws'), env.get(prefix+'API_KEY', ''),
-                   env.get(prefix+'SECRET_KEY', ''), armed, host, int(env.get('WEB_UI_PORT', 8765)))
+                   env.get(prefix+'SECRET_KEY', ''), armed, host, int(env.get('WEB_UI_PORT', 8765)),
+                   micro.get('micro_capital', 'auto'), micro.get('micro_equity_max', 15.0))

@@ -29,7 +29,7 @@ from types import SimpleNamespace
 from typing import Optional
 from urllib.parse import urlsplit
 
-from config.settings import Settings, read_env
+from config.settings import Settings, micro_capital_env, read_env
 from core import micro_signals as msig
 from core import exec_funnel as xf
 from core import micro_swarm as swarm
@@ -37,6 +37,7 @@ from core import regime_classifier as rc
 from core import invariants as inv
 from core import toxicity_guard as tg
 from core.consensus_engine import ConsensusEngine, Decision, TokenAuthority
+from core.position_sizer import MicroCapitalSizer
 from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, round_tick
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -304,6 +305,15 @@ class Profile:
     edge_shadow_every_s: float = 20.0   # at most one virtual entry per 20 s
     edge_shadow_ttl_s: float = 30.0     # the virtual maker quote must be traded THROUGH within 30 s, else NOFILL (uncounted)
     edge_shadow_hold_s: float = 600.0   # no TP / SL after 10 min -> virtual exit at the touch (maker)
+    micro_capital: str = 'auto'         # 11-09 small-account rules: 'auto' = while the wallet <= micro_equity_max | 'on' | 'off'
+    micro_equity_max: float = 15.0      # (config/settings.py: MICRO_CAPITAL_MODE / MICRO_CAPITAL_EQUITY_MAX)
+    micro_notional_min: float = 5.05    # entry notional window [5.05, 6.0] U: venue minimum 5 U (-4164) + buffer ...
+    micro_notional_max: float = 6.0     # ... and a ceiling; the smallest lot inside it, else no trade
+    micro_max_loss_usdt: float = 0.05   # loss at the stop incl. fees <= 0.05 U (1 % of 5 U)
+    micro_daily_kill_usdt: float = 0.15
+    micro_loss_pause_s: float = 86_400.0  # max_consec_losses (3) AUTO losses in a row -> no entry for 24 h (survives a restart)
+    micro_symbols: tuple = ('DOGEUSDT',)  # the only symbol that may trade; the rest observe (signals, regime, no order)
+    micro_max_positions: int = 1
     raw_quorum_gate: bool = True        # 11-09: AUTO entry needs the RAW swarm score >= 0.768; a JEV-lifted one is refused
     alt_risk_share: float = 0.85       # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
@@ -1229,8 +1239,8 @@ class Engine:
             return None if o is None else (f'SCANNER slot: {o.p.symbol} '
                                            f'{"position" if o.pos or o.view.get("amt") else "order"} active')
         peers = self.open_peers()
-        if len(peers) + 1 > self.p.max_positions:
-            return f'PORTFOLIO FULL {len(peers)}/{self.p.max_positions}'
+        if len(peers) + 1 > self.max_positions_eff():
+            return f'PORTFOLIO FULL {len(peers)}/{self.max_positions_eff()}'
         risk, cap = sum(o.risk_at_stop() for o in peers), self.risk_cap()
         if risk >= cap:
             return f'PORTFOLIO RISK {risk:.2f} >= {cap:g} U' + (' (BTC: phần dành SOL/DOGE)' if cap <
@@ -1303,7 +1313,48 @@ class Engine:
     @property
     def observer(self) -> bool:
         """Observe-only symbol: features, swarm and telemetry run; no entry (an existing position is still managed)."""
-        return self.p.symbol in (self.p.observe_only or ()) or not self.p.micro_standalone
+        return (self.p.symbol in (self.p.observe_only or ()) or not self.p.micro_standalone
+                or (self.micro_active() and self.p.symbol not in self.p.micro_symbols))
+
+    # ------------------------------------------------------------------ micro-capital mode (11-09)
+    def micro_sizer(self) -> MicroCapitalSizer:
+        c = getattr(self, '_micro_cache', None)
+        if c is None or c[0] is not self.p:
+            p = self.p
+            c = self._micro_cache = (p, MicroCapitalSizer(
+                p.micro_equity_max, p.micro_notional_min, p.micro_notional_max, p.micro_max_loss_usdt,
+                p.micro_daily_kill_usdt, p.micro_loss_pause_s, p.max_consec_losses, p.micro_max_positions,
+                p.micro_symbols))
+        return c[1]
+
+    def micro_wallet(self) -> Optional[float]:
+        w = self.account.get('wallet')
+        return w if w else self.account.get('available')
+
+    def micro_active(self) -> bool:
+        """Small-account rules on: forced by the flag, or the known wallet is <= micro_equity_max (unknown = off)."""
+        return self.micro_sizer().active(self.micro_wallet(), self.p.micro_capital)
+
+    def daily_kill_eff(self) -> float:
+        return min(self.p.daily_kill_usdt, self.p.micro_daily_kill_usdt) if self.micro_active() else self.p.daily_kill_usdt
+
+    def max_positions_eff(self) -> int:
+        return self.p.micro_max_positions if self.micro_active() else self.p.max_positions
+
+    def micro_halt_until(self) -> Optional[float]:
+        """Entries halted until this wall time by max_consec_losses AUTO losses, derived from the ledger (restart-proof)."""
+        return self.micro_sizer().halt_until(self.all_rows, self.clock()) if self.micro_active() else None
+
+    def micro_check(self, pl: dict) -> Optional[str]:
+        """A sized plan outside the notional window, or whose loss at the stop exceeds the budget -> reason."""
+        p = self.p
+        if pl['notional'] > p.micro_notional_max + 1e-9 or pl['notional'] < p.micro_notional_min - 1e-9:
+            return (f'MICRO: notional {pl["notional"]:.2f} U outside [{p.micro_notional_min:g}, '
+                    f'{p.micro_notional_max:g}] U')
+        if pl['loss_at_sl'] > p.micro_max_loss_usdt + 1e-9:
+            return (f'MICRO: loss at the stop {pl["loss_at_sl"]:.4f} U > {p.micro_max_loss_usdt:g} U '
+                    f'(SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}% on {pl["notional"]:.2f} U)')
+        return None
 
     def drift_acceleration(self, side: str) -> Optional[str]:
         """CVD 60 s >= ratio x |CVD 3 m| and >= min $ (x scale), on `side`: fresh flow overrides the stale 3 m
@@ -1537,13 +1588,22 @@ class Engine:
             return f'PORTFOLIO RISK {risk:.3f} U > {cap:g} U (gồm lệnh mới {pl["loss_at_sl"]:.3f})'
         wallet = self.account.get('wallet') or self.account.get('available')
         margin = sum(o.margin_used() for o in peers) + pl['margin']
-        if wallet and margin > self.p.portfolio_margin_frac * wallet + 1e-9:
+        cap_m = self.p.portfolio_margin_frac * wallet if wallet else 0.0
+        if wallet and self.micro_active():
+            # 11-09: 20 % of a 5 U wallet is 1.0 U, below the 1.02-1.2 U margin of the smallest legal lot at 5x, so every
+            # micro entry (and every entry of the shipped live profile: 0.77 U on 3.85 U) was refused. One position
+            # (micro_max_positions) may use the margin of the largest lot of the notional window.
+            cap_m = max(cap_m, self.p.micro_notional_max / self.p.leverage)
+            if margin > cap_m + 1e-9:
+                return f'PORTFOLIO MARGIN {margin:.2f} U > {cap_m:.2f} U (micro: one lot of the window)'
+            return None
+        if wallet and margin > cap_m + 1e-9:
             return f'PORTFOLIO MARGIN {margin:.2f} U > {self.p.portfolio_margin_frac * 100:.0f}% ví'
         return None
 
     def portfolio_view(self) -> dict:
         rows = [r for r in (o.position_row() for o in self.risk.engines) if r]
-        return {'multi_slot': self.p.multi_slot, 'rows': rows, 'count': len(rows), 'max': self.p.max_positions,
+        return {'multi_slot': self.p.multi_slot, 'rows': rows, 'count': len(rows), 'max': self.max_positions_eff(),
                 'upnl': sum(r.get('upnl') or 0.0 for r in rows),
                 'risk': sum(o.risk_at_stop() for o in self.risk.engines), 'risk_cap': self.p.portfolio_risk_usdt}
 
@@ -1674,14 +1734,16 @@ class Engine:
             self.event('new day -> daily loss meter reset')
         if self.halted:
             r = (False, f'HALT: {self.halted}')
-        elif self.day_pnl <= -self.p.daily_kill_usdt:
-            r = (False, f'daily loss {self.day_pnl:+.4f} <= -{self.p.daily_kill_usdt} U')
+        elif self.day_pnl <= -self.daily_kill_eff():
+            r = (False, f'daily loss {self.day_pnl:+.4f} <= -{self.daily_kill_eff():g} U')
         elif self.pos or abs(self.view.get('amt') or 0) > 0:
             r = (False, 'position open' if self.pos else 'EXTERNAL position on venue')
         elif self.busy:
             r = (False, 'order in flight')
         elif (why := self.slot_block()) is not None:
             r = (False, why)
+        elif (halt := self.micro_halt_until()) is not None:
+            r = (False, f'MICRO HALT: {self.p.max_consec_losses} losses in a row · {halt - now:.0f}s left')
         elif now < self.pause_until:
             r = (False, f'{self.consec_losses} losses · pause {self.pause_until - now:.0f}s')
         elif now < self.cooldown_until:
@@ -2655,6 +2717,12 @@ class Engine:
                         self.event(f'OKAPI refused {side}: {msg}')
                         return {'ok': False, 'error': msg}
                     kq = q_risk
+            if self.micro_active():                             # 11-09: on a small wallet the venue minimum sets the size
+                q_micro, why_micro = self.micro_sizer().qty(ref, step, self.spec['min_qty'], self.spec['min_notional'])
+                if q_micro is None:
+                    self.event(f'OKAPI refused {side}: {why_micro}')
+                    return {'ok': False, 'error': why_micro}
+                kq = q_micro
             mkpl = lambda q: plan(side, px if route == 'gtx' else touch, self.spec,
                                   replace(base, entry='gtx' if route == 'gtx' else 'market'),
                                   self.account.get('available'), qty=q)
@@ -2662,6 +2730,10 @@ class Engine:
             if not pl['ok']:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
+            why_micro = self.micro_check(pl) if self.micro_active() else None
+            if why_micro:
+                self.event(f'OKAPI refused {side}: {why_micro}')
+                return {'ok': False, 'error': why_micro}
             rr = self.plan_rr(pl, route)
             bp.update(tp_pct=pl['tp_pct'], sl_pct=pl['sl_pct'],
                       rr_gross=pl['tp_pct'] / pl['sl_pct'] if pl['sl_pct'] > 0 else None,
@@ -3804,7 +3876,8 @@ class Engine:
         if pnl < 0 and p['tag'] == 'AUTO':
             self.consec_losses += 1
             if self.consec_losses >= self.p.max_consec_losses:
-                self.pause_until = self.clock() + self.p.loss_pause_s
+                self.pause_until = self.clock() + (self.p.micro_loss_pause_s if self.micro_active()
+                                                   else self.p.loss_pause_s)
         elif pnl > 0:
             self.consec_losses = 0
         self.event(f'CLOSED {row["side"]} {row["qty"]:g} {sym} {reason} gross {parts["gross"]:+.4f} fee '
@@ -3949,7 +4022,8 @@ class Engine:
                 'regime_warmup_required_s': regime_warmup_required,
                 'atr_pct': f.get('atr_pct'), 'yz_pct': f.get('yz_pct'), 'sigma_bps': f.get('sigma_bps'),
                 'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly(),
-                'edge_shadow': self.edge_shadow_view()}
+                'edge_shadow': self.edge_shadow_view(),
+                'micro_capital': self.micro_sizer().view(self.micro_wallet(), self.p.micro_capital)}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')
@@ -4009,7 +4083,7 @@ class Engine:
             'market_data': 'binance-ws' if not f.get('stale') else 'stale',
             'position': self.position_row(), 'open_orders': self.orders, 'trade_history': list(self.history)[:30],
             'session': {'trades': len(self.history), 'wins': sum(1 for r in self.history if (r.get('pnl') or 0) > 0),
-                        'realized': self.day_pnl, 'kill': self.p.daily_kill_usdt,
+                        'realized': self.day_pnl, 'kill': self.daily_kill_eff(),
                         'gross': sum(r['gross'] for r in self.history if r.get('gross') is not None
                                      and r.get('fee') is not None),
                         'fees': sum(r['fee'] for r in self.history if r.get('gross') is not None
@@ -4178,7 +4252,7 @@ class Runner:
         self.carry_sim_state = None
 
     def profile(self, mode: str) -> Profile:
-        p = PROFILES[mode]
+        p = replace(PROFILES[mode], **micro_capital_env(self.env))      # 11-09: MICRO_CAPITAL_MODE / _EQUITY_MAX
         sym = self.symbols.get(mode)
         if sym and sym != p.symbol:
             p = replace(p, symbol=sym, qty=SYMBOL_QTY.get(sym, 0.0) if mode == 'demo' else p.qty)

@@ -145,6 +145,92 @@ class PositionSizer:
         return SizeResult(format(qty, 'f'), float(notional), 'OK')
 
 
+class MicroCapitalSizer:
+    """11-09 micro-capital rules for a wallet of ~5 USDT (pure: no I/O, no clock, no exchange call).
+
+    The venue refuses an entry whose price x qty is under its MIN_NOTIONAL (5 USDT on DOGE / SOL, 100 on BTC; -4164), so
+    on a small wallet the exchange minimum, not Kelly, sets the size: the smallest lot on the step grid whose notional is
+    >= max(notional_min, 1.02 x venue minimum) and <= notional_max, or no trade at all.  A lot too coarse for the window
+    (BTC, or a SOL lot of 0.1) is refused with the reason, never rounded into a rejected order.  Kelly / conviction /
+    boost sizes are meant for hundreds of USDT and are not consulted while the mode is active."""
+
+    def __init__(self, equity_max=15.0, notional_min=5.05, notional_max=6.0, max_loss_usdt=0.05, daily_kill_usdt=0.15,
+                 loss_pause_s=86_400.0, max_consec_losses=3, max_positions=1, symbols=('DOGEUSDT',),
+                 min_notional_buffer=1.02):
+        vals = (equity_max, notional_min, notional_max, max_loss_usdt, daily_kill_usdt, loss_pause_s, min_notional_buffer)
+        if not all(math.isfinite(v) and v > 0 for v in vals) or notional_min > notional_max or max_positions < 1 \
+                or max_consec_losses < 1 or not symbols:
+            raise ValueError('Invalid micro-capital parameters')
+        self.equity_max, self.notional_min, self.notional_max = equity_max, notional_min, notional_max
+        self.max_loss_usdt, self.daily_kill_usdt, self.loss_pause_s = max_loss_usdt, daily_kill_usdt, loss_pause_s
+        self.max_consec_losses, self.max_positions = int(max_consec_losses), int(max_positions)
+        self.symbols, self.min_notional_buffer = tuple(symbols), min_notional_buffer
+
+    def active(self, wallet, mode='auto') -> bool:
+        """'on' / 'off' force it; 'auto' = a known, positive wallet <= equity_max (an unknown wallet is not a small one)."""
+        if mode == 'off':
+            return False
+        if mode == 'on':
+            return True
+        if mode != 'auto':
+            raise ValueError('micro-capital mode must be auto, on or off')
+        return wallet is not None and math.isfinite(wallet) and 0 < wallet <= self.equity_max
+
+    def tradable(self, symbol) -> bool:
+        return symbol in self.symbols
+
+    def floor_notional(self, min_notional) -> float:
+        return max(self.notional_min, float(min_notional) * self.min_notional_buffer)
+
+    def qty(self, price, step, min_qty, min_notional):
+        """-> (qty, '') for the smallest lot inside the notional window, or (None, why)."""
+        if not (math.isfinite(price) and price > 0 and math.isfinite(step) and step > 0):
+            return None, 'MICRO: no price / lot step'
+        floor = self.floor_notional(min_notional)
+        if floor > self.notional_max + 1e-9:
+            return None, (f'MICRO: venue minimum notional {min_notional:g} U needs {floor:.2f} U > cap '
+                          f'{self.notional_max:g} U')
+        q = max(float(min_qty), round(math.ceil(round(floor / price / step, 9)) * step, 12))
+        notional = q * price
+        if notional > self.notional_max + 1e-9:
+            return None, (f'MICRO: smallest lot {q:g} = {notional:.2f} U > cap {self.notional_max:g} U '
+                          f'(lot step {step:g} is too coarse for a {self.notional_min:g}-{self.notional_max:g} U order)')
+        return q, ''
+
+    def loss_at_stop(self, notional, sl_pct, fees_pct) -> float:
+        """Money lost when the stop is hit: notional x (stop distance + entry / exit fees and slip), both in percent."""
+        return notional * (sl_pct + fees_pct) / 100.0
+
+    def halt_until(self, rows, now=None):
+        """Wall time until which entries stay halted by consecutive losses, else None.
+
+        Same counter as the engine: AUTO-tag settled losses in a row since the last winner (other tags neither add nor
+        reset); at max_consec_losses the halt runs loss_pause_s from the LAST loss.  Derived from the rows each time,
+        so a restart cannot erase it.  A row without 't' cannot date the halt and is ignored (UNKNOWN, not zero)."""
+        count, last_t = 0, None
+        for r in reversed(list(rows)):
+            pnl = r.get('pnl')
+            if pnl is None:
+                continue
+            if float(pnl) > 0:
+                break
+            if r.get('tag') == 'AUTO' and float(pnl) < 0:
+                if r.get('t') is None:
+                    continue
+                count += 1
+                last_t = float(r['t']) if last_t is None else last_t
+        if count < self.max_consec_losses or last_t is None:
+            return None
+        until = last_t + self.loss_pause_s
+        return until if now is None or now < until else None
+
+    def view(self, wallet, mode='auto') -> dict:
+        return {'mode': mode, 'active': self.active(wallet, mode), 'wallet': wallet, 'equity_max': self.equity_max,
+                'symbols': list(self.symbols), 'notional': [self.notional_min, self.notional_max],
+                'max_loss_usdt': self.max_loss_usdt, 'daily_kill_usdt': self.daily_kill_usdt,
+                'max_positions': self.max_positions, 'loss_pause_s': self.loss_pause_s}
+
+
 class DrawdownBrake:
     def __init__(self, max_drawdown=.08, max_losses=10):
         self.max_drawdown, self.max_losses = max_drawdown, max_losses
