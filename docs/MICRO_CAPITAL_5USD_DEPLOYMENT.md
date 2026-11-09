@@ -34,13 +34,22 @@ A typo raises at start-up instead of silently leaving the guard off. The per-rul
 Invariant I6 (`LIVE_EQUITY_CAP` 3.85) caps the margin of ONE position, not the wallet; micro positions use 1.0-1.2 U, so it is **not** changed.
 
 ## 3. Rehearse on the DEMO account first (virtual money)
-Demo wallet is thousands of U, so force the mode on. PowerShell, from `F:\he_thong_da_tac_tu_2`:
+One click, from `F:\he_thong_da_tac_tu_2`:
+
+```bat
+run.bat micro
+```
+
+or run `run.bat` and pick **[4] DEMO MICRO**. The launcher sets `MICRO_CAPITAL_MODE=on` (the demo wallet is thousands of U, so the mode has to be forced),
+frees port 8765 (`scripts\TAT_GIAO_DIEN.bat`), opens `http://127.0.0.1:8765` and runs
+`python -m core.engine --mode demo --symbol DOGEUSDT --no-scan`. The mode is hard-wired to `--mode demo`: this entry can never arm live.
+Equivalent manual command (PowerShell):
 
 ```powershell
 $env:MICRO_CAPITAL_MODE = 'on'; python -m core.engine --mode demo --symbol DOGEUSDT --no-scan
 ```
 
-UI: `http://127.0.0.1:8765`. Expect every order to be a DOGE maker order of 5.1-6.0 U, BTC / SOL never ordering, `quant.micro_capital.active = true`.
+Expect every order to be a DOGE maker order of 5.1-6.0 U, BTC / SOL never ordering, `quant.micro_capital.active = true`.
 
 Check before going further (all from the event log and `data/engine_orders.jsonl`):
 1. each entry `qty_req x price` is inside [5.05, 6.0];

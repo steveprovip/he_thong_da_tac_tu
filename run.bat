@@ -6,6 +6,8 @@ rem   run.bat demo  -> Web UI + bot giao dich tai khoan DEMO Binance Futures
 rem                    (key BINANCE_TESTNET_* trong .env.local; khong co key = MOCK gia live)
 rem   run.bat live  -> Web UI + bot giao dich MAINNET - phai GO "LIVE" de xac nhan
 rem   run.bat test  -> python -m pytest -q
+rem   run.bat micro -> Web UI + bot tren tai khoan DEMO chay logic vi 5 U (MICRO_CAPITAL_MODE=on, chi DOGEUSDT,
+rem                    lenh 5.1-6.0 U, lo <= 0.05 U/lenh) - tien ao, khong cham mainnet
 rem   Web UI: http://127.0.0.1:8765  (nut BAN LENH TEST, doi che do, dong vi the)
 rem ============================================================================
 set "PY=%LocalAppData%\Programs\Python\Python310\python.exe"
@@ -15,15 +17,17 @@ set "GROKTOPUS_ARM_LIVE="
 if /i "%~1"=="demo" goto :DEMO
 if /i "%~1"=="live" goto :LIVE
 if /i "%~1"=="test" goto :TEST
+if /i "%~1"=="micro" goto :MICRO
 
 :MENU
 echo.
 echo  ==========================================================================
-echo   GROKTOPUS 2.0  ^|  CHI CON 2 CHE DO
+echo   GROKTOPUS 2.0  ^|  CAC CHE DO GIAO DICH
 echo  ==========================================================================
-echo   [1] DEMO  - Binance Demo Futures (BTCUSDT 0.001, Cross 5x)  [an toan]
-echo   [2] LIVE  - Binance Mainnet (DOGEUSDT, von ^<= 3.85 U, lo ^<= 0.05 U/lenh)
+echo   [1] DEMO       - Binance Demo Futures (BTC/SOL/DOGE, von ao 5000 U)
+echo   [2] LIVE       - Binance Mainnet (DOGEUSDT, von ^<= 3.85 U, lo ^<= 0.05 U/lenh)
 echo   [3] Chay kiem thu (pytest)
+echo   [4] DEMO MICRO - Binance Demo chay logic vi 5 U (DOGE 5.1-6.0 U, lo ^<= 0.05 U)
 echo   [0] Thoat
 echo  ==========================================================================
 set "C="
@@ -31,6 +35,7 @@ set /p "C=Chon: "
 if "%C%"=="1" goto :DEMO
 if "%C%"=="2" goto :LIVE
 if "%C%"=="3" goto :TEST
+if "%C%"=="4" goto :MICRO
 if "%C%"=="0" exit /b 0
 goto :MENU
 
@@ -38,6 +43,15 @@ goto :MENU
 call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
 start "" "http://127.0.0.1:8765"
 "%PY%" -m core.engine --mode demo
+pause
+exit /b %ERRORLEVEL%
+
+:MICRO
+rem Demo account only (--mode demo): the 5 U small-account rules forced on a big virtual wallet.
+set "MICRO_CAPITAL_MODE=on"
+call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
+start "" "http://127.0.0.1:8765"
+"%PY%" -m core.engine --mode demo --symbol DOGEUSDT --no-scan
 pause
 exit /b %ERRORLEVEL%
 
