@@ -119,7 +119,9 @@ def test_defaults():
     assert DEMO.adaptive_ker == 'shadow' and eng.PROFILES['live'].adaptive_ker == 'off'
     assert (DEMO.adaptive_ker_score, DEMO.adaptive_ker_cvd_vel_usd, DEMO.adaptive_ker_confluence,
             DEMO.adaptive_ker_floor, DEMO.adaptive_ker_slope) == (0.95, 3000.0, 3, 0.15, 0.20)
-    assert DEMO.mr_bracket == 'vwap' and (DEMO.mr_tp_fixed, DEMO.mr_sl_fixed) == (0.29, 0.10)
+    # 10-24 DEMO ACTIVE (owner decision): the shipped demo uses the fixed MR bracket ('vwap' never clears net_rr_min)
+    assert DEMO.mr_bracket == 'fixed' and (DEMO.mr_tp_fixed, DEMO.mr_sl_fixed) == (0.29, 0.10)
+    assert eng.PROFILES['live'].mr_bracket == 'vwap'
 
 
 # ============================================================================ 2. MR bracket

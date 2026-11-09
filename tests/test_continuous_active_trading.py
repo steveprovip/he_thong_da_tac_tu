@@ -148,8 +148,8 @@ def test_scalp_candidate(tmp_path, f, side):
 
 
 def test_scalp_bracket_and_its_honest_rr(tmp_path):
-    """TP 0.08 % / SL 0.12 %: fee-true RR (0.08 - 0.04) / (0.12 + 0.08) = 0.20 -> needs ~83 % winners."""
-    e, _, _ = mock_engine(tmp_path)
+    """Legacy TP 0.08 % / SL 0.12 % has fee-true RR 0.20 -> needs ~83 % winners."""
+    e, _, _ = mock_engine(tmp_path, scalp_tp_pct=0.08)
     bp = e.bracket_plan('SCALP', {})
     assert (bp['tp_pct'], bp['sl_pct']) == (0.08, 0.12) and bp['profile'].tp1_frac == 1.0
     assert bp['rr_net'] == pytest.approx(0.20, abs=1e-3) and bp['be_wr'] == pytest.approx(0.833, abs=1e-3)
@@ -187,8 +187,9 @@ async def test_scalper_on_opens_a_half_size_maker_scalp(tmp_path):
     await fill_through(e, feed, e.chop_scalp(BUY, {**feed.features(), **SCALP_F}))
     p = e.pos
     assert p and p['path'] == 'SCALP' and p['qty'] == pytest.approx(0.002) and not p['split']
-    assert p['tp'] == pytest.approx(p['entry'] * 1.0008, abs=0.2) and p['sl'] == pytest.approx(p['entry'] * 0.9988, abs=0.2)
-    assert all(f['maker'] for f in venue.fills) and p['eject_s'] == 90.0
+    assert p['tp'] == pytest.approx(p['entry'] * 1.0032, abs=0.2) and p['sl'] == pytest.approx(p['entry'] * 0.9988, abs=0.2)
+    assert p['rr_net'] >= 1.30
+    assert all(f['maker'] for f in venue.fills) and p['eject_s'] == 45.0      # 11-08 (i): EJECT-BE 90 -> 45 s
 
 
 async def test_scalp_is_ejected_at_90s(tmp_path):
@@ -242,6 +243,6 @@ async def test_a_locked_symbol_returns_fast_and_holds_no_slot(tmp_path):
 def test_defaults_demo_and_live():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
     assert d.chop_scalper == 'shadow' and d.drift_accel and d.btc_probe_min_tradable
-    assert (d.scalp_tp_pct, d.scalp_sl_pct, d.scalp_be_s, d.scalp_ker_max, d.scalp_spread_max_bps) == (0.08, 0.12, 90.0, 0.40, 1.5)
+    assert (d.scalp_tp_pct, d.scalp_sl_pct, d.scalp_be_s, d.scalp_ker_max, d.scalp_spread_max_bps) == (0.32, 0.12, 45.0, 0.40, 1.5)
     assert (d.drift_accel_ratio, d.drift_accel_min_usd, d.drift_probe_mult) == (3.0, 2_000_000.0, 0.5)
     assert l.chop_scalper == 'off' and not l.drift_accel

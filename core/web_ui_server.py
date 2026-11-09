@@ -14,6 +14,7 @@ Files are published atomically by writers (core.atomic_io), read with retry here
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import threading
 import time
@@ -44,6 +45,82 @@ def _num(value):
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _percentile(values, percentile):
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile
+    lower, upper = int(position), min(len(ordered) - 1, int(position) + 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def analytics_from_state(state: dict) -> dict:
+    """Read-only derived drawdown, vote attribution and execution-friction summary."""
+    values = [float(p['value']) for p in (state.get('history') or [])
+              if isinstance(p, dict) and isinstance(p.get('value'), (int, float))
+              and math.isfinite(float(p['value'])) and float(p['value']) > 0]
+    peak, current_drawdown, max_drawdown = None, None, None
+    if values:
+        peak, max_drawdown = values[0], 0.0
+        for value in values:
+            peak = max(peak, value)
+            drawdown = max(0.0, 1.0 - value / peak) if peak else 0.0
+            max_drawdown = max(max_drawdown, drawdown)
+        current_drawdown = max(0.0, 1.0 - values[-1] / peak) if peak else 0.0
+
+    attribution = {name: {'net_usdt': 0.0, 'trades': 0, 'aligned': 0}
+                   for name in ('NORO', 'LUMEN', 'TIDAL')}
+    crossing_slippage, maker_markout_5s = [], []
+    for trade in state.get('trade_history') or state.get('trades') or []:
+        if not isinstance(trade, dict):
+            continue
+        try:
+            pnl = float(trade.get('pnl'))
+        except (TypeError, ValueError):
+            pnl = None
+        side, votes = trade.get('side'), trade.get('agents') or {}
+        if pnl is not None and math.isfinite(pnl) and side in ('BUY', 'SELL') and isinstance(votes, dict):
+            for name, item in attribution.items():
+                vote = votes.get(name)
+                if not isinstance(vote, (list, tuple)) or len(vote) < 2 or vote[0] not in ('BUY', 'SELL'):
+                    continue
+                try:
+                    confidence = min(1.0, max(0.0, float(vote[1] or 0.0)))
+                except (TypeError, ValueError):
+                    continue
+                aligned = vote[0] == side
+                item['net_usdt'] += (pnl if aligned else -pnl) * confidence
+                item['trades'] += 1
+                item['aligned'] += int(aligned)
+        try:
+            entry, signal_mid = float(trade.get('entry')), float(trade.get('signal_mid'))
+            if signal_mid > 0 and trade.get('entry_type') not in (None, 'GTX') and side in ('BUY', 'SELL'):
+                direction = 1.0 if side == 'BUY' else -1.0
+                crossing_slippage.append(direction * (entry - signal_mid) / signal_mid * 10_000.0)
+        except (TypeError, ValueError):
+            pass
+        marks = trade.get('markout_bps') or {}
+        mark = marks.get('5s') if isinstance(marks, dict) else None
+        try:
+            mark_value = float(mark[0] if isinstance(mark, (list, tuple)) else mark)
+            if math.isfinite(mark_value):
+                maker_markout_5s.append(mark_value)
+        except (TypeError, ValueError, IndexError):
+            pass
+    return {
+        'equity_points': len(values), 'equity_peak': peak,
+        'current_drawdown': current_drawdown, 'max_drawdown': max_drawdown,
+        'agent_vote_attribution': attribution,
+        'execution_friction': {
+            'crossing_entry_slippage_n': len(crossing_slippage),
+            'crossing_entry_slippage_median_bps': _percentile(crossing_slippage, 0.50),
+            'crossing_entry_slippage_p95_bps': _percentile(crossing_slippage, 0.95),
+            'maker_5s_markout_n': len(maker_markout_5s),
+            'maker_5s_markout_median_bps': _percentile(maker_markout_5s, 0.50),
+        },
+    }
 
 
 def _read_state_file():
@@ -80,7 +157,12 @@ class Telemetry:
 
     def snapshot(self):
         with self.lock:
-            return {**self.state, 'timestamp': time.time(), 'history': list(self.history), 'events': list(self.events)}
+            snap = {**self.state, 'timestamp': time.time(), 'history': list(self.history), 'events': list(self.events)}
+        snap['analytics'] = analytics_from_state(snap)
+        return snap
+
+    def analytics(self):
+        return self.snapshot()['analytics']
 
     def persist(self, path=None) -> bool:
         """Atomic publish for out-of-process dashboards (Windows-safe replace)."""
@@ -109,6 +191,7 @@ def state_payload(telemetry) -> bytes:
         if payload is None and file_data is not None:
             file_data.setdefault('shutdown', snap.get('shutdown', False))
             file_data.setdefault('shutdown_reason', snap.get('shutdown_reason', ''))
+            file_data.setdefault('analytics', analytics_from_state(file_data))
             try:
                 payload = json.dumps(file_data, allow_nan=False).encode()
             except ValueError:
@@ -149,6 +232,8 @@ def make_server(telemetry, host='127.0.0.1', port=8765, shutdown_file=None, rada
             path = self.path.split('?')[0]
             if path == '/api/state':
                 payload, content_type = state_payload(telemetry), 'application/json'
+            elif path == '/api/analytics':
+                payload, content_type = json.dumps(telemetry.analytics(), allow_nan=False).encode(), 'application/json'
             elif path == '/api/fast':
                 # Fast lane snapshot written atomically by research.fast_runner (1 s cadence).
                 payload, content_type = file_payload(fast_path, b'{"status": "no fast lane yet"}'), 'application/json'

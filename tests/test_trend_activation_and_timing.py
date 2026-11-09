@@ -77,9 +77,9 @@ def data_for(bars):
 
 # ============================================================================ profile / guards
 @pytest.mark.production_profile
-def test_demo_profile_mutes_micro_and_activates_trend_live_untouched():
+def test_demo_profile_trades_micro_and_trend_live_untouched():
     d, l = eng.PROFILES['demo'], eng.PROFILES['live']
-    assert d.trend_lane == 'active' and d.micro_standalone is False
+    assert d.trend_lane == 'active' and d.micro_standalone is True     # 10-24 DEMO ACTIVE: micro lane back on
     assert l.trend_lane == 'off' and l.micro_standalone is True
 
 

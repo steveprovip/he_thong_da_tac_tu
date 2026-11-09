@@ -29,13 +29,13 @@ GATE_CLASS = {
     'ZEPHR': HARD, 'RUNE': HARD, 'OKAPI': HARD, 'MARIN': HARD, 'VESKA': HARD,
     'WEAK': STAT, 'CONFLUENCE': STAT, 'WALL': STAT, 'REGIME': STAT, 'NO_TRIGGER': STAT,
     # after the gates
-    'OBSERVER': CONFIG, 'YIELD': CONFIG, 'NO_SIGNAL': 'none',
+    'OBSERVER': CONFIG, 'YIELD': CONFIG, 'SCALP_ONLY': CONFIG, 'SWARM_OVERRIDE': CONFIG, 'NO_SIGNAL': 'none',
 }
 
 # engine_orders outcome -> funnel bucket (attempts that reached the venue have a t_send)
-SENT = ('FILLED', 'PARTIAL', 'UNFILLED', 'REJECTED', 'TOXIC', 'ERROR')
+SENT = ('FILLED', 'PARTIAL', 'UNFILLED', 'REJECTED', 'TOXIC', 'TOX_PULL', 'ERROR')
 FILLS = ('FILLED', 'PARTIAL')
-CANCELS = ('UNFILLED', 'TOXIC')
+CANCELS = ('UNFILLED', 'TOXIC', 'TOX_PULL')       # TOX_PULL / TOX_HOLD: 11-07 toxicity guard
 
 
 def swarm_key(reason: str) -> str:
@@ -74,7 +74,7 @@ class Funnel:
     def record(self, lane: str, stage: str, blockers: Iterable[str] = ()) -> None:
         bl = list(dict.fromkeys(blockers))
         self.stages[(lane, stage)] += 1
-        if stage in ('CHURN', 'SUBMIT', 'YIELD', 'OBSERVER'):
+        if stage in ('CHURN', 'SUBMIT', 'YIELD', 'OBSERVER', 'SCALP_ONLY', 'OVERRIDE'):
             self.combos[(lane, stage, '+'.join(bl) or '-')] += 1
         if bl:
             self.first[(lane, bl[0])] += 1
@@ -94,7 +94,8 @@ class Funnel:
         fills = sum(o[k] for k in FILLS)
         hours = max(self.clock() - self.started, 0.0) / 3600.0
         return {'intents': sent, 'fills': fills, 'partial': o['PARTIAL'], 'cancels': sum(o[k] for k in CANCELS),
-                'refused': o['REFUSED'], 'rejected': o['REJECTED'],
+                'refused': o['REFUSED'], 'rejected': o['REJECTED'], 'tox_hold': o['TOX_HOLD'],
+                'tox_pull': o['TOX_PULL'],
                 'shadow': sum(n for k, n in o.items() if str(k).startswith('SHADOW')),
                 'shadow_cross': o['SHADOW_CROSS'], 'errors': o['ERROR'],
                 'fill_rate': fills / sent if sent else None,

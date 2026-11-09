@@ -183,6 +183,7 @@ CARRY_COINS = ('BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'ADA', 'SUI', 'LINK', 
                'WLD', 'TAO', 'ZEC', '1000PEPE')            # = tools/funding_spread_replay.COINS
 HL_NAME = {'1000PEPE': 'kPEPE'}
 BN_PREMIUM_URL = 'https://fapi.binance.com/fapi/v1/premiumIndex'
+BN_FUNDING_INFO_URL = 'https://fapi.binance.com/fapi/v1/fundingInfo'   # symbols with a non-default interval
 HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
 
 
@@ -193,9 +194,28 @@ def _f(x) -> Optional[float]:
         return None
 
 
-def quotes_from(bn_premium: list, hl_meta: list, coins: Iterable[str] = CARRY_COINS) -> List[FundingQuote]:
+def bn_interval_hours(symbol: str, funding_info) -> Optional[int]:
+    """Binance funding interval in hours from GET /fapi/v1/fundingInfo rows. Only symbols with an adjusted interval
+    are listed, so an absent symbol is the 8 h default; funding_info None (the call failed) is UNKNOWN."""
+    if funding_info is None:
+        return None
+    for row in funding_info:
+        if isinstance(row, dict) and row.get('symbol') == symbol:
+            try:
+                hours = int(row.get('fundingIntervalHours'))
+            except (TypeError, ValueError):
+                return None
+            return hours if hours > 0 else None
+    return 8
+
+
+def quotes_from(bn_premium: list, hl_meta: list, coins: Iterable[str] = CARRY_COINS,
+                bn_funding_info: Optional[list] = None) -> List[FundingQuote]:
     """Binance GET premiumIndex (all symbols) + Hyperliquid POST {"type": "metaAndAssetCtxs"} -> quotes.
-    A coin missing on a venue keeps None fields (evaluate() reports it UNKNOWN)."""
+    A coin missing on a venue keeps None fields (evaluate() reports it UNKNOWN).
+    premiumIndex lastFundingRate is per the symbol's OWN interval: 4 h for ENA, HYPE and TAO in 2026. With
+    bn_funding_info (GET fundingInfo rows) the rate is scaled to 8 h; an unreadable interval is UNKNOWN (None).
+    Without it every rate is read as 8 h, which halves the 4 h symbols (the 2026-11-07 finding; fetch_quotes passes it)."""
     bn = {x.get('symbol'): x for x in (bn_premium or []) if isinstance(x, dict)}
     hl = {}
     if isinstance(hl_meta, list) and len(hl_meta) == 2:
@@ -204,21 +224,29 @@ def quotes_from(bn_premium: list, hl_meta: list, coins: Iterable[str] = CARRY_CO
     out = []
     for c in coins:
         b, h = bn.get(f'{c}USDT') or {}, hl.get(HL_NAME.get(c, c)) or {}
-        out.append(FundingQuote(c, _f(b.get('lastFundingRate')), _f(h.get('funding')), _f(b.get('markPrice')),
-                                _f(h.get('markPx'))))
+        rate = _f(b.get('lastFundingRate'))
+        if bn_funding_info is not None and rate is not None:
+            hours = bn_interval_hours(f'{c}USDT', bn_funding_info)
+            rate = rate * 8.0 / hours if hours else None
+        out.append(FundingQuote(c, rate, _f(h.get('funding')), _f(b.get('markPrice')), _f(h.get('markPx'))))
     return out
 
 
 def fetch_quotes(coins: Iterable[str] = CARRY_COINS, timeout: float = 10.0, opener=None) -> List[FundingQuote]:
-    """Two public read-only calls (blocking: run it in a thread).  Raises on network / parse errors."""
+    """Three public read-only calls (blocking: run it in a thread).  Raises on network / parse errors."""
     op = opener or urllib.request.urlopen
     with op(urllib.request.Request(BN_PREMIUM_URL, headers={'User-Agent': 'groktopus-shadow'}), timeout=timeout) as r:
         bn = json.load(r)
+    with op(urllib.request.Request(BN_FUNDING_INFO_URL, headers={'User-Agent': 'groktopus-shadow'}),
+            timeout=timeout) as r:
+        info = json.load(r)
     req = urllib.request.Request(HL_INFO_URL, data=json.dumps({'type': 'metaAndAssetCtxs'}).encode(),
                                  headers={'Content-Type': 'application/json', 'User-Agent': 'groktopus-shadow'})
     with op(req, timeout=timeout) as r:
         hl = json.load(r)
-    return quotes_from(bn, hl, coins)
+    if not isinstance(info, list):                        # never fall back to the 8 h assumption silently
+        raise ValueError(f'fundingInfo: expected a list, got {type(info).__name__}')
+    return quotes_from(bn, hl, coins, bn_funding_info=info)
 
 
 def carry_view(book: 'ShadowCarryBook', quotes: Iterable[FundingQuote], intents: List[dict], now: float,

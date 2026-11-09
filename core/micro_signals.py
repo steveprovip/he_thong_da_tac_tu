@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import Deque, Optional, Sequence, Tuple
 
 from research.flow_gauge import FlowGauge
+from core.toxicity_guard import TapeMarkouts
 
 WS_PUBLIC = 'wss://fstream.binance.com/public/stream?streams='
 WS_MARKET = 'wss://fstream.binance.com/market/stream?streams='
@@ -395,6 +396,7 @@ class MicroFeed:
         self.bar: Optional[list] = None                         # open 1 m bar [start, o, h, l, c]
         self.bars: Deque[tuple] = deque(maxlen=cfg.bars_keep)   # closed 1 m bars (4 h: ATR 15 m)
         self.print_hooks: list = []                             # 10-10 burst lane: f(t, px, qty, buyer_is_maker)
+        self.markouts = TapeMarkouts()                          # 11-07 Pillar 3: tape maker markouts 1/5/30 s
 
     # ------------------------------------------------------------------ ingest
     def on_message(self, msg: dict, now: Optional[float] = None) -> None:
@@ -414,6 +416,7 @@ class MicroFeed:
                 return
             self.last = px
             self.last_trade = now
+            self.markouts.on_trade(now, px, q, bool(d.get('m')))
             signed = -px * q if d.get('m') else px * q
             self.cvd_long.append((now, signed, px))
             self.cvd_long_sum += signed
@@ -443,6 +446,7 @@ class MicroFeed:
                 self.bid10 = sum(float(q) for _, q in d['b'][:10])
                 self.ask10 = sum(float(q) for _, q in d['a'][:10])
                 self.last_book = now
+                self.markouts.on_mid(now, 0.5 * (self.bid + self.ask))
                 lv = self.cfg.ofi_levels
                 cb = [(float(x), float(q)) for x, q in d['b'][:lv]]
                 ca = [(float(x), float(q)) for x, q in d['a'][:lv]]
@@ -630,6 +634,7 @@ class MicroFeed:
                 'bid_qty': self.bid_qty, 'ask_qty': self.ask_qty,
                 'cvd_vel_10s': fast / self.cfg.cvd_fast_s, 'cvd_vel_60s': self.flow.cvd_window() / 60.0,
                 'depth10_imb': (self.bid10 - self.ask10) / tot10 if tot10 > 0 else None,
+                'maker_markout': self.markouts.snapshot(),
                 'box_lo': box_lo, 'box_hi': box_hi, 'box_pct': box_pct, 'vwap_dev_pct': (px / vwap - 1) * 100 if (vwap and px) else None,
                 'range_lo': lo, 'range_hi': hi, 'range_pos': rng_pos,
                 'liq_long_usd': liq_long, 'liq_short_usd': liq_short,

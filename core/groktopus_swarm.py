@@ -23,9 +23,15 @@ def adverse_selection(features, side, toxic_vpin):
 
 
 class GroktopusSwarm:
-    def __init__(self, threshold=.768, veto_threshold=.70, trend_floor=.70):
+    def __init__(self, threshold=.768, veto_threshold=.70, trend_floor=.70, smc_noro=0.0, smc_tidal=0.0):
+        """smc_noro / smc_tidal weight the core/smc.py features inside NORO (fair value gap pull) and TIDAL
+        (market structure). 0.0 (default) leaves both formulas bit-identical; research/smc_backtest.py must
+        show edge after costs on a holdout before anything else is used."""
         self.consensus = ConsensusEngine(threshold=threshold, veto_threshold=veto_threshold,
                                          trend_floor=trend_floor)
+        if not all(math.isfinite(x) for x in (smc_noro, smc_tidal)):
+            raise ValueError('Invalid SMC weights')
+        self.smc_noro, self.smc_tidal = float(smc_noro), float(smc_tidal)
 
     def evaluate(self, features, price, capacity_ok, risk_ok, gateway_ready, exits_ready, cross_momentum=0.0,
                  maker_fee=.0002, taker_fee=.0005, slippage_bps=1.0, toxic_vpin=.65, edge_multiple=1.8,
@@ -45,10 +51,17 @@ class GroktopusSwarm:
                             f.vpin_jump >= .15 or (f.sweep != 0 and f.flow_reversal))
             regime = 'TOXIC' if toxic_signal else (
                 'TREND' if max(abs(f.momentum), abs(cross_momentum), abs(lead_lag)) > 1.2 else 'CHOP')
+        noro = -f.vwap_z/(2*max(f.atr_ratio, .25)) + .25*f.momentum
+        tidal = .6*f.momentum + .3*cross_momentum + .5*f.sweep + .5*lead_lag + (50-f.rsi)/100
+        smc_noro, smc_tidal = getattr(self, 'smc_noro', 0.0), getattr(self, 'smc_tidal', 0.0)
+        if smc_noro and math.isfinite(f.smc_fvg_dist):
+            noro += smc_noro * math.tanh(f.smc_fvg_dist)       # open gap above (+) pulls up, below (-) pulls down
+        if smc_tidal and math.isfinite(f.smc_trend):
+            tidal += smc_tidal * f.smc_trend                   # confirmed structure: +1 bullish, -1 bearish
         directional = {
-            'NORO': math.tanh(-f.vwap_z/(2*max(f.atr_ratio, .25)) + .25*f.momentum),
+            'NORO': math.tanh(noro),
             'LUMEN': math.tanh(1.5*f.obi + f.flow + .2*f.ofi + .35*f.micro_delta_ticks + .25*f.flow_acceleration),
-            'TIDAL': math.tanh(.6*f.momentum + .3*cross_momentum + .5*f.sweep + .5*lead_lag + (50-f.rsi)/100),
+            'TIDAL': math.tanh(tidal),
         }
         if invalid:
             directional = {name: 0.0 for name in directional}

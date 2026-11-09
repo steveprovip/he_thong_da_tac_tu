@@ -121,6 +121,7 @@ class BurstLane:
         self.day, self.day_pnl, self.n = None, 0.0, 0
         self.last = {}
         self.hibernating = False
+        self.wake_since = None   # 10-24 (e): first time of the current unbroken wake condition
         e.feed.print_hooks.append(self.on_print)
 
     # ------------------------------------------------------------------ guards
@@ -173,6 +174,12 @@ class BurstLane:
             k = (e.features or {}).get('ker')
             chop = r.get('regime') == 'CHOP' or (k is not None and k < CHOP_KER)
             hib = chop or (self.hibernating and (k is None or k < CHOP_EXIT_KER))
+            hold = getattr(p, 'burst_wake_hold_s', 0.0)
+            if self.hibernating and not hib and hold > 0:        # 10-24 (e): the wake condition must persist
+                self.wake_since = self.wake_since if self.wake_since is not None else now
+                hib = now - self.wake_since < hold
+            if hib and (chop or k is None or k < CHOP_EXIT_KER):
+                self.wake_since = None
             if hib and not self.hibernating:
                 e.event(f'BURST OBSERVE {p.symbol}: CHOP regime active (KER < {CHOP_KER}) -> entry hibernated')
             elif self.hibernating and not hib:

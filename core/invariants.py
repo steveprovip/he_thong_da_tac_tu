@@ -1,9 +1,9 @@
 """Architectural invariants I1-I8 in one place (ARCH-2026-10-24 P0a, docs/architecture/01 §10).
 
 The constants are the values the code enforces today.  Every check returns a list of violations (empty = ok) and
-never raises, so a caller can refuse, log or test.  P0a: no runtime path imports this module yet; wiring it into
-Engine start-up, core.runtime (mainnet refusal, D1) and the sandbox hard gates is P0b, after the owner decisions in
-docs/architecture/04 §5.
+never raises, so each caller decides.  P0b (2026-10-24): core.engine.Engine.__init__ refuses a breached quorum or
+token in every mode and a breached Profile on an armed live engine (demo announces it); core.runtime.arguments
+refuses lowered --threshold / --veto-threshold on mainnet (owner decision D1).  Sandbox hard gates come with P3.
 """
 from __future__ import annotations
 

@@ -414,7 +414,7 @@ def test_profiles_intraday_shadow_on_demo_off_on_live():
     assert eng.PROFILES['demo'].intraday_lane == 'shadow' and eng.PROFILES['live'].intraday_lane == 'off'
     d = eng.PROFILES['demo']
     assert d.intraday_notional_usdt == 150.0 and d.intraday_daily_kill_usdt == 25.0 and d.intraday_hold_min == 45.0
-    assert d.intraday_close_margin_s == 10.0 and d.intraday_variants == ('R1_SESSION', 'P15_tp50', 'P15_rr25atr')
+    assert d.intraday_close_margin_s == 20.0 and d.intraday_variants   # 10-24 (e): was 10 s, bars changed after it == ('R1_SESSION', 'P15_tp50', 'P15_rr25atr')
 
 
 def test_p15_rr25_fixed_bracket_tp_and_sl(tmp_path, monkeypatch):

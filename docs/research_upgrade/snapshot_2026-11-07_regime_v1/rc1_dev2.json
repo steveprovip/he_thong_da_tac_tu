@@ -1,0 +1,995 @@
+{
+ "ticks_dir": "F:/factory-quant-opt/data/ticks",
+ "start": "2026-09-01",
+ "days": 14,
+ "symbols": [
+  "BTCUSDT",
+  "SOLUSDT",
+  "DOGEUSDT",
+  "BNBUSDT"
+ ],
+ "variants": {
+  "v0": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 4.5,
+    "tail_count": 1,
+    "crash_tail_z": null,
+    "crash_tail_count": null
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.5341147547090157,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.3896594112023045,
+    "jumpy_false_alarm": 0.3838667734860325,
+    "jumpy_precision": 0.06761837996303613,
+    "jumpy_recall": 0.4853613906678865,
+    "protection_recall": 0.5588566284042313,
+    "false_restriction": 0.3865066127316426,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.6441023094114725,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.22930221008194687,
+     "jumpy_false_alarm": 0.2164870281102746,
+     "jumpy_precision": 0.13341996967727962,
+     "jumpy_recall": 0.36688505062537224,
+     "protection_recall": 0.39156268568033276,
+     "false_restriction": 0.21708281427720305,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.4389093076388199,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.5163901857554386,
+     "jumpy_false_alarm": 0.5145408163265306,
+     "jumpy_precision": 0.029239203616427817,
+     "jumpy_recall": 0.5768500948766604,
+     "protection_recall": 0.7545787545787546,
+     "false_restriction": 0.5180102040816327,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.4268898380848316,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.5311413529353333,
+     "jumpy_false_alarm": 0.5270590660756623,
+     "jumpy_precision": 0.04189265008415934,
+     "jumpy_recall": 0.64,
+     "protection_recall": 0.8387096774193549,
+     "false_restriction": 0.5327285846819916,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.6265521009238104,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.28181186053441937,
+     "jumpy_false_alarm": 0.26343970871707,
+     "jumpy_precision": 0.13288685230877686,
+     "jumpy_recall": 0.514324693042292,
+     "protection_recall": 0.5360544217687074,
+     "false_restriction": 0.2640822445919897,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "n2c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 4.5,
+    "tail_count": 2,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.7568570967381452,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.11564870804723294,
+    "jumpy_false_alarm": 0.10990136720032571,
+    "jumpy_precision": 0.10006441915396178,
+    "jumpy_recall": 0.2131747483989021,
+    "protection_recall": 0.28696826468602293,
+    "false_restriction": 0.11254120644593583,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.7834119692078471,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.027116960516513532,
+     "jumpy_false_alarm": 0.021881601039917674,
+     "jumpy_precision": 0.25824175824175827,
+     "jumpy_recall": 0.08397855866587255,
+     "protection_recall": 0.10754604872251931,
+     "false_restriction": 0.022477387206846125,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7455051157246448,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.1692659183470746,
+     "jumpy_false_alarm": 0.16540816326530614,
+     "jumpy_precision": 0.04812206572769953,
+     "jumpy_recall": 0.3111954459203036,
+     "protection_recall": 0.48717948717948717,
+     "false_restriction": 0.16887755102040816,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7182874739247045,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.19698023244263435,
+     "jumpy_false_alarm": 0.18992887331202968,
+     "jumpy_precision": 0.0680786686838124,
+     "jumpy_recall": 0.38571428571428573,
+     "protection_recall": 0.5873655913978495,
+     "false_restriction": 0.19559839191835893,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7802225091884375,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.06923611800933743,
+     "jumpy_false_alarm": 0.05552580852430927,
+     "jumpy_precision": 0.25609756097560976,
+     "jumpy_recall": 0.24351978171896316,
+     "protection_recall": 0.26598639455782314,
+     "false_restriction": 0.05616834439922896,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "n3c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 4.5,
+    "tail_count": 3,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.8138992016091983,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.04205520444019519,
+    "jumpy_false_alarm": 0.03781142879657477,
+    "jumpy_precision": 0.14673752583407146,
+    "jumpy_recall": 0.1136779505946935,
+    "protection_recall": 0.18838622552329506,
+    "false_restriction": 0.04045126804218489,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.7957784951576856,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.0046684877079711945,
+     "jumpy_false_alarm": 0.0022748199100904513,
+     "jumpy_precision": 0.5531914893617021,
+     "jumpy_recall": 0.030970815961882073,
+     "protection_recall": 0.0540701128936423,
+     "false_restriction": 0.0028706060770189025,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8442932353233337,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.0564219727823582,
+     "jumpy_false_alarm": 0.052551020408163264,
+     "jumpy_precision": 0.09154929577464789,
+     "jumpy_recall": 0.19734345351043645,
+     "protection_recall": 0.3772893772893773,
+     "false_restriction": 0.056020408163265305,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8139465580609914,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.08239793384325023,
+     "jumpy_false_alarm": 0.07679620657664159,
+     "jumpy_precision": 0.09644364074743822,
+     "jumpy_recall": 0.22857142857142856,
+     "protection_recall": 0.4368279569892473,
+     "false_restriction": 0.08246572518297082,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8015794179000695,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.024734280321843646,
+     "jumpy_false_alarm": 0.016973656029128294,
+     "jumpy_precision": 0.3634538152610442,
+     "jumpy_recall": 0.12346521145975443,
+     "protection_recall": 0.14625850340136054,
+     "false_restriction": 0.017616191904047975,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "z8c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 8.0,
+    "tail_count": 1,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.7327439561940474,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.13305685585507282,
+    "jumpy_false_alarm": 0.13155855583719678,
+    "jumpy_precision": 0.0641097424412094,
+    "jumpy_recall": 0.1571363220494053,
+    "protection_recall": 0.23137519693900518,
+    "false_restriction": 0.1341983950828069,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.787732803575863,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.017233672709212812,
+     "jumpy_false_alarm": 0.01381140659697774,
+     "jumpy_precision": 0.26512968299711814,
+     "jumpy_recall": 0.0547945205479452,
+     "protection_recall": 0.0778371954842543,
+     "false_restriction": 0.014407192763906191,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.6988675871659878,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.21451276447799741,
+     "jumpy_false_alarm": 0.21290816326530612,
+     "jumpy_precision": 0.033341051169252144,
+     "jumpy_recall": 0.2732447817836812,
+     "protection_recall": 0.45054945054945056,
+     "false_restriction": 0.21637755102040818,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.6540677461011225,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.2598589450680441,
+     "jumpy_false_alarm": 0.25636532316256055,
+     "jumpy_precision": 0.047400611620795105,
+     "jumpy_recall": 0.35428571428571426,
+     "protection_recall": 0.5564516129032258,
+     "false_restriction": 0.2620348417688898,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7903049567895103,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.04062779378166286,
+     "jumpy_false_alarm": 0.03292996358963375,
+     "jumpy_precision": 0.24816625916870416,
+     "jumpy_recall": 0.13847203274215553,
+     "protection_recall": 0.16122448979591836,
+     "false_restriction": 0.033572499464553436,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "z10c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 10.0,
+    "tail_count": 1,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.7776674075269752,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.07831183182884885,
+    "jumpy_false_alarm": 0.0769624775088323,
+    "jumpy_precision": 0.06960520057079436,
+    "jumpy_recall": 0.10041171088746569,
+    "protection_recall": 0.17465676344812064,
+    "false_restriction": 0.07960231675444242,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.7952321827663273,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.0055624534392848275,
+     "jumpy_false_alarm": 0.00314141797107729,
+     "jumpy_precision": 0.48214285714285715,
+     "jumpy_recall": 0.03216200119118523,
+     "protection_recall": 0.05525846702317291,
+     "false_restriction": 0.003737204138005741,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7869772524088606,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.11478096751763187,
+     "jumpy_false_alarm": 0.11306122448979591,
+     "jumpy_precision": 0.040242319342276074,
+     "jumpy_recall": 0.17647058823529413,
+     "protection_recall": 0.35714285714285715,
+     "false_restriction": 0.11653061224489795,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7306546140856263,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.1714016092182378,
+     "jumpy_false_alarm": 0.16792083290382434,
+     "jumpy_precision": 0.054187192118226604,
+     "jumpy_recall": 0.2671428571428571,
+     "protection_recall": 0.46908602150537637,
+     "false_restriction": 0.1735903515101536,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7978047084533625,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.02150591040031787,
+     "jumpy_false_alarm": 0.01756264724780467,
+     "jumpy_precision": 0.24249422632794457,
+     "jumpy_recall": 0.07162346521145975,
+     "protection_recall": 0.0945578231292517,
+     "false_restriction": 0.01820518312272435,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "z6n2c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 6.0,
+    "tail_count": 2,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.8066354594782522,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.047742031612799087,
+    "jumpy_false_alarm": 0.04471966483235051,
+    "jumpy_precision": 0.11157347204161248,
+    "jumpy_recall": 0.09812442817932296,
+    "protection_recall": 0.1730812514067072,
+    "false_restriction": 0.04735950407796063,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.7953315122920288,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.005314129625031041,
+     "jumpy_false_alarm": 0.0028706060770189025,
+     "jumpy_precision": 0.5046728971962616,
+     "jumpy_recall": 0.03216200119118523,
+     "protection_recall": 0.05525846702317291,
+     "false_restriction": 0.003466392243947354,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.830237409357306,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.06829244064766067,
+     "jumpy_false_alarm": 0.06581632653061224,
+     "jumpy_precision": 0.06036363636363636,
+     "jumpy_recall": 0.15749525616698293,
+     "protection_recall": 0.33882783882783885,
+     "false_restriction": 0.06928571428571428,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7992947253402205,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.09615575643190623,
+     "jumpy_false_alarm": 0.09174311926605505,
+     "jumpy_precision": 0.0759297520661157,
+     "jumpy_recall": 0.21,
+     "protection_recall": 0.41935483870967744,
+     "false_restriction": 0.09741263787238429,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8016787523591934,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.02120790702294626,
+     "jumpy_false_alarm": 0.015099593060612551,
+     "jumpy_precision": 0.3395784543325527,
+     "jumpy_recall": 0.09890859481582538,
+     "protection_recall": 0.12176870748299319,
+     "false_restriction": 0.015742128935532233,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "z6m60c": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 60.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 6.0,
+    "tail_count": 1,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.7711362479357314,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.08974756944013311,
+    "jumpy_false_alarm": 0.08740363273400664,
+    "jumpy_precision": 0.07775318206972884,
+    "jumpy_recall": 0.12854528819762123,
+    "protection_recall": 0.19221246905244205,
+    "false_restriction": 0.08980706846508452,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 26,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 22
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.7792897938912342,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.026669977650856717,
+     "jumpy_false_alarm": 0.023939771434761416,
+     "jumpy_precision": 0.1750465549348231,
+     "jumpy_recall": 0.05598570577724836,
+     "protection_recall": 0.07724301841948901,
+     "false_restriction": 0.024535557601689868,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.770636733882984,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.13559153670408264,
+     "jumpy_false_alarm": 0.13408163265306122,
+     "jumpy_precision": 0.03663003663003663,
+     "jumpy_recall": 0.18975332068311196,
+     "protection_recall": 0.35714285714285715,
+     "false_restriction": 0.13673469387755102,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 9,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 7
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7505215059104003,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.15029303665441543,
+     "jumpy_false_alarm": 0.14678899082568808,
+     "jumpy_precision": 0.056179775280898875,
+     "jumpy_recall": 0.24285714285714285,
+     "protection_recall": 0.42338709677419356,
+     "false_restriction": 0.1523554272755386,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 14,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.7840965530942684,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.04643885964040926,
+     "jumpy_false_alarm": 0.0394624116513172,
+     "jumpy_precision": 0.21176470588235294,
+     "jumpy_recall": 0.13506139154160982,
+     "protection_recall": 0.145578231292517,
+     "false_restriction": 0.04010494752623688,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 1,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 1
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  },
+  "notailc": {
+   "config": {
+    "trend_window_s": 900.0,
+    "er_bucket_s": 30.0,
+    "er_min_span_s": 600.0,
+    "er_lock": 0.38,
+    "er_unlock": 0.42,
+    "jumpy_vol_ratio": 1.8,
+    "crash_vol_ratio": 3.0,
+    "crash_window_s": 300.0,
+    "crash_move_bps": 150.0,
+    "crash_hard_move_bps": 300.0,
+    "tail_memory_s": 300.0,
+    "confirm_s": 60.0,
+    "crash_cooldown_s": 900.0,
+    "stale_s": 30.0,
+    "baseline_halflife_s": 21600.0,
+    "garch_warmup": 30,
+    "tail_z": 1000000000.0,
+    "tail_count": 1,
+    "crash_tail_z": 4.5,
+    "crash_tail_count": 1
+   },
+   "pooled": {
+    "labelled": 80584,
+    "covered": 80537,
+    "accuracy": 0.8280045196617704,
+    "majority_baseline": 0.8781553819983362,
+    "jumpy_share": 0.019730061959099543,
+    "jumpy_false_alarm": 0.017677729475578205,
+    "jumpy_precision": 0.14789175582127123,
+    "jumpy_recall": 0.05375114364135407,
+    "protection_recall": 0.12874184109835696,
+    "false_restriction": 0.020317568721188322,
+    "crash": {
+     "realized_crash_starts": 29,
+     "detected": 29,
+     "false_episodes": 0,
+     "classifier_crash_episodes": 24
+    }
+   },
+   "by_symbol": {
+    "BTCUSDT": {
+     "labelled": 20146,
+     "covered": 20135,
+     "accuracy": 0.796126148497641,
+     "majority_baseline": 0.8370995778495157,
+     "jumpy_share": 0.00208592003973181,
+     "jumpy_false_alarm": 0.0005416237881167741,
+     "jumpy_precision": 0.7619047619047619,
+     "jumpy_recall": 0.019058963668850508,
+     "protection_recall": 0.0421865715983363,
+     "false_restriction": 0.0011374099550452257,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    },
+    "SOLUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8681831727426245,
+     "majority_baseline": 0.9167080560246349,
+     "jumpy_share": 0.024734280321843646,
+     "jumpy_false_alarm": 0.022704081632653063,
+     "jumpy_precision": 0.10240963855421686,
+     "jumpy_recall": 0.0967741935483871,
+     "protection_recall": 0.2802197802197802,
+     "false_restriction": 0.026173469387755104,
+     "crash": {
+      "realized_crash_starts": 10,
+      "detected": 10,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 8
+     }
+    },
+    "DOGEUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8410151981722459,
+     "majority_baseline": 0.908214959769544,
+     "jumpy_share": 0.046885864706466676,
+     "jumpy_false_alarm": 0.043088341408102256,
+     "jumpy_precision": 0.10805084745762712,
+     "jumpy_recall": 0.1457142857142857,
+     "protection_recall": 0.3548387096774194,
+     "false_restriction": 0.048757860014431505,
+     "crash": {
+      "realized_crash_starts": 15,
+      "detected": 15,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 12
+     }
+    },
+    "BNBUSDT": {
+     "labelled": 20146,
+     "covered": 20134,
+     "accuracy": 0.8066951425449489,
+     "majority_baseline": 0.8506009734776994,
+     "jumpy_share": 0.005215059104003179,
+     "jumpy_false_alarm": 0.0029449560933818807,
+     "jumpy_precision": 0.47619047619047616,
+     "jumpy_recall": 0.034106412005457026,
+     "protection_recall": 0.05714285714285714,
+     "false_restriction": 0.0035874919683015634,
+     "crash": {
+      "realized_crash_starts": 2,
+      "detected": 2,
+      "false_episodes": 0,
+      "classifier_crash_episodes": 2
+     }
+    }
+   },
+   "seconds": {
+    "BTCUSDT": 1114523,
+    "SOLUSDT": 1094004,
+    "DOGEUSDT": 932239,
+    "BNBUSDT": 895988
+   }
+  }
+ },
+ "definitions": {
+  "jumpy_false_alarm": "P(state JUMPY | label CALM_TREND or SIDEWAYS)",
+  "jumpy_share": "P(state JUMPY) over covered points",
+  "labels": "tools.nightly_audit.forward_labels, per-day JUMPY median"
+ },
+ "wall_s": 133.6
+}

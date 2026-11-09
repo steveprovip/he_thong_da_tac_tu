@@ -4,6 +4,8 @@ from dataclasses import dataclass, asdict
 import math
 import statistics
 
+from core.smc import SMCSnapshot, SMCState
+
 
 def calibrate_bucket_volume(trades, seconds=15.0, floor_multiple=25, minimum=1e-9):
     quantities = sorted(float(t['q']) for t in trades)
@@ -97,9 +99,22 @@ class Features:
     fast_return: float = 0
     fast_timestamp: float = -1
     vpin_baseline: float | None = None
+    # Smart Money Concepts on closed bars (core/smc.py). Default 0 = no structure / no zone.
+    smc_trend: int = 0
+    smc_bos: int = 0
+    smc_choch: int = 0
+    smc_sweep: int = 0
+    smc_fvg_dist: float = 0
+    smc_ob_dist: float = 0
 
     def to_dict(self):
         return asdict(self)
+
+
+def _smc_values(engine):
+    s = getattr(engine, 'smc', None)
+    s = s.last if s is not None else SMCSnapshot()
+    return s.trend, s.bos, s.choch, s.sweep, s.fvg_dist, s.ob_dist
 
 
 class AlphaEngine:
@@ -124,6 +139,7 @@ class AlphaEngine:
         self.last_trade_id = -1
         self.last_trade_time = -1.0
         self.sweep = 0
+        self.smc = SMCState()
 
     def on_trade(self, price, quantity, buyer_aggressor, timestamp, trade_id):
         if trade_id <= self.last_trade_id or timestamp < self.last_trade_time:
@@ -153,6 +169,7 @@ class AlphaEngine:
                 self.sweep = 1
             elif high > old_high and close < old_high:
                 self.sweep = -1
+        self.smc.update(high, low, close)
         self._cached = None
         self.bars.append((timestamp, high, low, close))
         return True
@@ -261,7 +278,7 @@ class AlphaEngine:
                           len(bars) >= 20 and len(self.trades) >= 20 and vpin is not None,
                           micro, micro_delta, flow_acceleration, flow_reversal, vpin_jump,
                           atr_ratio, variance_per_second, self.fast_momentum, self.fast_return,
-                          self.fast_timestamp, vpin_base)
+                          self.fast_timestamp, vpin_base, *_smc_values(self))
         self._cached = result
         return result
 

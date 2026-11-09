@@ -121,7 +121,7 @@ def audit(rows: list) -> dict:
         rows=len(rows), modes=sorted({f"{r.get('mode', 'UNKNOWN')}|{r.get('venue', 'UNKNOWN')}" for r in rows}),
         tags={t: sum(1 for r in rows if (r.get('tag') or 'UNKNOWN') == t) for t in {r.get('tag') or 'UNKNOWN' for r in rows}},
         unknown_fields={f: [i for i, r in enumerate(rows, 1) if r.get(f) is None]
-                        for f in ('gross', 'fee', 'entry_type', 'maker_fills', 'latency_ms', 'tag', 'path')},
+                        for f in ('gross', 'fee', 'entry_type', 'maker_fills', 'latency_ms', 'tag', 'path', 'jev_lift')},
         reconcile_gross_minus_fee_ne_net=recon,
         all=group_stats(rows), auto_only=group_stats(strategy),
         cost_incomplete_rows=[i for i, r in enumerate(rows, 1) if entry_fee_suspect(r)],
@@ -130,6 +130,7 @@ def audit(rows: list) -> dict:
         adopted_entry_fee_estimate=round(sum(r['qty'] * r['entry'] * 2e-4 for r in rows if entry_fee_suspect(r)), 8),
         by_tag=by('tag'), by_policy=by('policy'),
         by_symbol=by('symbol'), by_entry_type=by('entry_type'), by_path=by('path'), by_reason=by('reason'),
+        by_jev_lift=by('jev_lift'),    # D4 2026-10-24: JEV entries that lifted a raw consensus < 0.70 vs the rest
         sessions=sessions(rows),
         latency_ms_ledger={'n': len(lat), 'p50': lat[len(lat) // 2] if lat else None,
                            'p90': lat[int(0.9 * (len(lat) - 1))] if lat else None,

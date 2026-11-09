@@ -288,7 +288,9 @@ class CarryRuntime:
         legs = []
         for pair_id, report in self.reconciled.items():
             pair = self.gateway.pairs.get(pair_id)
-            if report.get('status') != 'RECONCILED' or pair is None or not pair.closed_at:
+            required = ('spot_pnl_usdt', 'perp_pnl_usdt', 'funding_usdt', 'fee_usdt')
+            if (report.get('status') != 'RECONCILED' or not report.get('closed') or pair is None
+                    or not pair.closed_at or any(report.get(k) is None for k in required)):
                 continue
             legs.append({'symbol': pair.intent.perp_symbol,
                          'delta_spot_usdt': float(dec(report['spot_pnl_usdt'])),

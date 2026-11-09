@@ -98,6 +98,8 @@ class TrendExecutor:
             return 'trend lane active is demo-only'
         if type(e.venue).__name__ == 'LiveVenue' or 'MAINNET' in str(getattr(e.venue, 'label', '')):
             return 'trend lane refuses a mainnet venue'
+        if getattr(e, 'regime_crash', None) is not None and e.regime_crash():
+            return 'REGIME CRASH: circuit breaker (no trend entries)'     # 11-07 Pillar 2
         return None
 
     # ------------------------------------------------------------------ signal

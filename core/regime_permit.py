@@ -19,6 +19,14 @@ Measured on this repo (docs/CHAN_DOAN_TOI_UU_VONG_LAP.md): 6795 lab probes
 gross +0.96 bps, best out-of-sample filter F4 +4.39 bps, L2 maker markout
 -0.7..-1.2 bps.  Nothing clears 9 bps, so today the permit is STAND_ASIDE for
 scalping -- which is the point: zero fills beats negative fills.
+
+Market regime (2026-11-07, opt-in): `market_regime` is a core.regime_classifier
+state (name or RegimeState) and `style` the entry style ('TREND' or
+'MEAN_REVERSION').  Checked after CARRY, so carry keeps its own G > 3C gate in
+every regime (CRASH = carry only).  CRASH and UNKNOWN stand aside for SCALP; a
+style the regime does not allow, or no style, stands aside; JUMPY multiplies
+the gross hurdle and the LCB floor by 1.5.  None (the default) is the
+pre-regime behaviour, bit for bit.
 """
 from dataclasses import dataclass, asdict
 import math
@@ -65,7 +73,7 @@ def _finite(*values):
 
 def fast_hands_permit(spread_bps, atr_bps, oos_gross_bps=None, oos_gross_lcb_bps=None,
                       lab_status=None, funding_bps_per_period=0.0, funding_periods=0,
-                      verdict=None, intent_ts=None, policy=None):
+                      verdict=None, intent_ts=None, policy=None, market_regime=None, style=None):
     policy = policy or PermitPolicy()
     if not _finite(spread_bps, atr_bps, funding_bps_per_period) or spread_bps < 0 or atr_bps < 0:
         return Permit(False, STAND_ASIDE, 'INVALID_INPUT')
@@ -82,6 +90,17 @@ def fast_hands_permit(spread_bps, atr_bps, oos_gross_bps=None, oos_gross_lcb_bps
     if funding_periods and carry_income > carry_needed:
         return Permit(True, CARRY, f'FUNDING {carry_income:.1f}>{carry_needed:.1f} bps (G>3C)')
 
+    hurdle, lcb_floor = policy.gross_hurdle_bps, policy.cost_all_in_bps
+    if market_regime is not None:
+        from core.regime_classifier import policy_for
+        regime = policy_for(market_regime)
+        if not regime.directional:
+            return Permit(False, STAND_ASIDE, f'REGIME {regime.state}: directional entries off')
+        if style not in regime.styles:
+            return Permit(False, STAND_ASIDE,
+                          f'REGIME {regime.state}: style {style or "UNKNOWN"} not in {"/".join(regime.styles)}')
+        hurdle, lcb_floor = hurdle * regime.edge_mult, lcb_floor * regime.edge_mult
+
     if lab_status == REGIME_UNPROFITABLE:
         return Permit(False, STAND_ASIDE, 'REGIME_UNPROFITABLE (early-stop gate)')
     if not policy.min_spread_bps <= spread_bps <= policy.max_spread_bps:
@@ -92,10 +111,10 @@ def fast_hands_permit(spread_bps, atr_bps, oos_gross_bps=None, oos_gross_lcb_bps
                       f'ATR {atr_bps:.2f} outside {policy.min_atr_bps:g}-{policy.max_atr_bps:g} bps')
     if oos_gross_bps is None or oos_gross_lcb_bps is None or not _finite(oos_gross_bps, oos_gross_lcb_bps):
         return Permit(False, STAND_ASIDE, 'NO_OOS_EVIDENCE')
-    if oos_gross_bps < policy.gross_hurdle_bps:
+    if oos_gross_bps < hurdle:
         return Permit(False, STAND_ASIDE,
-                      f'OOS gross {oos_gross_bps:.2f}<{policy.gross_hurdle_bps:g} bps hurdle')
-    if oos_gross_lcb_bps <= policy.cost_all_in_bps:
+                      f'OOS gross {oos_gross_bps:.2f}<{hurdle:g} bps hurdle')
+    if oos_gross_lcb_bps <= lcb_floor:
         return Permit(False, STAND_ASIDE,
-                      f'OOS LCB95 {oos_gross_lcb_bps:.2f}<=cost {policy.cost_all_in_bps:g} bps')
+                      f'OOS LCB95 {oos_gross_lcb_bps:.2f}<=cost {lcb_floor:g} bps')
     return Permit(True, SCALP, f'OOS gross {oos_gross_bps:.2f} LCB95 {oos_gross_lcb_bps:.2f} bps')

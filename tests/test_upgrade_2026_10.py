@@ -38,8 +38,9 @@ def wicked(cfg, drop=0.008, sym='DOGEUSDT'):
 
 # ----------------------------------------------------------------------------- layout
 def test_root_is_clean_and_launchers_live_in_scripts():
+    # .mcp.json (2026-10-18): Claude Code reads project MCP servers (engram) only from the repo root.
     allowed_files = {'README.md', 'CLAUDE.md', 'AGENTS.md', 'requirements.txt', 'pytest.ini', 'init.sh',
-                     'run.bat', '.env.local', '.gitignore'}
+                     'run.bat', '.env.local', '.gitignore', '.mcp.json'}
     files = {p.name for p in ROOT.iterdir() if p.is_file()}
     assert files <= allowed_files, files - allowed_files
     assert not list(ROOT.glob('FORM_*.md')) and not list(ROOT.glob('CHAY_*.bat'))

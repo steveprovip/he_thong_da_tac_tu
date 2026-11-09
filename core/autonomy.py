@@ -92,10 +92,15 @@ class Autonomy:
         if base.tp1_scaled_pct is None:
             arm.pop('tp1_scaled_pct', None)               # the TP1 split is off in this profile: do not switch it on
         r_obs = self.router.get('scalp_alloc', 1.0) <= 0.0
-        key = (tuple(sorted(changes.items())), observe, tuple(sorted(arm.items())), r_obs)
+        # 10-24: chop_router_scalp -> the router's CHOP mutes the swarm entries only; the chop scalper keeps quoting
+        scalp_only = (r_obs and not observe and getattr(base, 'chop_router_scalp', False)
+                      and getattr(base, 'chop_scalper', 'off') == 'on')
+        key = (tuple(sorted(changes.items())), observe, tuple(sorted(arm.items())), r_obs, scalp_only)
         if self.applied_key.get(s) == key:
             return
-        p = tunables.apply_profile(base, {**arm, **changes}, observe or r_obs, [s])
+        p = tunables.apply_profile(base, {**arm, **changes}, observe or (r_obs and not scalp_only), [s])
+        if scalp_only:
+            p = replace(p, scalp_only=True)
         prev = self.applied_key.get(s)
         e.p = p
         self.applied_key[s] = key
@@ -215,8 +220,11 @@ class Autonomy:
                 self.clock() - self.router_said >= 600:          # announce at most every 10 min (no UI spam)
             self.router_said = self.clock()
             e0 = next(iter(self.engines.values()))
+            scalp = r['regime'] == 'CHOP' and any(getattr(b, 'chop_router_scalp', False)
+                                                  and getattr(b, 'chop_scalper', 'off') == 'on' for b in self.base.values())
             self.say(e0, f'capital router {self.router.get("regime")} -> {r["regime"]}'
-                         + (f' ({r["why"]})' if r['why'] else ''))
+                         + (f' ({r["why"]})' if r['why'] else '')
+                         + (' · chop scalper keeps quoting (chop_router_scalp)' if scalp else ''))
         self.router = r
         self.router_counts[r['regime']] = self.router_counts.get(r['regime'], 0) + 1
         return r

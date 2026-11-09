@@ -20,7 +20,7 @@ BUY = ms.evaluate(sig(FLOW=('BUY', 1.0, 20), TREND=('BUY', 1.0, 20)), ms.Gates(c
 DEMO = eng.PROFILES['demo']
 PROD = {k: getattr(DEMO, k) for k in (                       # production demo gates (mock_engine relaxes them)
     'min_edge_bps', 'ker_gate', 'min_velocity_pct', 'concordance_gate', 'vfr_gate', 'mr_flow_gate', 'net_rr_min',
-    'chop_scalper', 'drift_accel', 'observe_only')}
+    'chop_scalper', 'drift_accel', 'observe_only', 'scalp_net_rr')}
 
 
 def prod_engine(tmp_path, sym=SOL, feed=None, **kw):
@@ -74,7 +74,10 @@ def test_feasibility_matrix_from_the_real_demo_config(tmp_path):
     m = e.lane_feasibility()
     assert m['TREND']['state'] == 'ENABLED' and m['TREND']['feasible'] is True and m['TREND']['rr_min'] >= 1.30
     assert m['MR']['feasible'] is False and m['MR']['rr_max'] == pytest.approx(0.875, abs=0.001)
-    assert m['SCALP']['state'] == 'SHADOW' and m['SCALP']['feasible'] is None and m['SCALP']['gate'] is None
+    # 10-24 DEMO ACTIVE (owner decision): the shipped demo runs the chop scalper 'on' (was 'shadow')
+    # 11-08 owner bracket: route-specific maker/stop fees give RR 1.40 at TP 0.32 / SL 0.12.
+    assert m['SCALP']['state'] == 'ENABLED' and m['SCALP']['feasible'] is True and m['SCALP']['gate'] == 1.30
+    assert m['SCALP']['rr_max'] == pytest.approx(1.4, abs=0.001)
 
 
 def test_mr_lane_is_infeasible_for_every_vwap_deviation(tmp_path):

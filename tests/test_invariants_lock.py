@@ -1,8 +1,12 @@
-"""ARCH-2026-10-24 P0a: architectural invariants I1-I8 pinned in one place (core/invariants.py, not wired into any
-runtime path yet).  The JEV FAST test describes the CURRENT behaviour (docs/architecture/01 §3.4, finding F1): a
-change there has to be a deliberate owner decision (D4), not a side effect.  Synthetic data only; no network."""
+"""ARCH-2026-10-24 P0a/P0b: architectural invariants I1-I8 pinned in one place (core/invariants.py) and wired into
+Engine.__init__ and core.runtime.arguments (P0b).  The JEV FAST test describes the CURRENT behaviour, kept by owner
+decision D4 (docs/architecture/01 §3.4, finding F1); D4 also requires every entry to carry the raw consensus and a
+jev_lift label so its P&L can be compared.  Synthetic data only; no network."""
+import json
+import sys
 from argparse import Namespace
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -10,7 +14,12 @@ from core import engine as eng
 from core import invariants as inv
 from core import micro_signals as msig
 from core import micro_swarm as ms
+from core import runtime
 from core.consensus_engine import WEIGHTS, ConsensusEngine, TokenAuthority, Vote
+from tests.test_two_mode_engine import opened
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import ledger_audit as la  # noqa: E402
 
 
 def _flow_only(edge_bps=60.0):
@@ -143,3 +152,80 @@ def test_runtime_overrides_are_reported_on_mainnet_only():
     assert len(errs) == 2 and errs[0].startswith('--threshold') and errs[1].startswith('--veto-threshold')
     assert inv.check_runtime_args(Namespace(threshold=.90, veto_threshold=.75), 'mainnet') == []
     assert inv.check_runtime_args(Namespace(threshold=None, veto_threshold=None), 'mainnet') == []
+
+
+# ----------------------------------------------------------------------------- P0b: Engine.__init__
+def _engine(tmp_path, p, allow_live=False, tag='trades'):
+    return eng.Engine(p, eng.MockVenue(p, quote=lambda s: (100.0, 100.01)), msig.MicroFeed(p.symbol),
+                      ledger=tmp_path / f'{tag}.jsonl', allow_live=allow_live)
+
+
+@pytest.mark.production_profile
+def test_engine_builds_every_shipped_profile_clean(tmp_path):
+    for name, p in eng.PROFILES.items():
+        assert _engine(tmp_path, p, allow_live=name == 'live', tag=name).invariant_errors == [], name
+
+
+@pytest.mark.parametrize('change', [{'equity_cap': 10.0}, {'max_loss_usdt': 0.10}, {'autonomy': 'on'},
+                                    {'jev_min': 7.0}, {'super_edge': True}, {'super_cross': 'on'}])
+def test_armed_live_engine_refuses_any_profile_breach(tmp_path, change):
+    with pytest.raises(PermissionError, match='INVARIANT'):
+        _engine(tmp_path, replace(eng.PROFILES['live'], **change), allow_live=True)
+
+
+def test_demo_and_unarmed_engines_run_research_toggles_and_announce_them(tmp_path):
+    e = _engine(tmp_path, replace(eng.PROFILES['demo'], symbol='SOLUSDT', super_cross='on'))
+    assert len(e.invariant_errors) == 1 and 'super_cross' in e.invariant_errors[0]
+    assert any(x['message'] == f'INVARIANT WARN {e.invariant_errors[0]}' for x in e.events)
+    unarmed = _engine(tmp_path, replace(eng.PROFILES['demo'], mode='live'), tag='unarmed')   # cannot reach mainnet
+    assert len(unarmed.invariant_errors) == 3
+
+
+def test_engine_refuses_a_broken_quorum_or_token_in_every_mode(tmp_path, monkeypatch):
+    demo = replace(eng.PROFILES['demo'], symbol='SOLUSDT')
+    monkeypatch.setattr(eng, 'ConsensusEngine', lambda: ConsensusEngine(threshold=.5, veto_threshold=.4))
+    with pytest.raises(PermissionError, match='INVARIANT: threshold 0.5'):
+        _engine(tmp_path, demo)
+    monkeypatch.setattr(eng, 'ConsensusEngine', ConsensusEngine)
+    monkeypatch.setattr(eng, 'TokenAuthority', lambda: TokenAuthority(threshold=.5))
+    with pytest.raises(PermissionError, match='INVARIANT: token threshold 0.5'):
+        _engine(tmp_path, demo, tag='b')
+
+
+# ----------------------------------------------------------------------------- P0b: core.runtime parser (D1)
+def test_runtime_parser_refuses_a_lowered_quorum_on_mainnet():
+    base = ['--seconds', '1', '--symbols', 'BTCUSDT', '--no-ui']
+    for low in (['--threshold', '0.70'], ['--veto-threshold', '0.60'],
+                ['--threshold', '.5', '--veto-threshold', '.45']):
+        with pytest.raises(SystemExit):
+            runtime.arguments('mainnet', base + low)
+    assert runtime.arguments('mainnet', base + ['--threshold', '0.80']).threshold == 0.80
+    assert runtime.arguments('paper', base + ['--threshold', '0.50']).threshold == 0.50       # research stays open
+
+
+# ----------------------------------------------------------------------------- D4: label every entry
+def test_jev_lift_label():
+    assert eng.jev_lift('JEV', 0.60) is True and eng.jev_lift('JEV', 0.80) is False
+    assert eng.jev_lift('SWARM', 0.60) is False and eng.jev_lift('MR', None) is False
+    assert eng.jev_lift('JEV', None) is None                                  # UNKNOWN, never silently False
+
+
+async def test_order_row_and_trade_row_carry_raw_consensus_and_jev_label(tmp_path):
+    e, venue, feed = await opened(tmp_path)
+    raw, path = e.pos['consensus'], e.pos['path']
+    o = [json.loads(x) for x in (tmp_path / 'engine_orders.jsonl').read_text(encoding='utf-8').splitlines()][-1]
+    assert raw is not None and o['consensus'] == pytest.approx(raw) and o['path'] == path
+    assert o['jev_lift'] is e.pos['jev_lift'] is eng.jev_lift(path, raw)
+    await e.close_now()
+    row = json.loads((tmp_path / 'trades.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+    assert row['consensus'] == pytest.approx(raw) and row['jev_lift'] is eng.jev_lift(path, raw)
+    assert row['schema'] == 2                                                 # additive fields, same schema
+
+
+def test_ledger_audit_splits_pnl_by_jev_label():
+    rows = [{'t': 0, 'pnl': -0.05, 'gross': -0.01, 'fee': 0.04, 'path': 'JEV', 'jev_lift': True},
+            {'t': 9, 'pnl': 0.02, 'gross': 0.06, 'fee': 0.04, 'path': 'SWARM', 'jev_lift': False},
+            {'t': 99, 'pnl': 0.01, 'gross': 0.05, 'fee': 0.04, 'path': 'SWARM'}]          # row written before D4
+    r = la.audit(rows)
+    assert r['by_jev_lift'][True]['net'] == pytest.approx(-0.05) and r['by_jev_lift'][False]['n'] == 1
+    assert r['by_jev_lift']['UNKNOWN']['n'] == 1 and r['unknown_fields']['jev_lift'] == [3]

@@ -12,6 +12,7 @@ import time
 from collections import Counter
 
 from config.settings import ROOT, Settings
+from core import invariants
 from core.barrier_planner import BarrierPlanner, Barriers, maker_quote, microstructure_quote
 from core.consensus_engine import TokenAuthority, WEIGHTS
 from core.funding_carry import CarryConfig, FundingCarry
@@ -1029,6 +1030,8 @@ def arguments(mode, argv=None):
     if (args.threshold is not None and args.veto_threshold is not None and
             args.veto_threshold > args.threshold):
         parser.error('--veto-threshold cannot exceed --threshold')
+    for error in invariants.check_runtime_args(args, mode):    # D1 2026-10-24: research overrides never reach mainnet
+        parser.error(error)
     if any(not math.isfinite(v) or v <= 0 for v in (args.horizon, args.quote_ttl, args.equity)) or args.seconds < 0 or not math.isfinite(args.seconds):
         parser.error('Invalid duration or equity')
     if not math.isfinite(args.maker_exit_grace) or args.maker_exit_grace < 0:

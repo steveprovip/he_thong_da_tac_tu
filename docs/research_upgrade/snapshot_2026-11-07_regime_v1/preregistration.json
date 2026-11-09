@@ -1,0 +1,395 @@
+{
+ "id": "RC-1",
+ "registered_utc": "2026-11-07T11:50:06Z",
+ "question": "Does v1 cut JUMPY false alarms below 10 % on unseen tick days without weakening the CRASH breaker?",
+ "v0": {
+  "trend_window_s": 900.0,
+  "er_bucket_s": 30.0,
+  "er_min_span_s": 600.0,
+  "er_lock": 0.38,
+  "er_unlock": 0.42,
+  "jumpy_vol_ratio": 1.8,
+  "crash_vol_ratio": 3.0,
+  "crash_window_s": 300.0,
+  "crash_move_bps": 150.0,
+  "crash_hard_move_bps": 300.0,
+  "tail_memory_s": 300.0,
+  "confirm_s": 60.0,
+  "crash_cooldown_s": 900.0,
+  "stale_s": 30.0,
+  "baseline_halflife_s": 21600.0,
+  "garch_warmup": 30,
+  "tail_z": 4.5,
+  "tail_count": 1,
+  "crash_tail_z": null,
+  "crash_tail_count": null
+ },
+ "v1_name": "n3c",
+ "v1": {
+  "trend_window_s": 900.0,
+  "er_bucket_s": 30.0,
+  "er_min_span_s": 600.0,
+  "er_lock": 0.38,
+  "er_unlock": 0.42,
+  "jumpy_vol_ratio": 1.8,
+  "crash_vol_ratio": 3.0,
+  "crash_window_s": 300.0,
+  "crash_move_bps": 150.0,
+  "crash_hard_move_bps": 300.0,
+  "tail_memory_s": 300.0,
+  "confirm_s": 60.0,
+  "crash_cooldown_s": 900.0,
+  "stale_s": 30.0,
+  "baseline_halflife_s": 21600.0,
+  "garch_warmup": 30,
+  "tail_z": 4.5,
+  "tail_count": 3,
+  "crash_tail_z": 4.5,
+  "crash_tail_count": 1
+ },
+ "selection_rule": "dev 2026-09-01..14 (4 symbols): among variants with JUMPY false alarm < 10 % and CRASH detection equal to v0 (29/29), the highest protection recall",
+ "dev_results": {
+  "v0": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.5341147547090157,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.3896594112023045,
+   "jumpy_false_alarm": 0.3838667734860325,
+   "jumpy_precision": 0.06761837996303613,
+   "jumpy_recall": 0.4853613906678865,
+   "protection_recall": 0.5588566284042313,
+   "false_restriction": 0.3865066127316426,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "z6": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.6549908737598867,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.23006816742615196,
+   "jumpy_false_alarm": 0.22786672095191815,
+   "jumpy_precision": 0.06282044362890604,
+   "jumpy_recall": 0.26623970722781337,
+   "protection_recall": 0.3301823092505064,
+   "false_restriction": 0.23012568786855964,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 27,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 22
+   }
+  },
+  "z8": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7331661224033674,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.13335485553223983,
+   "jumpy_false_alarm": 0.13168989112304802,
+   "jumpy_precision": 0.06527001862197393,
+   "jumpy_recall": 0.16033851784080513,
+   "protection_recall": 0.2252982219221247,
+   "false_restriction": 0.1339357245111044,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 27,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 22
+   }
+  },
+  "z10": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7781640736555868,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.07858499819958528,
+   "jumpy_false_alarm": 0.07704127868034305,
+   "jumpy_precision": 0.07189129404329278,
+   "jumpy_recall": 0.10407136322049405,
+   "protection_recall": 0.16115237452171957,
+   "false_restriction": 0.07928711206839942,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 24,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 20
+   }
+  },
+  "n2": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7574530960924792,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.11618262413549052,
+   "jumpy_false_alarm": 0.11004583601476209,
+   "jumpy_precision": 0.10302447365608636,
+   "jumpy_recall": 0.22049405306495884,
+   "protection_recall": 0.279315777627729,
+   "false_restriction": 0.11233106998857383,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 25,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 20
+   }
+  },
+  "n3": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8146193674956852,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.0426884537541751,
+   "jumpy_false_alarm": 0.0379821646681814,
+   "jumpy_precision": 0.15561372891215824,
+   "jumpy_recall": 0.12236962488563587,
+   "protection_recall": 0.17555705604321403,
+   "false_restriction": 0.040188597470482396,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 22,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 19
+   }
+  },
+  "m60": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7145659758868594,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.16576232042415287,
+   "jumpy_false_alarm": 0.16084632458202544,
+   "jumpy_precision": 0.08127340823970038,
+   "jumpy_recall": 0.24817017383348583,
+   "protection_recall": 0.31150123790231826,
+   "false_restriction": 0.16324976031310331,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 26,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 22
+   }
+  },
+  "z6n2": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8072687087922321,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.04833803096713312,
+   "jumpy_false_alarm": 0.044916667761127384,
+   "jumpy_precision": 0.11867454405342923,
+   "jumpy_recall": 0.10567246111619397,
+   "protection_recall": 0.1591267161827594,
+   "false_restriction": 0.047123100563428374,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 22,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 19
+   }
+  },
+  "z8m60": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.802463463997914,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.0517774439077691,
+   "jumpy_false_alarm": 0.04943460159441037,
+   "jumpy_precision": 0.09496402877697842,
+   "jumpy_recall": 0.09057639524245197,
+   "protection_recall": 0.14202115687598468,
+   "false_restriction": 0.051588500282370865,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 22,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 19
+   }
+  },
+  "z6m60": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7715211641854055,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.09021940226231422,
+   "jumpy_false_alarm": 0.08754810154844302,
+   "jumpy_precision": 0.08106248279658684,
+   "jumpy_recall": 0.13472095150960658,
+   "protection_recall": 0.18658564033310826,
+   "false_restriction": 0.08975453435074401,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 22,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 19
+   }
+  },
+  "notail": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8288736853868408,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.020363311273079453,
+   "jumpy_false_alarm": 0.017782797704259203,
+   "jumpy_precision": 0.16890243902439026,
+   "jumpy_recall": 0.06335773101555352,
+   "protection_recall": 0.11141120864280891,
+   "false_restriction": 0.019936696392219698,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 21,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 18
+   }
+  },
+  "n2c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7568570967381452,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.11564870804723294,
+   "jumpy_false_alarm": 0.10990136720032571,
+   "jumpy_precision": 0.10006441915396178,
+   "jumpy_recall": 0.2131747483989021,
+   "protection_recall": 0.28696826468602293,
+   "false_restriction": 0.11254120644593583,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "n3c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8138992016091983,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.04205520444019519,
+   "jumpy_false_alarm": 0.03781142879657477,
+   "jumpy_precision": 0.14673752583407146,
+   "jumpy_recall": 0.1136779505946935,
+   "protection_recall": 0.18838622552329506,
+   "false_restriction": 0.04045126804218489,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "z8c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7327439561940474,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.13305685585507282,
+   "jumpy_false_alarm": 0.13155855583719678,
+   "jumpy_precision": 0.0641097424412094,
+   "jumpy_recall": 0.1571363220494053,
+   "protection_recall": 0.23137519693900518,
+   "false_restriction": 0.1341983950828069,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "z10c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7776674075269752,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.07831183182884885,
+   "jumpy_false_alarm": 0.0769624775088323,
+   "jumpy_precision": 0.06960520057079436,
+   "jumpy_recall": 0.10041171088746569,
+   "protection_recall": 0.17465676344812064,
+   "false_restriction": 0.07960231675444242,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "z6n2c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8066354594782522,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.047742031612799087,
+   "jumpy_false_alarm": 0.04471966483235051,
+   "jumpy_precision": 0.11157347204161248,
+   "jumpy_recall": 0.09812442817932296,
+   "protection_recall": 0.1730812514067072,
+   "false_restriction": 0.04735950407796063,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  },
+  "z6m60c": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.7711362479357314,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.08974756944013311,
+   "jumpy_false_alarm": 0.08740363273400664,
+   "jumpy_precision": 0.07775318206972884,
+   "jumpy_recall": 0.12854528819762123,
+   "protection_recall": 0.19221246905244205,
+   "false_restriction": 0.08980706846508452,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 26,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 22
+   }
+  },
+  "notailc": {
+   "labelled": 80584,
+   "covered": 80537,
+   "accuracy": 0.8280045196617704,
+   "majority_baseline": 0.8781553819983362,
+   "jumpy_share": 0.019730061959099543,
+   "jumpy_false_alarm": 0.017677729475578205,
+   "jumpy_precision": 0.14789175582127123,
+   "jumpy_recall": 0.05375114364135407,
+   "protection_recall": 0.12874184109835696,
+   "false_restriction": 0.020317568721188322,
+   "crash": {
+    "realized_crash_starts": 29,
+    "detected": 29,
+    "false_episodes": 0,
+    "classifier_crash_episodes": 24
+   }
+  }
+ },
+ "test": {
+  "data": "data/ticks, Binance USD-M public aggTrades 2026-10-01..14, BTC/SOL/DOGE/BNB, never used before",
+  "command": "python -m research.regime_v1_eval --ticks-dir data/ticks --start 2026-10-01 --days 14 --variants v0 n3c",
+  "runs": "once"
+ },
+ "pass_rule": {
+  "a": "v1 JUMPY false alarm < 0.10 (owner target)",
+  "b": "v1 CRASH detected >= 90 % of realized crossings, false CRASH episodes <= v0 (if < 5 crossings: CRASH part INCONCLUSIVE)",
+  "c": "v1 protection recall > v1 false restriction (better than a random guard at the same rate)",
+  "report_only": "accuracy vs majority baseline, JUMPY precision / recall, v0 numbers beside v1"
+ },
+ "decision": "pass -> demo regime_gate on with v1; fail -> demo regime_gate shadow with v1, report; live stays off either way",
+ "code_sha256": {
+  "core/regime_classifier.py": "193fe58bf1e2df3062c9a95a34c5e133ca153b28e860b2fe44187f0eb6819ee6",
+  "core/market_risk.py": "c26403ad4e41f75f7b4bf3e23dd2aab43172f5695aee2c89b9b7368450d91f04",
+  "tools/nightly_audit.py": "1d9ffa08e82c72ab38ab83f8c097687b8e4766fcdef90c01f90465e02719d93e",
+  "research/regime_v1_eval.py": "693683594dc0ccc08b7114791d78796a6479be4c44c9910156157139df85599d"
+ }
+}
