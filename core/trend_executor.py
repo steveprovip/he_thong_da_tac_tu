@@ -365,7 +365,9 @@ class TrendExecutor:
                         await self.break_even(e, st, t)
                 elif want and self.state.get(f'_blocked_{sym}') != want:
                     view = await e.venue.position_view(sym)
-                    if float(view.get('amt') or 0.0):
+                    if e.micro_active():                  # 11-09: the 4H lane sizes by % of the wallet, not a micro lot
+                        self.say(e, f'{sym} {want} signal held back: micro-capital mode -> no 4H trend entry')
+                    elif float(view.get('amt') or 0.0):
                         self.say(e, f'{sym} venue position not ours - no trend entry')
                     elif not t.get('gate_ok', True):
                         self.say(e, f'{sym} {want} signal held back: {t.get("gate_why")} -> observer')

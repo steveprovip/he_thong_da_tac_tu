@@ -162,7 +162,7 @@ async def test_an_observer_symbol_sends_no_order(tmp_path):
 def test_shipped_profiles_keep_every_invariant_and_live_is_micro_by_default():
     for name, p in eng.PROFILES.items():
         assert inv.check_profile(p) == [], name
-        assert (p.micro_capital, p.micro_equity_max, p.micro_symbols) == ('auto', 15.0, (DOGE,)), name
+        assert (p.micro_capital, p.micro_equity_max, p.micro_symbols) == ('auto', 15.0, eng.MICRO_UNIVERSE), name
     live = eng.PROFILES['live']
     assert live.symbol in live.micro_symbols and live.mock_balance <= live.micro_equity_max
     assert live.equity_cap == 3.85                                        # I6 caps one position's margin; not touched

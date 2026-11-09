@@ -76,6 +76,8 @@ def check_profile(p) -> list:
         out.append(f'super_cross {p.super_cross!r}: LIMIT IOC on the remaining quantity')
     if p.jev_min is not None and p.jev_min < JEV_MIN_FLOOR - _EPS:
         out.append(f'jev_min {p.jev_min} < {JEV_MIN_FLOOR}: JEV FAST would emit decisions TokenAuthority refuses')
+    if getattr(p, 'micro_ioc', 'off') == 'on':
+        out.append('micro_ioc on: IOC taker entry in micro mode')
     if p.peg_min_score < SUPERMAJORITY - _EPS:
         out.append(f'peg_min_score {p.peg_min_score} < {SUPERMAJORITY}')
     if p.mode == 'live':

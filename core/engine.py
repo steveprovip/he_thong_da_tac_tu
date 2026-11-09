@@ -154,6 +154,13 @@ MODES = ('demo', 'live')
 SYMBOLS = ('BTCUSDT', 'DOGEUSDT', 'SOLUSDT')
 SYMBOL_QTY = {'BTCUSDT': 0.002}                 # others: smallest tradable size (min notional x 1.02)
 SCAN_SYMBOLS = ('BTCUSDT', 'SOLUSDT', 'DOGEUSDT')   # demo multi-asset scanner: one slot, first setup wins
+MICRO_UNIVERSE = ('DOGEUSDT', 'XRPUSDT', 'ADAUSDT', '1000PEPEUSDT')   # 11-09 micro-capital rotation: low nominal price,
+                                                                     # a 5.1-6.0 U order fits their lot step
+
+
+def scan_universe(rotation: bool, micro_symbols: tuple = MICRO_UNIVERSE) -> tuple:
+    """Symbols the demo scanner runs: BTC / SOL / DOGE, plus the micro coins when the rotation is on."""
+    return SCAN_SYMBOLS + tuple(x for x in micro_symbols if x not in SCAN_SYMBOLS) if rotation else SCAN_SYMBOLS
 ASSET_BRACKETS = {'BTCUSDT': (0.15, 0.38), 'SOLUSDT': (0.35, 0.85), 'DOGEUSDT': (0.50, 1.25)}  # (SL min %, TP1 min %)
 LIVE_CONFIRM = 'LIVE'
 FALLBACK_SPECS = {
@@ -161,6 +168,8 @@ FALLBACK_SPECS = {
     'ETHUSDT': {'step': 0.001, 'min_qty': 0.001, 'min_notional': 20.0, 'tick': 0.01},
     'SOLUSDT': {'step': 0.01, 'min_qty': 0.01, 'min_notional': 5.0, 'tick': 0.01},
     'DOGEUSDT': {'step': 1.0, 'min_qty': 1.0, 'min_notional': 5.0, 'tick': 0.00001},
+    'ADAUSDT': {'step': 1.0, 'min_qty': 1.0, 'min_notional': 5.0, 'tick': 0.0001},           # 11-09 offline fallbacks:
+    '1000PEPEUSDT': {'step': 1.0, 'min_qty': 1.0, 'min_notional': 5.0, 'tick': 0.0000001},   # check exchangeInfo
     'XRPUSDT': {'step': 0.1, 'min_qty': 0.1, 'min_notional': 5.0, 'tick': 0.0001},
 }
 
@@ -312,8 +321,22 @@ class Profile:
     micro_max_loss_usdt: float = 0.05   # loss at the stop incl. fees <= 0.05 U (1 % of 5 U)
     micro_daily_kill_usdt: float = 0.15
     micro_loss_pause_s: float = 86_400.0  # max_consec_losses (3) AUTO losses in a row -> no entry for 24 h (survives a restart)
-    micro_symbols: tuple = ('DOGEUSDT',)  # the only symbol that may trade; the rest observe (signals, regime, no order)
+    micro_symbols: tuple = MICRO_UNIVERSE  # the coins that may trade (one at a time); the rest observe (signals, no order)
     micro_max_positions: int = 1
+    micro_rotation: bool = True         # a FORCED micro run scans the whole micro universe, not only the focus symbol
+    micro_rank_s: float = 5.0           # router: re-rank the micro coins every 5 s by Momentum Quality = KER x |OFI L10|
+    micro_bankroll: float = 5.0         # equity a FORCED micro run on a wallet > micro_equity_max pretends to have
+    micro_margin_frac: float = 0.85     # compounding: margin never above 85 % of equity ...
+    micro_growth_frac: float = 0.20     # ... and notional tracks 20 % of buying power (E = 10 U -> 10 U), loss ceiling applies
+    micro_ttl: bool = True              # 11-09 adaptive GTX TTL while micro is active (AUTO, not MR / SCALP)
+    micro_ttl_s: float = 10.0           # clean book (VPIN < micro_vpin_clean, markout non-toxic): 3 s -> 10 s ...
+    micro_ttl_max_s: float = 15.0       # ... then +1 s steps up to 15 s
+    micro_vpin_clean: float = 0.65
+    micro_max_reprices: int = 2         # smart re-pegs: at most 2, then the order keeps its queue place
+    micro_ioc: str = 'off'              # 11-09 hybrid IOC in micro mode: 'off' | 'shadow' | 'on' (I5: 'on' is reported)
+    micro_ioc_consensus: float = 0.80   # RAW swarm score >= 0.80 ...
+    micro_ioc_ofi: float = 0.80         # ... OFI L10 with the trade >= 0.80 ...
+    micro_ioc_min_tp_pct: float = 0.25  # ... TP >= 0.25 % AND fee-true net RR (taker entry) >= net_rr_min
     raw_quorum_gate: bool = True        # 11-09: AUTO entry needs the RAW swarm score >= 0.768; a JEV-lifted one is refused
     alt_risk_share: float = 0.85       # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
@@ -1324,7 +1347,7 @@ class Engine:
             c = self._micro_cache = (p, MicroCapitalSizer(
                 p.micro_equity_max, p.micro_notional_min, p.micro_notional_max, p.micro_max_loss_usdt,
                 p.micro_daily_kill_usdt, p.micro_loss_pause_s, p.max_consec_losses, p.micro_max_positions,
-                p.micro_symbols))
+                p.micro_symbols, margin_frac=p.micro_margin_frac, growth_frac=p.micro_growth_frac))
         return c[1]
 
     def micro_wallet(self) -> Optional[float]:
@@ -1345,16 +1368,108 @@ class Engine:
         """Entries halted until this wall time by max_consec_losses AUTO losses, derived from the ledger (restart-proof)."""
         return self.micro_sizer().halt_until(self.all_rows, self.clock()) if self.micro_active() else None
 
+    def micro_equity(self) -> Optional[float]:
+        """Equity the compounding sizes from: the wallet; a FORCED run on a wallet above micro_equity_max (a demo
+        account) rehearses a micro_bankroll account instead of sizing from thousands of virtual USDT."""
+        w = self.micro_wallet()
+        if self.p.micro_capital == 'on' and (w is None or w > self.p.micro_equity_max):
+            return self.p.micro_bankroll
+        return w
+
+    def micro_window_hi(self) -> float:
+        return self.micro_sizer().window_hi(self.micro_equity(), self.p.leverage)
+
     def micro_check(self, pl: dict) -> Optional[str]:
         """A sized plan outside the notional window, or whose loss at the stop exceeds the budget -> reason."""
-        p = self.p
-        if pl['notional'] > p.micro_notional_max + 1e-9 or pl['notional'] < p.micro_notional_min - 1e-9:
-            return (f'MICRO: notional {pl["notional"]:.2f} U outside [{p.micro_notional_min:g}, '
-                    f'{p.micro_notional_max:g}] U')
+        p, hi = self.p, self.micro_window_hi()
+        if pl['notional'] > hi + 1e-9 or pl['notional'] < p.micro_notional_min - 1e-9:
+            return (f'MICRO: notional {pl["notional"]:.2f} U outside [{p.micro_notional_min:g}, {hi:g}] U')
         if pl['loss_at_sl'] > p.micro_max_loss_usdt + 1e-9:
             return (f'MICRO: loss at the stop {pl["loss_at_sl"]:.4f} U > {p.micro_max_loss_usdt:g} U '
                     f'(SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}% on {pl["notional"]:.2f} U)')
         return None
+
+    def micro_scores(self) -> dict:
+        """Router: Momentum Quality = KER x |OFI L10| of every micro coin, re-ranked at most every micro_rank_s and
+        shared by the engines of one Runner (RiskBook).  Unknown KER or OFI = no score (None), never 0."""
+        st = getattr(self.risk, 'micro_rank', None)
+        if st is None:
+            st = self.risk.micro_rank = {'t': -1e18, 'scores': {}}
+        now = self.clock()
+        if now - st['t'] >= self.p.micro_rank_s:
+            scores = {}
+            for o in self.risk.engines:
+                if o.p.symbol in self.p.micro_symbols:
+                    f = o.features or {}
+                    k, of = f.get('ker'), f.get('ofi_10s')
+                    scores[o.p.symbol] = None if k is None or of is None else round(float(k) * abs(float(of)), 6)
+            st.update(t=now, scores=scores)
+        return st['scores']
+
+    def micro_quality(self, d: Decision, diag: dict) -> float:
+        """Slot priority in micro mode: this coin's Momentum Quality from the last ranking (+ conviction as a tiebreak)."""
+        s = self.micro_scores().get(self.p.symbol)
+        return (s if s is not None else 0.0) + 1e-3 * self.conviction(d, diag)
+
+    async def micro_keep(self, side: str, px0: float, mid0: Optional[float]) -> tuple:
+        """Adaptive TTL (micro mode): keep the resting GTX while the book is CLEAN - VPIN known and under
+        micro_vpin_clean, markout / tape guard says QUOTE, the mid has not moved dyn_ttl_adverse_bps against the trade
+        and the touch has not left more than peg_max_drift_pct from the first quote.  -> (keep, reason)."""
+        p, d = self.p, 1 if side == 'BUY' else -1
+        v = self.feed.vpin_now()
+        if v is None:
+            return False, 'VPIN unknown'
+        if v >= p.micro_vpin_clean:
+            return False, f'VPIN {v:.2f} >= {p.micro_vpin_clean}'
+        action, _, why = self.tox_check(side)
+        if action != tg.QUOTE:
+            return False, f'markout {action}: {why}'
+        mid = self.feed.price()
+        if mid and mid0:
+            mv = d * (mid / mid0 - 1) * 1e4
+            if mv <= -p.dyn_ttl_adverse_bps:
+                return False, f'ADVERSE {mv:+.1f} bps'
+        await self.refresh_book(0.5)
+        b = self.book()
+        touch = b.get('bid') if side == 'BUY' else b.get('ask')
+        if touch and px0 and d * (touch - px0) > 0 and abs(touch / px0 - 1) * 100 > p.peg_max_drift_pct:
+            return False, f'touch left {abs(touch / px0 - 1) * 100:.3f}% > {p.peg_max_drift_pct}%'
+        return True, f'clean VPIN {v:.2f}'
+
+    def micro_ioc_route(self, decision: Decision, f: dict, side: str, path: str, xm: dict) -> str:
+        """Hybrid execution (micro mode): 'ioc' only on an extreme directional burst that pays for a taker entry:
+        RAW swarm score >= micro_ioc_consensus, OFI L10 with the trade >= micro_ioc_ofi, TP >= micro_ioc_min_tp_pct,
+        fee-true net RR with the taker entry >= net_rr_min, tape guard QUOTE.  Anything else stays Post-Only GTX.
+        'shadow' only records what it would have done."""
+        p = self.p
+        if p.micro_ioc not in ('shadow', 'on') or not self.micro_active():
+            return 'gtx'
+        d = 1 if side == 'BUY' else -1
+        raw, ofi = (self.diag or {}).get('consensus'), (f.get('ofi_10s') or 0.0) * d
+        why = None
+        if raw is None or raw < p.micro_ioc_consensus - 1e-12:
+            why = f'raw consensus {"—" if raw is None else f"{raw:.3f}"} < {p.micro_ioc_consensus}'
+        elif ofi < p.micro_ioc_ofi - 1e-12:
+            why = f'OFI {ofi:+.2f} < {p.micro_ioc_ofi}'
+        else:
+            bp = self.bracket_plan(path, f, 'ioc')
+            tp, rr = bp.get('tp_pct'), bp.get('rr_net')
+            if tp is None or tp < p.micro_ioc_min_tp_pct - 1e-12:
+                why = f'TP {"—" if tp is None else f"{tp:.3f}"}% < {p.micro_ioc_min_tp_pct}%'
+            elif p.net_rr_min and (rr is None or rr < p.net_rr_min - 1e-12):
+                why = f'net RR {"—" if rr is None else f"{rr:.2f}"} < {p.net_rr_min:g} with a taker entry'
+            else:
+                action, _, tox_why = self.tox_check(side)
+                if action != tg.QUOTE:
+                    why = f'tox {action}: {tox_why}'
+        xm['micro_ioc'] = 'IOC' if why is None else f'GTX: {why}'
+        if why is None and p.micro_ioc == 'shadow':
+            if self.clock() - getattr(self, '_ioc_evt_t', -1e9) >= 20.0:
+                self._ioc_evt_t = self.clock()
+                self._shadow_row({'outcome': 'SHADOW_IOC', 'side': side, 'path': path, 'score': decision.score,
+                                  'consensus': raw, 'ofi': ofi})
+            return 'gtx'
+        return 'gtx' if why is not None else 'ioc'
 
     def drift_acceleration(self, side: str) -> Optional[str]:
         """CVD 60 s >= ratio x |CVD 3 m| and >= min $ (x scale), on `side`: fresh flow overrides the stale 3 m
@@ -1593,7 +1708,7 @@ class Engine:
             # 11-09: 20 % of a 5 U wallet is 1.0 U, below the 1.02-1.2 U margin of the smallest legal lot at 5x, so every
             # micro entry (and every entry of the shipped live profile: 0.77 U on 3.85 U) was refused. One position
             # (micro_max_positions) may use the margin of the largest lot of the notional window.
-            cap_m = max(cap_m, self.p.micro_notional_max / self.p.leverage)
+            cap_m = max(cap_m, self.micro_window_hi() / self.p.leverage)
             if margin > cap_m + 1e-9:
                 return f'PORTFOLIO MARGIN {margin:.2f} U > {cap_m:.2f} U (micro: one lot of the window)'
             return None
@@ -1921,6 +2036,8 @@ class Engine:
 
     def quality(self, d: Decision, diag: dict) -> float:
         """Slot priority: conviction, +0.05 when the regime trend agrees, +0.05 when all three flows agree."""
+        if self.micro_active():
+            return self.micro_quality(d, diag)
         q = self.conviction(d, diag)
         if (self.reg or {}).get('name') == ('UP' if d.side == 'BUY' else 'DOWN'):
             q += 0.05
@@ -1930,10 +2047,11 @@ class Engine:
 
     def better_peer(self, q: float, max_age: float = 1.0) -> Optional[tuple]:
         """A peer whose fresh candidate beats ours (ties: SCAN_SYMBOLS order) -> (engine, quality)."""
-        if not self.p.slot_yield or self.p.multi_slot:            # one slot per symbol: nobody has to yield
+        micro = self.micro_active()                              # 11-09: one position in total -> the best coin takes it
+        if not self.p.slot_yield or (self.p.multi_slot and not micro):   # one slot per symbol: nobody has to yield
             return None
         now, best = self.clock(), None
-        order = {s: i for i, s in enumerate(SCAN_SYMBOLS)}
+        order = {s: i for i, s in enumerate(scan_universe(True, self.p.micro_symbols))}
         for o in self.risk.engines:
             c = o.candidate
             if o is self or c is None or now - c[0] > max_age or o.pos or o.busy:
@@ -2569,6 +2687,7 @@ class Engine:
                'jev_lift': jev_lift(xm.get('path'), (self.diag or {}).get('consensus')),
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
+               'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
@@ -2611,6 +2730,8 @@ class Engine:
             if px is None:
                 return {'ok': False, 'error': 'no book'}
             route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
+            if route == 'gtx' and tag == 'AUTO' and path not in ('MR', 'SCALP'):
+                route = self.micro_ioc_route(decision, f, side, path, xm)       # 11-09 hybrid IOC (micro mode only)
             skew = 0
             if route == 'gtx' and self.p.tox_guard in ('shadow', 'on'):
                 action, ticks, tox_why = self.tox_check(side)
@@ -2718,7 +2839,14 @@ class Engine:
                         return {'ok': False, 'error': msg}
                     kq = q_risk
             if self.micro_active():                             # 11-09: on a small wallet the venue minimum sets the size
-                q_micro, why_micro = self.micro_sizer().qty(ref, step, self.spec['min_qty'], self.spec['min_notional'])
+                msz = self.micro_sizer()
+                fees_m = ((self.p.maker_bps if route == 'gtx' else self.p.taker_bps + self.p.slip_bps)
+                          + self.p.taker_bps + self.p.slip_bps) / 100.0
+                cap_n = msz.risk_notional(base.sl_pct if base.sl_pct else self.p.min_sl_pct, fees_m)
+                if self.p.equity_cap is not None:
+                    cap_n = min(cap_n, self.p.equity_cap * self.p.leverage) if cap_n else self.p.equity_cap * self.p.leverage
+                q_micro, why_micro = msz.qty(ref, step, self.spec['min_qty'], self.spec['min_notional'],
+                                             equity=self.micro_equity(), leverage=self.p.leverage, risk_notional=cap_n)
                 if q_micro is None:
                     self.event(f'OKAPI refused {side}: {why_micro}')
                     return {'ok': False, 'error': why_micro}
@@ -2746,7 +2874,7 @@ class Engine:
                 self.event(f'OKAPI refused {side}: {msg}')
                 return {'ok': False, 'error': msg}
             probe = None
-            if tag == 'AUTO' and self.p.alt_boost and not self.is_alt() and self.p.btc_probe_qty:
+            if tag == 'AUTO' and self.p.alt_boost and not self.is_alt() and self.p.btc_probe_qty and not self.micro_active():
                 vv = self.vfr_view(f)
                 why_probe = ('VFR ' + ('—' if vv['vfr'] is None else f'{vv["vfr"]:.2f}') + f' < {self.p.vfr_full:g}'
                              if vv['vfr'] is None or vv['vfr'] < self.p.vfr_full else
@@ -2780,6 +2908,7 @@ class Engine:
             cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
             posted_ms = int(self.clock() * 1000)       # entry fill can land any time in the GTX window
             px0, reprices, toxic_abort, tox_abort = px, 0, None, None
+            waited = None
             if route == 'ioc':
                 d = 1 if side == 'BUY' else -1
                 lim = round_tick(touch * (1 + d * self.p.ioc_max_slip_pct / 100.0), tick, 'up' if d > 0 else 'down')
@@ -2821,9 +2950,21 @@ class Engine:
                 dyn_mode = self.p.dyn_ttl if auto else 'off'
                 cross_at = t_post + self.p.super_cross_after_s if cross_mode in ('shadow', 'on') else None
                 do_cross, dyn_logged, mid0 = False, False, self.feed.price()
+                micro_ttl_on, micro_next = auto and self.p.micro_ttl and self.micro_active(), 0.0
                 while True:
                     now_m = time.monotonic()
-                    if now_m >= deadline:
+                    if now_m >= deadline and micro_ttl_on:
+                        # 11-09 adaptive TTL: a clean book earns micro_ttl_s (then +1 s steps to micro_ttl_max_s)
+                        if now_m - t_post >= self.p.micro_ttl_max_s - 1e-9:
+                            break
+                        keep, why_keep = await self.micro_keep(side, px0, mid0)
+                        if not keep:
+                            xm['ttl_cut'] = why_keep
+                            break
+                        deadline = (t_post + self.p.micro_ttl_s if xm.get('micro_ttl_s') is None
+                                    else min(now_m + 1.0, t_post + self.p.micro_ttl_max_s))
+                        xm['micro_ttl_s'] = round(deadline - t_post, 1)
+                    elif now_m >= deadline:
                         # 10-08w dynamic TTL: extend 1 s at a time while the signal holds, never past dyn_ttl_max_s
                         if dyn_mode not in ('shadow', 'on') or now_m - t_post >= self.p.dyn_ttl_max_s - 1e-9:
                             break
@@ -2843,6 +2984,12 @@ class Engine:
                         keep, why_keep = await self.dyn_keep(side, decision, px0, mid0)
                         if not keep:                              # adverse / signal gone: pull it at once
                             xm['dyn_cut'] = why_keep
+                            break
+                    elif micro_ttl_on and xm.get('micro_ttl_s') and now_m >= micro_next:
+                        micro_next = now_m + 0.5
+                        keep, why_keep = await self.micro_keep(side, px0, mid0)
+                        if not keep:                              # adverse / toxic / drifted: pull it at once
+                            xm['ttl_cut'] = why_keep
                             break
                     if cross_at is not None and now_m >= cross_at:
                         cross_at = None
@@ -2871,7 +3018,8 @@ class Engine:
                             tox_abort = tox_why
                             xm['tox'] = f'PULL: {tox_why}'
                             break
-                    if peg and time.monotonic() - last_post >= self.p.peg_interval_s:
+                    if (peg and time.monotonic() - last_post >= self.p.peg_interval_s
+                            and (not micro_ttl_on or reprices < self.p.micro_max_reprices)):
                         # Dynamic pegged maker: follow the touch while the book walks away, never cross it,
                         # never further than peg_max_drift_pct from the first quote (bounded chase).
                         await self.refresh_book(0.0)
@@ -2901,6 +3049,8 @@ class Engine:
                     await self.venue.cancel(sym, cid)
                     st = await self.venue.order(sym, cid)
                 filled, fill = float(st.get('filled') or 0), float(st.get('avg') or px)
+                if micro_ttl_on:
+                    waited = round(time.monotonic() - t_post, 1)
                 if do_cross:
                     filled, fill = await self.cross_remaining(side, pl, filled, fill, xm, tag)
             if reprices:
@@ -2930,9 +3080,10 @@ class Engine:
                                f'{self.sig_cfg.vpin_max} (toxic flow)')
                     return {'ok': False, 'error': f'VPIN {toxic_abort:.2f} > {self.sig_cfg.vpin_max}: huỷ lệnh maker '
                                                   f'chờ khớp (dòng tiền độc)', 'latency_ms': ms, 'route': 'GTX'}
-                self.event(f'GTX {side} {pl["qty_str"]} @ {fmt(px, tick)} not filled in {self.p.gtx_ttl_s:g}s '
+                ttl_txt = waited if waited else self.p.gtx_ttl_s
+                self.event(f'GTX {side} {pl["qty_str"]} @ {fmt(px, tick)} not filled in {ttl_txt:g}s '
                            f'-> cancelled (peg drift cap {self.p.peg_max_drift_pct}%), rescan in {self.p.unfilled_cooldown_s:g}s')
-                return {'ok': False, 'error': f'GTX không khớp trong {self.p.gtx_ttl_s:g}s (peg tối đa '
+                return {'ok': False, 'error': f'GTX không khớp trong {ttl_txt:g}s (peg tối đa '
                                               f'{self.p.peg_max_drift_pct}%) - đã huỷ, quét lại sau {self.p.unfilled_cooldown_s:g}s',
                         'latency_ms': ms, 'route': 'GTX'}
             qty = floor_step(filled, step)
@@ -4023,7 +4174,10 @@ class Engine:
                 'atr_pct': f.get('atr_pct'), 'yz_pct': f.get('yz_pct'), 'sigma_bps': f.get('sigma_bps'),
                 'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly(),
                 'edge_shadow': self.edge_shadow_view(),
-                'micro_capital': self.micro_sizer().view(self.micro_wallet(), self.p.micro_capital)}
+                'micro_capital': {**self.micro_sizer().view(self.micro_wallet(), self.p.micro_capital),
+                                  'equity': self.micro_equity(), 'window_hi': round(self.micro_window_hi(), 3),
+                                  'scores': dict(self.micro_scores()) if self.micro_active() else {},
+                                  'ioc': self.p.micro_ioc, 'ttl': self.p.micro_ttl}}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')
@@ -4252,13 +4406,20 @@ class Runner:
         self.carry_sim_state = None
 
     def profile(self, mode: str) -> Profile:
-        p = replace(PROFILES[mode], **micro_capital_env(self.env))      # 11-09: MICRO_CAPITAL_MODE / _EQUITY_MAX
+        p = replace(PROFILES[mode], **micro_capital_env(self.env))      # 11-09: MICRO_CAPITAL_MODE / _EQUITY_MAX ...
+        if p.micro_capital == 'on' and p.trend_lane != 'off':
+            p = replace(p, trend_lane='off')            # the 4H lane sizes by % of a 5 000 U wallet: not a micro account
         sym = self.symbols.get(mode)
         if sym and sym != p.symbol:
             p = replace(p, symbol=sym, qty=SYMBOL_QTY.get(sym, 0.0) if mode == 'demo' else p.qty)
         if mode != self.start_mode:                       # CLI overrides belong to the mode they were typed for
             return p
         return replace(p, **{k: v for k, v in self.overrides.items() if v is not None})
+
+    def scan_syms(self) -> tuple:
+        """Symbols of the demo scanner: BTC / SOL / DOGE, plus the micro coins when the micro rotation is forced on."""
+        p = self.profile(self.mode)
+        return scan_universe(p.micro_capital == 'on' and p.micro_rotation, p.micro_symbols)
 
     def profile_for(self, mode: str, symbol: str) -> Profile:
         p = self.profile(mode)
@@ -4275,8 +4436,9 @@ class Runner:
 
     async def build_multi(self, mode: str) -> dict:
         from live.binance_futures_client import BinanceFuturesClient
-        feeds = {s: msig.MicroFeed(s, msig.config_for(s)) for s in SCAN_SYMBOLS}
-        profiles = {s: self.profile_for(mode, s) for s in SCAN_SYMBOLS}
+        syms = self.scan_syms()
+        feeds = {s: msig.MicroFeed(s, msig.config_for(s)) for s in syms}
+        profiles = {s: self.profile_for(mode, s) for s in syms}
         key, sec = credentials(mode, self.env)
         if not (key and sec):
             venue = MockVenue(profiles['BTCUSDT'], quote=lambda s: _touch(feeds.get(s)))
@@ -4614,7 +4776,7 @@ class Runner:
         from core.trend_executor import ACTIVE_BAR
         ex = self.trend_exec
         e0 = next(iter(self.engines.values()))
-        syms = [s for s in SCAN_SYMBOLS if s in self.engines] or [e0.p.symbol]
+        syms = [s for s in scan_universe(True, e0.p.micro_symbols) if s in self.engines] or [e0.p.symbol]
         self.trend_state = getattr(self, 'trend_state', {}) or {}
         while True:
             try:
@@ -4641,7 +4803,7 @@ class Runner:
         from core import trend_lane as tl
         root = root or TREND_DIR
         e0 = next(iter(self.engines.values()))
-        syms = [s for s in SCAN_SYMBOLS if s in self.engines] or [e0.p.symbol]
+        syms = [s for s in scan_universe(True, e0.p.micro_symbols) if s in self.engines] or [e0.p.symbol]
         cfgs = {b: tl.TrendConfig(bar=b) for b in e0.p.trend_bars
                 if not (e0.p.trend_lane == 'active' and b == '4h')}          # 10-09 dd: 4h trades for real
         books = {b: tl.PaperBook.load(root / f'trend_paper_{b}.json', e0.p.trend_equity) for b in cfgs}

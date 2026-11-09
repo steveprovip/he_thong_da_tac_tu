@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -22,9 +23,11 @@ MICRO_CAPITAL_MODES = ('auto', 'on', 'off')
 
 
 def micro_capital_env(env):
-    """11-09 micro-capital flag from MICRO_CAPITAL_MODE (auto | on | off) and MICRO_CAPITAL_EQUITY_MAX (USDT, default
-    15): -> {'micro_capital': ..., 'micro_equity_max': ...} for the keys that are SET, {} when none is.  A bad value
-    raises, so a typo cannot silently leave the small-account guard off."""
+    """11-09 micro-capital flags from the environment, for the keys that are SET ({} when none is):
+    MICRO_CAPITAL_MODE (auto | on | off) -> micro_capital, MICRO_CAPITAL_EQUITY_MAX (USDT, default 15) -> micro_equity_max,
+    MICRO_IOC (off | shadow | on) -> micro_ioc, MICRO_CAPITAL_BANKROLL (USDT, the equity a forced run on a big wallet
+    pretends to have, default 5) -> micro_bankroll, MICRO_CAPITAL_SYMBOLS (comma list of the tradable universe) ->
+    micro_symbols.  A bad value raises, so a typo cannot silently leave the small-account guard off."""
     out = {}
     mode = str(env.get('MICRO_CAPITAL_MODE', '')).strip().lower()
     if mode:
@@ -40,6 +43,26 @@ def micro_capital_env(env):
         if not 0 < limit <= 1000:
             raise ValueError('MICRO_CAPITAL_EQUITY_MAX must be in (0, 1000] USDT')
         out['micro_equity_max'] = limit
+    ioc = str(env.get('MICRO_IOC', '')).strip().lower()
+    if ioc:
+        if ioc not in ('off', 'shadow', 'on'):
+            raise ValueError('MICRO_IOC must be off, shadow or on')
+        out['micro_ioc'] = ioc
+    raw = str(env.get('MICRO_CAPITAL_BANKROLL', '')).strip()
+    if raw:
+        try:
+            bank = float(raw)
+        except ValueError:
+            raise ValueError('MICRO_CAPITAL_BANKROLL must be a number') from None
+        if not 0 < bank <= 1000:
+            raise ValueError('MICRO_CAPITAL_BANKROLL must be in (0, 1000] USDT')
+        out['micro_bankroll'] = bank
+    raw = str(env.get('MICRO_CAPITAL_SYMBOLS', '')).strip().upper()
+    if raw:
+        syms = tuple(s.strip() for s in raw.split(',') if s.strip())
+        if not syms or len(set(syms)) != len(syms) or not all(re.fullmatch(r'[A-Z0-9]{2,20}USDT', s) for s in syms):
+            raise ValueError('MICRO_CAPITAL_SYMBOLS must be a comma list of distinct USDT symbols, e.g. DOGEUSDT,XRPUSDT')
+        out['micro_symbols'] = syms
     return out
 
 
