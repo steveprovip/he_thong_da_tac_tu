@@ -341,6 +341,8 @@ class Profile:
                                         # that needs TP >= 1.05 x SL + 0.206 %: the 0.20 % TP floor is moot, the RR binds
     micro_net_rr_min: float = 1.10      # 11-09b micro mode: net-RR floor of every AUTO entry (was 1.30 / scalp 1.35); the
                                         # break-even win rate is 1 / (1 + RR) = 47.6 %, not a guaranteed edge
+    micro_tp_lift: bool = True          # micro mode: after the regime x0.75 / x1.5 multipliers raise TP back toward the unscaled
+                                        # TP until the net-RR floor holds (never above it), instead of refusing the setup
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
     micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
     micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
@@ -1647,7 +1649,13 @@ class Engine:
         gtx: TP pays maker in + maker out 0.04 %, the stop pays maker in + taker out + slip 0.08 %)."""
         p = self.p
         e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
-        return (sl + (e_in + p.taker_bps + p.slip_bps) / 100.0) * self.scalp_rr_min() + (e_in + p.maker_bps) / 100.0
+        return self.min_tp_for(sl, route, self.scalp_rr_min())
+
+    def min_tp_for(self, sl: float, route: str, rr_floor: float) -> float:
+        """Smallest TP % whose fee-true net RR at stop `sl` reaches rr_floor: (sl + in + taker out + slip) x RR + (in + maker out)."""
+        p = self.p
+        e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
+        return (sl + (e_in + p.taker_bps + p.slip_bps) / 100.0) * rr_floor + (e_in + p.maker_bps) / 100.0
 
     def super_conviction(self, d: Decision, diag: dict, f: dict) -> bool:
         """Raw swarm vote >= 0.95 (no JEV lift) AND OFI L10 >= 0.80 with the trade, SOL/DOGE only."""
@@ -2732,7 +2740,7 @@ class Engine:
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
-               'micro_floor': xm.get('micro_floor'),
+               'micro_floor': xm.get('micro_floor'), 'tp_lift': xm.get('tp_lift'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
@@ -2807,6 +2815,15 @@ class Engine:
                     # Maker TP costs 0.04%; maker entry + taker stop + slip cost 0.08%.
                     min_tp = self.scalp_min_tp(new_sl, route)       # (new_sl + 0.08) x scalp_rr_min() + 0.04
                     new_tp = max(new_tp, min_tp)
+                elif self.p.micro_tp_lift and path != 'SCALP' and self.micro_active() and self.net_rr_eff():
+                    # 11-09c: the regime scales TP and SL together while the fees stay fixed (MR 0.29 / 0.10 x SIDEWAYS 0.75 =
+                    # RR 1.15). Lift TP back until the floor holds, never above the unscaled TP (the regime may only tighten);
+                    # if even that cannot reach the floor, the RR gate below refuses honestly.
+                    min_tp = self.min_tp_for(new_sl, route, self.net_rr_eff())
+                    if min_tp > new_tp + 1e-12 and base.tp_pct > new_tp + 1e-12:
+                        lifted = min(min_tp, base.tp_pct)
+                        xm['tp_lift'] = f'{new_tp:.4f}->{lifted:.4f} (floor TP {min_tp:.4f}, unscaled {base.tp_pct:.4f})'
+                        new_tp = lifted
                 base = replace(base, sl_pct=new_sl, tp_pct=new_tp)
                 bp.update(sl_pct=new_sl, tp_pct=new_tp, rr_gross=new_tp / new_sl if new_sl > 0 else None)
             touch = f.get('ask') if side == 'BUY' else f.get('bid')

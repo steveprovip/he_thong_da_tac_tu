@@ -29,3 +29,9 @@ Defaults: RAW consensus >= 0.78, OFI with the trade >= 0.70, TP >= 0.20 %, fee-t
 
 ## 6. Tests
 `tests/test_micro_unshackle.py` (RR floor incl. the logged 1.15 setup through the funnel, JUMPY conditions and funnel, scalp shrink, IOC boundaries and arithmetic) and the updated `tests/test_micro_rotation.py` (floor: dirty/unknown VPIN rests the whole floor and fills inside it, spread cut, adverse cut, drift cut).
+
+## 7. Addendum (c) - TP lift after the regime multipliers (owner choice)
+`Profile.micro_tp_lift` (True). In micro mode, for every non-SCALP path (the SCALP lane already had its own lift), after `base.tp_pct x tp_mult` and `base.sl_pct x stop_mult`: if the fee-true floor TP `min_tp_for(sl, route, net_rr_eff())` = (SL + in + taker out + slip) x floor + (in + maker out) is above the scaled TP, TP is raised to `min(floor TP, unscaled TP)`. It never goes above the unscaled TP: the regime may only tighten (`check_policies()` pins `tp_mult <= 1`), a lift is a partial undo of the TP squeeze, not a wider target than the setup was designed with. If even the unscaled TP cannot reach the floor, the RR gate refuses as before (floor 2.0 on the logged setup: lifted to 0.29, RR 1.61, refused).
+- At the current micro floor 1.10 the logged setup (RR 1.145) needs no lift: the lift is the other half of the fix. With the floor back at 1.30 the same 8 refusals become entries with TP 0.2415 % instead of 0.2175 % (RR 1.30, break-even win rate 43.5 %).
+- Cost, not measured: a farther TP is hit less often. The lifted target is 11 % farther than the scaled one, inside the unscaled 0.29 %; the EJECT time-decay rules are unchanged. The order row carries `tp_lift` to compare hit rates of lifted and unlifted entries.
+- Outside micro mode nothing changes (the 5 000 U account keeps refusing 1.15 at 1.30; tested).

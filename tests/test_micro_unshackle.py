@@ -45,13 +45,45 @@ async def _mr_buy(tmp_path, **prof):
     return e, await e.execute('BUY', BUY, 'MR')
 
 
-async def test_the_logged_doge_setup_passes_at_1_10_and_is_still_refused_at_1_30(tmp_path):
+async def test_the_logged_doge_setup_passes_at_1_10_with_no_lift_needed(tmp_path):
     e, res = await _mr_buy(tmp_path / 'a')
     r = rows(tmp_path / 'a')[-1]
     assert r['qty_req'] and 5.05 <= r['qty_req'] * PX <= 6.0              # reached the venue (unfilled on the static book)
-    assert not any('NET RR' in ev['message'] for ev in e.events)
-    old, res = await _mr_buy(tmp_path / 'b', micro_net_rr_min=1.30)       # the previous floor
+    assert not any('NET RR' in ev['message'] for ev in e.events) and r['tp_lift'] is None   # RR 1.145 >= 1.10
+
+
+async def test_without_the_lift_a_1_30_floor_refuses_the_logged_setup(tmp_path):
+    old, res = await _mr_buy(tmp_path, micro_net_rr_min=1.30, micro_tp_lift=False)
     assert not res['ok'] and res['error'].startswith('ZEPHR NET RR 1.15 < 1.3 (TP 0.217% / SL 0.075% + fees 0.080%)')
+
+
+# ---- TP lift (11-09c): re-lift TP to the floor after the regime multipliers instead of refusing
+def test_min_tp_for_is_the_scalp_formula_with_any_floor(tmp_path):
+    e = burst_engine(tmp_path)
+    assert e.min_tp_for(0.075, 'gtx', 1.30) == pytest.approx((0.075 + 0.08) * 1.30 + 0.04) == pytest.approx(0.2415)
+    assert e.min_tp_for(0.15, 'gtx', e.scalp_rr_min()) == pytest.approx(e.scalp_min_tp(0.15))
+    assert e.min_tp_for(0.075, 'ioc', 1.05) == pytest.approx((0.075 + 0.12) * 1.05 + 0.08)
+
+
+async def test_the_lift_turns_the_1_15_refusal_into_an_entry_with_the_floor_tp(tmp_path):
+    e, res = await _mr_buy(tmp_path, micro_net_rr_min=1.30)
+    r = rows(tmp_path)[-1]
+    assert r['qty_req'] and not any('NET RR' in ev['message'] for ev in e.events)
+    assert r['tp_lift'].startswith('0.2175->0.2415') and 'unscaled 0.2900' in r['tp_lift']   # 0.29 x 0.75 -> the 1.30 TP
+    assert (0.2415 - 0.04) / (0.075 + 0.08) == pytest.approx(1.30, abs=1e-3)
+
+
+async def test_the_lift_never_goes_above_the_unscaled_tp_and_then_the_gate_still_refuses(tmp_path):
+    """Floor 2.0 would need TP 0.35 % at SL 0.075; the unscaled bracket has 0.29 %: lift to 0.29 (RR 1.61) and refuse."""
+    e, res = await _mr_buy(tmp_path, micro_net_rr_min=2.0)
+    assert not res['ok'] and res['error'].startswith('ZEPHR NET RR 1.61 < 2 (TP 0.290% / SL 0.075%')
+    assert rows(tmp_path)[-1:] == [] or rows(tmp_path)[-1].get('qty_req') is None
+
+
+async def test_no_lift_outside_micro_mode(tmp_path):
+    e, res = await _mr_buy(tmp_path, wallet=5000.0, net_rr_min=1.30)       # the 5 000 U demo account: refused as before
+    assert not e.micro_active() and not res['ok']
+    assert res['error'].startswith('ZEPHR NET RR 1.15 < 1.3') and all(not r.get('tp_lift') for r in rows(tmp_path))
 
 
 # ============================================================================= task 2: JUMPY does not freeze the scalp lane
