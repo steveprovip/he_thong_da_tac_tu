@@ -132,7 +132,9 @@ async def test_short_ejection_floor_is_mirrored(tmp_path):
 
 
 async def test_be_order_never_chases_down_then_escalates_at_360s(tmp_path):
-    e, venue, feed = await btc_long_at(tmp_path, ENTRY, **EJ)
+    # 11-09: this pins the legacy timer; the fee-hurdle / adverse-momentum guard has its own tests
+    # (tests/test_fee_drag_fixes_2026_11_09.py), so it is switched off here
+    e, venue, feed = await btc_long_at(tmp_path, ENTRY, eject_guard=False, **EJ)
     e.pos['opened'] -= 181
     await e.tick()
     floor = e.pos['exiting']['floor']

@@ -25,10 +25,24 @@ from core.jev_gatekeeper import score_from_ratio
 # NORO = fair value / trend alignment (TREND in a flow regime, VWAP mean-reversion only when NEUTRAL)
 ALPHA = {'NORO': ('TREND', 'VWAP', 'MR'), 'LUMEN': ('FLOW', 'SURGE'), 'TIDAL': ('SQUEEZE', 'LIQ', 'DEPTH', 'OFI')}
 SIGNAL_KEYS = ('FLOW', 'VWAP', 'LIQ', 'TREND', 'SURGE', 'SQUEEZE', 'MR', 'OFI')     # WALL never votes, never adds edge
+# 11-09: signals read from the same CVD / order-flow delta. LUMEN's FLOW and SURGE are always in it; TIDAL's OFI uses
+# CVD 15 s and its SQUEEZE requires SURGE, so a TIDAL vote from one of these repeats LUMEN instead of confirming it.
+# TIDAL's LIQ (liquidation prints) and DEPTH (L10 book) are independent evidence and keep full weight.
+FLOW_FAMILY = ('FLOW', 'SURGE', 'OFI', 'SQUEEZE')
 
 
 def alpha_signal(sig: dict, keys: tuple) -> Optional[dict]:
     return next((sig.get(k) for k in keys if sig.get(k)), None)
+
+
+def alpha_key(sig: dict, keys: tuple) -> Optional[str]:
+    return next((k for k in keys if sig.get(k)), None)
+
+
+def collinear_tidal(sig: dict) -> bool:
+    """True when LUMEN and TIDAL both fire on flow-family signals of the same side (one raw delta voted twice)."""
+    lk, tk = alpha_key(sig, ALPHA['LUMEN']), alpha_key(sig, ALPHA['TIDAL'])
+    return bool(lk in FLOW_FAMILY and tk in FLOW_FAMILY and sig[lk]['side'] == sig[tk]['side'])
 GATES = ('ZEPHR', 'RUNE', 'OKAPI', 'MARIN', 'VESKA')
 
 
@@ -70,14 +84,23 @@ def confluence(sig: dict, side: Optional[str], edge_bps: float, cost_bps: float,
 
 def evaluate(sig: dict, gates: Gates, engine: Optional[ConsensusEngine] = None,
              jev_min: Optional[float] = 8.0, min_confluence: int = 2,
-             edge_ratio_min: float = 2.5, allow: Tuple[str, ...] = ('BUY', 'SELL')) -> Tuple[Decision, List[Vote], dict]:
+             edge_ratio_min: float = 2.5, allow: Tuple[str, ...] = ('BUY', 'SELL'),
+             collinear_penalty: float = 0.5) -> Tuple[Decision, List[Vote], dict]:
     engine = engine or ConsensusEngine()
     side = direction_of(sig)
     votes: List[Vote] = []
+    # 11-09: LUMEN + TIDAL on one flow delta count once and a half, not twice (weights stay pinned: I8). Alone they
+    # reach 0.20 + 0.20 x penalty + 0.40 gates = 0.70 < 0.768 at 0.5; NORO or an independent TIDAL signal still can.
+    col = collinear_penalty < 1.0 and collinear_tidal(sig)
     for agent, keys in ALPHA.items():
         s = alpha_signal(sig, keys)
-        votes.append(Vote(agent, s['side'], round(s['strength'], 4), s['why']) if s
-                     else Vote(agent, 'HOLD', 0.0, f'scanning · no {"/".join(keys)} trigger'))
+        if not s:
+            votes.append(Vote(agent, 'HOLD', 0.0, f'scanning · no {"/".join(keys)} trigger'))
+        elif agent == 'TIDAL' and col:
+            votes.append(Vote(agent, s['side'], round(s['strength'] * collinear_penalty, 4),
+                              f'{s["why"]} · x{collinear_penalty:g} same flow as LUMEN'))
+        else:
+            votes.append(Vote(agent, s['side'], round(s['strength'], 4), s['why']))
     gmap = gates.as_map()
     for agent in GATES:
         ok, why = gmap[agent]
@@ -90,7 +113,11 @@ def evaluate(sig: dict, gates: Gates, engine: Optional[ConsensusEngine] = None,
     decision = engine.evaluate(votes)
     consensus = decision.score                                   # raw swarm score, before any JEV lift
     edge = sum(sig[k]['edge_bps'] for k in SIGNAL_KEYS if sig.get(k) and sig[k]['side'] == side) if side else 0.0
-    jev = score_from_ratio(edge / max(gates.cost_bps, 1e-9)) if side else 0.0
+    if side and collinear_penalty < 1.0 and alpha_key(sig, ALPHA['LUMEN']) in FLOW_FAMILY:
+        # TIDAL's OFI / SQUEEZE edge repeats LUMEN's flow edge: keep only `penalty` of it (also on the JEV path)
+        edge -= (1.0 - collinear_penalty) * sum(sig[k]['edge_bps'] for k in ALPHA['TIDAL']
+                                                if k in FLOW_FAMILY and sig.get(k) and sig[k]['side'] == side)
+    jev =score_from_ratio(edge / max(gates.cost_bps, 1e-9)) if side else 0.0
     gates_ok = all(ok for ok, _ in gmap.values())
     path = 'SWARM' if decision.allowed else None
     if (not decision.allowed and jev_min is not None and side and gates_ok and jev >= jev_min):

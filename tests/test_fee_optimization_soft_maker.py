@@ -46,10 +46,13 @@ async def test_retrace_meets_the_maker_exit_before_the_taker_stop(tmp_path):
 
 
 async def test_without_it_the_soft_be_sits_under_the_exchange_stop(tmp_path):
-    """Trade #49: soft BE +0.06 % under the ratchet stop +0.08 % -> the STOP_MARKET (taker) fires first."""
+    """Trade #49 (10-07): soft BE +0.06 % under the ratchet stop +0.08 % -> the STOP_MARKET (taker) fires first.
+    11-09: the fee-aware soft BE is +0.12 %, i.e. ABOVE the ratchet stop, so the maker exit meets the retrace first
+    even with pre_stop_maker off; PRESTOP (above) stays the guard for stops that ratchet higher still."""
     e, venue, feed, p = await long_with_ratchet(tmp_path, pre_stop_maker=False)
     await e._manage_soft(p, 1, p['entry'] * 1.0015, 0.15)
-    assert p['soft_kind'] in ('BE', 'LOCK') and p['soft_stop'] < p['sl']
+    assert p['soft_kind'] in ('BE', 'LOCK') and p['soft_stop'] > p['sl']
+    assert p['soft_stop'] == pytest.approx(eng.round_tick(p['entry'] * 1.0012, 0.1, 'up'))
 
 
 async def test_no_pre_stop_while_the_stop_is_under_the_entry(tmp_path):

@@ -19,6 +19,10 @@ from tests.test_two_mode_engine import depth, mock_engine
 
 DOGE = 'DOGEUSDT'
 ENTRY = 0.08880
+# 11-09 fee-aware soft BE: entry + maker in/out 0.04 % + offset 0.08 % = 0.088907 -> tick-up 0.08891 (was 0.08886 at
+# the 0.02 % offset). Every price below the arm step is the 10-07r scenario shifted by the same +0.00005, so the
+# retrace geometry (ticks and % past the reference) is unchanged.
+BE_LVL = 0.08891
 
 
 def book(feed, bid, ask=None):
@@ -60,7 +64,7 @@ async def arm_be(e, feed):
     await step(e, feed, 0.08892)                            # mid 0.088925 = MFE +0.1408 % (#37): T1 + T2, no ratchet
     p = e.pos
     assert p['mfe_pct'] == pytest.approx(0.1408, abs=1e-3) and not p.get('ratchet')
-    assert p['soft_kind'] == 'BE' and p['soft_stop'] == pytest.approx(0.08886) and p['be_locked']
+    assert p['soft_kind'] == 'BE' and p['soft_stop'] == pytest.approx(BE_LVL) and p['be_locked']
     return p
 
 
@@ -68,52 +72,52 @@ async def arm_be(e, feed):
 async def test_doge_37_reproduced_without_the_bound(tmp_path):
     e, venue, feed = await doge_long(tmp_path)                       # default: bound in SHADOW (replay 10-08)
     await arm_be(e, feed)
-    await step(e, feed, 0.08885)                            # mark <= 0.08886 -> SOFT-BE maker at the touch
-    assert e.pos['exiting']['reason'] == 'SOFT-BE' and e.pos['exiting']['ref'] == pytest.approx(0.08886)
-    for bid in (0.08883, 0.08880, 0.08877, 0.08874, 0.08871, 0.08867):
+    await step(e, feed, 0.08890)                            # mark <= 0.08891 -> SOFT-BE maker at the touch
+    assert e.pos['exiting']['reason'] == 'SOFT-BE' and e.pos['exiting']['ref'] == pytest.approx(BE_LVL)
+    for bid in (0.08888, 0.08885, 0.08882, 0.08879, 0.08876, 0.08872):
         await step(e, feed, bid)                            # the ask walks down, the sell is never lifted
     assert e.pos['exiting']['reprices'] >= 5
-    book(feed, 0.08868, 0.08869)                            # a buyer finally lifts 0.08868
+    book(feed, 0.08873, 0.08874)                            # a buyer finally lifts 0.08873
     await e.sync()
     r = last_row(tmp_path)
     assert r['reason'] == 'SOFT-BE-LOSS' and r['be_locked'] and r['taker_fills'] == 0
-    assert r['gross'] == pytest.approx(-0.03492, abs=1e-6)
-    assert r['fee'] == pytest.approx(0.01032931, abs=2e-6) and r['pnl'] == pytest.approx(-0.04524931, abs=2e-6)
+    assert r['gross'] == pytest.approx(-0.02037, abs=1e-6)  # 291 x (0.08873 - 0.08880)
+    assert r['fee'] == pytest.approx(0.0103324, abs=2e-6) and r['pnl'] == pytest.approx(-0.0307024, abs=2e-6)
     assert r['stop_covered_entry'] is False                 # the exchange stop never moved off 0.08835
     sh = r['shadow_escalate']                               # where the bound would have exited (taker at the bid)
-    assert sh['touch'] == pytest.approx(0.08880) and sh['adverse_pct'] >= 0.03       # first step past 0.03 %
+    assert sh['touch'] == pytest.approx(0.08885) and sh['adverse_pct'] >= 0.03       # first step past 0.03 %
 
 
 async def test_doge_37_with_the_bound_escalates_and_caps_the_loss(tmp_path):
     e, venue, feed = await doge_long(tmp_path, soft_exit_escalate=True)
     await arm_be(e, feed)
-    await step(e, feed, 0.08885)
+    await step(e, feed, 0.08890)
     assert e.pos['exiting']['reason'] == 'SOFT-BE'
-    await step(e, feed, 0.08883)                            # mark 0.088835: 0.028 % past 0.08886 -> still maker
+    await step(e, feed, 0.08888)                            # mark 0.088885: 0.028 % past 0.08891 -> still maker
     assert e.pos and e.pos['exiting']
-    await step(e, feed, 0.08882)                            # mark 0.088825: 0.039 % past -> MARKET reduce-only
+    await step(e, feed, 0.08887)                            # mark 0.088875: 0.039 % past -> MARKET reduce-only
     assert e.pos is None
     r = last_row(tmp_path)
     assert r['reason'] == 'SOFT-BE>TAKER' and r['exit_mode'] == 'maker+taker' and r['taker_fills'] == 1
-    assert r['exit_ref'] == pytest.approx(0.08886)
-    assert r['pnl'] > -0.02 and r['pnl'] > -0.04524931 + 0.025          # same path: -0.045 -> about -0.012
+    assert r['exit_ref'] == pytest.approx(BE_LVL)
+    assert r['pnl'] > -0.02 and r['pnl'] > -0.0307024 + 0.015           # same path as the unbounded loss: capped
     assert any('EXIT ESCALATED SOFT-BE' in ev['message'] for ev in e.events)
 
 
 async def test_deadline_escalates_when_price_sits_on_the_reference(tmp_path):
     e, venue, feed = await doge_long(tmp_path, soft_exit_escalate=True)
     await arm_be(e, feed)
-    await step(e, feed, 0.08885)
-    e.pos['exiting']['started'] -= 5.1                      # 5 s, mark still at/below 0.08886
-    await step(e, feed, 0.08885)
+    await step(e, feed, 0.08890)
+    e.pos['exiting']['started'] -= 5.1                      # 5 s, mark still at/below 0.08891
+    await step(e, feed, 0.08890)
     assert e.pos is None and last_row(tmp_path)['reason'] == 'SOFT-BE>TAKER'
 
 
 async def test_no_taker_when_price_recovers_above_the_reference(tmp_path):
     e, venue, feed = await doge_long(tmp_path, soft_exit_escalate=True)
     await arm_be(e, feed)
-    await step(e, feed, 0.08885)
-    book(feed, 0.08885, 0.08888)                            # mid back above 0.08886, nobody lifts our sell
+    await step(e, feed, 0.08890)
+    book(feed, 0.08890, 0.08893)                            # mid back above 0.08891, nobody lifts our sell
     e.pos['exiting']['started'] -= 30
     await e.sync()
     assert e.pos and e.pos['exiting'] and not e.pos.get('exit_escalated')
@@ -134,9 +138,9 @@ async def test_eject_keeps_its_own_schedule(tmp_path):
 async def test_partial_maker_fill_then_escalation_settles_once(tmp_path):
     e, venue, feed = await doge_long(tmp_path, soft_exit_escalate=True)
     await arm_be(e, feed)
-    await step(e, feed, 0.08885)
-    venue._fill(DOGE, 'SELL', 100.0, 0.08886, venue.cfg.maker_bps)     # race: part of the maker exit filled
-    await step(e, feed, 0.08882)
+    await step(e, feed, 0.08890)
+    venue._fill(DOGE, 'SELL', 100.0, BE_LVL, venue.cfg.maker_bps)      # race: part of the maker exit filled
+    await step(e, feed, 0.08887)
     assert e.pos is None and not venue.amt.get(DOGE)
     rows = (tmp_path / 'trades.jsonl').read_text(encoding='utf-8').splitlines()
     r = json.loads(rows[-1])

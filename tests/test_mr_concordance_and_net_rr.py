@@ -178,8 +178,11 @@ def test_super_conviction_rule(tmp_path):
 
 async def test_sol_super_conviction_opens_the_concentrated_size(tmp_path):
     feeds = {'BTCUSDT': mr_feed(), SOL: sol_feed()}                         # sol_feed: vote 100 %, OFI +1.0
+    # 11-09: sol_feed gets its 100 % vote from LUMEN FLOW + TIDAL OFI on one CVD delta; with the collinearity discount
+    # (0.9 raw) super size needs an independent confirmation. This test pins the SIZING path, so the discount is off.
     es, venue, _ = await scanner(tmp_path, feeds, super_size=True, ker_gate=False, min_edge_bps=0.0,
-                                 concordance_gate=False, min_velocity_pct=0.0, fee_hurdle=False)
+                                 concordance_gate=False, min_velocity_pct=0.0, fee_hurdle=False,
+                                 collinear_penalty=1.0)
     sol = es[SOL]
     d = await fill_sol(sol, feeds[SOL], sol.tick())
     await sol.sync()

@@ -123,7 +123,9 @@ async def test_strong_concordant_setup_opens_1_5x(tmp_path):
     ofi_frames(feed)
     x = feed.features()
     assert x['ofi_10s'] >= 0.65 and x['cvd_60s'] >= 1_000_000
-    e, venue, _ = mock_engine(tmp_path, feed=feed, convex_sizing=True)
+    # 11-09: the 0.90+ vote of this feed is FLOW + OFI on one delta (0.88 with the collinearity discount); the test
+    # pins the convex SIZING path, so the discount is off here
+    e, venue, _ = mock_engine(tmp_path, feed=feed, convex_sizing=True, collinear_penalty=1.0)
     await e.sync()
     d = await fill_through(e, feed, e.tick())
     assert d.allowed and e.diag['consensus'] >= 0.90 and e.pos['size_mult'] == 1.5

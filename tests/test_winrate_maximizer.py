@@ -73,7 +73,7 @@ async def test_fee_shield_at_012_survives_a_retrace_to_entry_with_net_profit(tmp
     await e.tick()
     lvl = e.pos['soft_stop']
     assert e.pos['soft_kind'] == 'BE' and lvl >= entry * 1.0004 and e.position_row()['shield']
-    assert lvl == pytest.approx(entry * 1.0006, abs=0.2)           # fee-true maker BE (0.06 %) beats the 0.04 % floor
+    assert lvl == pytest.approx(entry * 1.0012, abs=0.2)           # 11-09 fee-aware maker BE (0.04 + 0.08 %) beats the 0.04 % floor
     book_at(feed, round(lvl - 0.1, 1))                             # price rolls back over the level ...
     await e.tick()
     lift(feed, e.pos['exiting']['px'])                             # ... and trades there on the way to entry
@@ -104,11 +104,11 @@ def test_fee_shield_level_after_an_ioc_entry(tmp_path):
     e.spec = dict(eng.FALLBACK_SPECS[SYM])
     gtx = {'side': 'BUY', 'entry': 100_000.0, 'entry_fee_bps': 2.0}
     ioc = dict(gtx, entry_fee_bps=5.0)
-    assert e.shield_price(gtx) == pytest.approx(100_060.0)        # 2 + 2 bps + 0.02 %
-    assert e.shield_price(ioc) == pytest.approx(100_090.0)        # 5 + 2 bps + 0.02 %
-    assert e.shield_price({'side': 'SELL', 'entry': 100_000.0, 'entry_fee_bps': 2.0}) == pytest.approx(99_940.0)
-    e.p = eng.replace(e.p, be_offset_pct=-0.5)                     # degenerate offset: the 0.04 % floor holds
-    assert e.shield_price(gtx) == pytest.approx(100_040.0)
+    assert e.shield_price(gtx) == pytest.approx(100_120.0)        # 2 + 2 bps + 0.08 % (11-09; was + 0.02 %)
+    assert e.shield_price(ioc) == pytest.approx(100_150.0)        # 5 + 2 bps + 0.08 %
+    assert e.shield_price({'side': 'SELL', 'entry': 100_000.0, 'entry_fee_bps': 2.0}) == pytest.approx(99_880.0)
+    e.p = eng.replace(e.p, be_offset_pct=-0.5)                     # degenerate offset: the fee-aware 0.08 % floor holds
+    assert e.shield_price(gtx) == pytest.approx(100_120.0)
 
 
 async def test_profit_lock_at_025_banks_015(tmp_path):

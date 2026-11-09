@@ -254,7 +254,8 @@ async def test_no_eject_at_mfe_007(tmp_path):
 
 
 async def test_eject_escalates_at_360s(tmp_path):
-    e, venue, feed = await btc_long_at(tmp_path, ENTRY, eject=True)
+    # 11-09: legacy timer pinned with the guard off; guard tests: tests/test_fee_drag_fixes_2026_11_09.py
+    e, venue, feed = await btc_long_at(tmp_path, ENTRY, eject=True, eject_guard=False)
     e.pos['opened'] -= 181
     await e.tick()
     book_at(feed, at(-0.05))

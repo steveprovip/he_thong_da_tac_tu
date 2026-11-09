@@ -33,6 +33,9 @@ from config.settings import Settings, read_env
 from core import micro_signals as msig
 from core import exec_funnel as xf
 from core import micro_swarm as swarm
+from core import regime_classifier as rc
+from core import invariants as inv
+from core import toxicity_guard as tg
 from core.consensus_engine import ConsensusEngine, Decision, TokenAuthority
 from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, round_tick
 
@@ -58,6 +61,13 @@ def code_version(root: Path = ROOT) -> Optional[str]:
     except OSError:
         pass
     return None
+
+
+def jev_lift(path: str, raw_consensus: Optional[float]) -> Optional[bool]:
+    """Label JEV authorizations whose raw swarm score was below the fixed 76.8% quorum."""
+    if raw_consensus is None:
+        return None if path == 'JEV' else False
+    return path == 'JEV' and raw_consensus < inv.SUPERMAJORITY - 1e-12
 
 
 CODE_VERSION = code_version()
@@ -193,7 +203,10 @@ class Profile:
     super_cvd_usd: float = 3_000_000.0  # CVD 10 s IN the trade direction, x symbol usd_scale
     super_ker: float = 0.60             # IOC also needs KER(2 min) >= 0.60 (straight, steep tape)
     ioc_max_slip_pct: float = 0.03      # IOC limit = touch +/- 0.03 %: bounded taker, never a blind MARKET
-    be_offset_pct: float = 0.02         # breakeven stop = entry + all fees + slip + 0.02 %
+    be_offset_pct: float = 0.08         # SOFT maker BE = entry + maker in + maker out + 0.08 % (11-09: was 0.02; the
+                                        # offset covers fee_shield 0.04 + a taker escalation 0.04 = 5 - 2 + 1 slip bps;
+                                        # be_offset_eff() floors it at BE_OFFSET_FLOOR: 0.08, SOL 0.065)
+    be_offset_hard_pct: float = 0.02    # HARD exchange-stop BE = stop_out_pct() (maker in + taker stop + slip) + 0.02 %
     fee_shield_pct: float = 0.04        # T2 at +0.12 %: exit level >= entry + 0.04 % (fee-true BE when higher)
     lock_trigger_pct: float = 0.25      # T2b PROFIT LOCK: MFE >= +0.25 % ...
     lock_pct: float = 0.15              # ... -> exit level entry + 0.15 %
@@ -250,9 +263,20 @@ class Profile:
     scalp_ker_max: float = 0.40         # scalp only while KER(2 min) < 0.40 ...
     scalp_spread_max_bps: float = 1.5   # ... and the signal-feed spread <= 1.5 bps
     scalp_ofi_min: float = 0.30         # side = sign of OFI L10 (|OFI| >= 0.30), no OFI -> no scalp
-    scalp_tp_pct: float = 0.08          # resting maker TP (2 x maker round trip)
+    scalp_tp_pct: float = 0.32          # maker scalp TP; route fees yield net RR 1.40 at 0.12 % SL
     scalp_sl_pct: float = 0.12          # exchange stop
-    scalp_be_s: float = 90.0            # TP not filled after 90 s -> maker exit at entry + fees (EJECT-BE)
+    scalp_sl_min_pct: float = 0.15      # 11-08 owner: SCALP stop after regime scaling never tighter than this (0 = off)
+    scalp_floor_resize: bool = True     # 11-08 owner: when that floor widens the stop, size shrinks so the loss at the
+                                        # stop (fees in, as plan() counts it) stays what the unfloored stop would lose
+    scalp_net_rr_min: float = 1.35      # 11-08 owner: SCALP net-RR floor (max with net_rr_min); TP lifted to clear it
+    scalp_macro_lock: bool = True       # 11-08 owner: scalp side must be allowed by the 5 m macro AND the CVD regime
+    scalp_cvd3m_usd: float = 50_000.0   # 11-08 owner: no SELL scalp at CVD 3 m > +$50k, no BUY < -$50k (0 = off)
+    scalp_align3: bool = True           # 11-08 owner: an 'on' scalp needs every ALIGN3 layer with it (even align3 shadow)
+    scalp_net_rr: bool = True           # SCALP orders use the same ZEPHR net-RR gate as other AUTO entries
+    scalp_min_edge_bps: float = 18.0    # modeled edge floor; UNKNOWN is not treated as zero
+    scalp_min_score: float = 0.768
+    scalp_be_s: float = 45.0            # TP not filled after 45 s -> maker exit at entry + fees (EJECT-BE; 11-08 owner, was 90)
+    scalp_hard_s: float = 180.0
     scalp_size_mult: float = 0.5
     scalp_every_s: float = 20.0         # at most one scalp attempt / shadow record per symbol per 20 s
     drift_accel: bool = True            # DRIFT lock lifted for the CVD 60 s side when |CVD60| >= 3 x |CVD3m| and
@@ -266,7 +290,22 @@ class Profile:
     eject_fast_s: float = 120.0
     eject_fast_mfe_pct: float = 0.08
     eject_fast_vel_pct: float = 0.025
-    alt_risk_share: float = 0.85        # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
+    eject_guard: bool = True            # 11-09: the EJECT floor (scratch order) is dropped for a touch exit only once gross
+                                        # >= the fee hurdle, adverse momentum / toxic flow is confirmed, or ...
+    eject_defer_max_s: float = 120.0    # ... this many seconds past eject_hard_s (bounded: the time stop survives)
+    scalp_tp_mode: str = 'static'       # 11-09: 'static' = scalp_tp_pct (+ net-RR lift) | 'atr' = clamp(mult x ATR15)
+    scalp_tp_atr_mult: float = 0.6      # 'atr': TP = 0.6 x ATR 15 m, clamped to [min, max]. At SL 0.15 % that is net RR
+    scalp_tp_min_pct: float = 0.09      # ~0.35 (break-even win rate 70-79 %): it only takes effect with scalp_net_rr=False
+    scalp_tp_max_pct: float = 0.14
+    collinear_penalty: float = 0.5      # 11-09: TIDAL flow-family vote x this when LUMEN says the same thing (1.0 = off)
+    kelly_no_edge_gate: bool = True     # 11-09: Kelly state NO EDGE (f* <= 0) -> no AUTO entry, no minimum-size fallback
+    edge_shadow: bool = True            # 11-09 shadow path: while NO EDGE blocks, each refused AUTO entry opens ONE virtual
+                                        # trade (no order); the gate lifts only when THEIR Kelly is EDGE (n >= kelly_min_trades)
+    edge_shadow_every_s: float = 20.0   # at most one virtual entry per 20 s
+    edge_shadow_ttl_s: float = 30.0     # the virtual maker quote must be traded THROUGH within 30 s, else NOFILL (uncounted)
+    edge_shadow_hold_s: float = 600.0   # no TP / SL after 10 min -> virtual exit at the touch (maker)
+    raw_quorum_gate: bool = True        # 11-09: AUTO entry needs the RAW swarm score >= 0.768; a JEV-lifted one is refused
+    alt_risk_share: float = 0.85       # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
     alt_kelly_min_n: int = 20           # ... needs >= 20 of them (was 5: 7 SOL trades sized 0.45 -> 1.06 SOL)
     alt_kelly_full: float = 0.10        # quarter-Kelly f >= 0.10 -> the boost reaches ALT_SIZE max
@@ -303,6 +342,7 @@ class Profile:
     kelly: bool = True                  # quarter-Kelly size per symbol once its ledger holds >= kelly_min_trades
     kelly_lambda: float = 0.25
     kelly_min_trades: int = 20
+    kelly_window: int = 20
     kelly_max_risk_usdt: float = 0.50   # demo cap on money at the stop (fees included) per trade
     kelly_max_notional: float = 1000.0
     macro_gate: bool = True             # block entries against the 5 m VWAP + EMA-20 bias
@@ -383,6 +423,36 @@ class Profile:
     mr_bracket: str = 'vwap'
     mr_tp_fixed: float = 0.29
     mr_sl_fixed: float = 0.10
+    # Regime classifier entry gate. Demo overrides the long research window with a 5-minute trend window while
+    # preserving UNKNOWN fail-closed until the classifier has enough observations and confirmation time.
+    regime_gate: str = 'off'
+    regime_trend_window_s: float = 900.0
+    regime_er_bucket_s: float = 30.0
+    regime_er_min_span_s: float = 600.0
+    regime_confirm_s: float = 60.0
+    regime_tail_z: float = 4.5
+    regime_tail_count: int = 3
+    regime_tail_memory_s: float = 300.0
+    regime_crash_tail_z: float = 4.5
+    regime_crash_tail_count: int = 1
+    regime_crash_flatten: bool = True
+    # Demo-only CHOP escape: normal quorum, all eight votes, risk-gate agreement, and VESKA token remain required.
+    swarm_chop_override: bool = False
+    swarm_override_min_score: float = 0.80
+    swarm_override_tp_pct: float = 0.50
+    swarm_override_sl_pct: float = 0.18
+    swarm_override_sl_max_pct: float = 0.25
+    scalp_only: bool = False
+    chop_router_scalp: bool = False
+    tox_guard: str = 'off'
+    tox_vpin_max: float = 0.65
+    tox_skew_bps: float = 1.5
+    tox_pull_bps: float = 3.0
+    tox_min_n: int = 30
+    tox_own_min_n: int = 10
+    tox_own_window: int = 20
+    tox_skew_ticks: int = 1
+    tox_hold_cooldown_s: float = 5.0
     # 10-08y Dynamic Conviction Sizing (form POSITION_SIZING_10PCT): notional = fraction x wallet, SOL/DOGE TREND
     # entries only: score in [0.80, 0.90) -> 3 %, [0.90, 0.95) -> 5 %, >= 0.95 with OFI >= 0.85 -> 10 %.  Never above
     # the free portfolio risk budget (portfolio_risk_usdt at the stop, fees included) or the margin cap: the size is
@@ -473,6 +543,7 @@ class Profile:
     # refused unless config/burst_verdict.json says ACTIVE-ELIGIBLE for the symbol (replay 10-10: every variant on
     # SOL/DOGE USDT + USDC negative, -4 to -8 bps/trade -> SHADOW).  Values = the replay's pre-registered DEV-best.
     burst_lane: str = 'off'
+    burst_wake_hold_s: float = 0.0
     burst_symbols: tuple = ('SOLUSDT', 'DOGEUSDT')
     burst_signal: str = 'MR'                # 'MR' fade the 10 s move | 'MOM' follow the 10 s CVD
     burst_tp_bps: float = 30.0
@@ -534,6 +605,7 @@ class Profile:
     # -> core.funding_executor.ShadowCarryBook -> telemetry 'funding_carry'.  Virtual book only, never an order.
     funding_shadow: bool = False
     funding_every_s: float = 300.0
+    carry_sim: bool = False
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -549,13 +621,20 @@ SUPER_SIZE = {'SOLUSDT': 0.80, 'DOGEUSDT': 500.0}       # 10-08u: 0.50 / 450 -> 
 ALT_SIZE_FLOOR = {'SOLUSDT': 0.40, 'DOGEUSDT': 300.0}
 # VFR horizon floor: BTC also needs ATR 15 m >= 0.10 % (VFR >= 3 already implies ~0.12 % at 4 bps of fees).
 ATR15_FLOOR = {'BTCUSDT': 0.10}
+# 11-09: smallest offset (% above the maker round trip) of a SOFT breakeven target. fee_shield_pct 0.04 + the extra
+# cost when the maker exit escalates to a taker order (taker - maker + slip = 5 - 2 + 1 bps = 0.04) = 0.08 %.
+BE_OFFSET_FLOOR_DEFAULT = 0.08
+BE_OFFSET_FLOOR = {'SOLUSDT': 0.065}
 
 
 PROFILES = {
     # 0.002 BTC so TP1 can take exactly half (step 0.001). A 0.05 U stop is impossible on BTC:
     # min notional ~$100 x (0.02 % maker + 0.05 % taker) = 0.07 U of fees alone -> demo uses SL 0.20 %.
     'demo': Profile('demo', 'BTCUSDT', qty=0.002, sl_pct=0.20, daily_kill_usdt=5.0, conviction_sizing='on',
-                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='active', micro_standalone=False,
+                    portfolio_risk_usdt=5.0, cs_max_notional=350.0, trend_lane='active', micro_standalone=True,
+                    chop_scalper='on', chop_router_scalp=True, scalp_only=False, scalp_ker_max=0.42, min_score=0.768,
+                    mr_min_score=0.768, scalp_min_score=0.768, mr_bracket='fixed',
+                    kelly_window=20, burst_wake_hold_s=180.0, scalp_hard_s=180.0, intraday_close_margin_s=20.0,
                     autonomy='on',     # 10-08z2: hard notional cap $350 (was $1 000)
                     # 10-09 (ee) trend lane: DEV-selected gate G6 + soft lock L1 (chandelier 3.5 ATR armed at +2 %),
                     # 10 % of wallet / <= 1 % lost at the 8 ATR disaster stop, <= $600
@@ -572,12 +651,19 @@ PROFILES = {
                     burst_chop_gate=True, burst_vpin_veto_s=60.0,   # 10-16 (b): shadow only, same caveat
                     intraday_lane='shadow',  # 10-10 b lane 3 runs virtual (replay: every variant negative)
                     stat_arb_lane='shadow',  # Stat-Arb cointegration Kalman lane (pairs trading)
-                    funding_shadow=True),    # 10-16 (b) carry quotes in telemetry (virtual book)
+                    funding_shadow=True, carry_sim=True, tox_guard='on',
+                    scalp_tp_pct=0.32, scalp_net_rr=True, scalp_min_edge_bps=10.0,
+                    regime_gate='on', regime_trend_window_s=60.0, regime_er_bucket_s=5.0,
+                    regime_er_min_span_s=45.0,
+                    swarm_chop_override=True, swarm_override_min_score=0.80),
 
     'live': Profile('live', 'DOGEUSDT', sl_pct=0.0, max_loss_usdt=0.05, equity_cap=3.85,
                     daily_kill_usdt=0.15, cooldown_s=60.0, max_trades_hour=6, max_spread_bps=8.0, mock_balance=3.85,
                     atr_scaler=False, kelly=False, convex_sizing=False, adopt_external=False, risk_parity=False,
                     asset_brackets=False, eject=False, alt_boost=False, super_size=False, chop_scalper='off',
+                    chop_router_scalp=False, scalp_tp_pct=0.32, scalp_net_rr=True, kelly_window=0,
+                    burst_wake_hold_s=0.0, intraday_close_margin_s=10.0, carry_sim=False, tox_guard='off',
+                    regime_gate='off', swarm_chop_override=False,
                     drift_accel=False, alt_size_floor=False, eject_fast=False,
                     alt_risk_share=0.0, super_cross='off', dyn_ttl='off', ratchet2=False, adaptive_ker='off',
                     conviction_sizing='off', tp1_scaled_pct=None, align3='off', early_invalidation='off'),  # live: max loss 0.05 U, minimum size, pure maker, VFR gate on
@@ -1035,6 +1121,16 @@ class Engine:
         if fresh:
             self.history = deque(maxlen=60)
         self.events = deque(maxlen=60)
+        consensus_errors = inv.check_consensus(self.consensus, regimes=('NORMAL',))
+        token_errors = inv.check_token_authority(self.authority)
+        if consensus_errors or token_errors:
+            raise PermissionError('INVARIANT: ' + (consensus_errors + token_errors)[0])
+        profile_errors = inv.check_profile(profile)
+        self.invariant_errors = profile_errors
+        if profile_errors and profile.mode == 'live' and allow_live:
+            raise PermissionError('INVARIANT: ' + '; '.join(profile_errors))
+        for error in profile_errors:
+            self.event(f'INVARIANT WARN {error}')
         if fresh:
             self.cooldown_until = 0.0
         self.chop_locked = True                       # KER unknown at start -> locked
@@ -1050,12 +1146,33 @@ class Engine:
         self.trend_owned = False                      # 10-09 (dd) the venue position belongs to the 4H trend lane
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
         self.scalp_next = 0.0
+        # 11-09 NO EDGE shadow path: pos = the one open virtual trade, pnls = settled net % (None = not loaded yet)
+        self.edge_shadow: dict = {'pos': None, 'pnls': None, 'next': 0.0, 'released': False}
         self.absorb = {'state': 'UNKNOWN', 'blocks': None}
         self.macro = {'name': 'WARMUP', 'allow': ('BUY', 'SELL')}
         self.tox = {'vpin': None, 'buckets': 0, 'toxic': False, 'state': 'WARMUP'}
         self.toxic_until = 0.0                        # VPIN pause (per symbol)
         self.toxic_side: Optional[str] = None         # side the toxic flow pushes (BUY = aggressive buying)
         self.toxic_vpin: Optional[float] = None
+        self.own_mk5: deque = deque(maxlen=max(int(self.p.tox_own_window), 2))
+        self.tox_policy = tg.ToxPolicy(vpin_max=self.p.tox_vpin_max, skew_bps=self.p.tox_skew_bps,
+                                       pull_bps=self.p.tox_pull_bps, min_n=self.p.tox_min_n,
+                                       own_min_n=self.p.tox_own_min_n, skew_ticks=self.p.tox_skew_ticks)
+        self.tox_last: Optional[tuple] = None
+        self._tox_evt_t = 0.0
+        self.regime_clf = (rc.RegimeClassifier(rc.RegimeConfig(
+            trend_window_s=self.p.regime_trend_window_s,
+            er_bucket_s=self.p.regime_er_bucket_s,
+            er_min_span_s=self.p.regime_er_min_span_s,
+            confirm_s=self.p.regime_confirm_s,
+            tail_z=self.p.regime_tail_z,
+            tail_count=self.p.regime_tail_count,
+            tail_memory_s=self.p.regime_tail_memory_s,
+            crash_tail_z=self.p.regime_crash_tail_z,
+            crash_tail_count=self.p.regime_crash_tail_count,
+        )) if self.p.regime_gate in ('shadow', 'on') else None)
+        self.regime_state = None
+        self._regime_evt_t = 0.0
         if fresh:
             self.pause_until = 0.0
             self.trade_times = deque()
@@ -1213,6 +1330,13 @@ class Engine:
         side = 'BUY' if ofi > 0 else 'SELL'
         if self.toxic_blocks(side):
             return None, 'VPIN toxic against the side'
+        if self.p.scalp_macro_lock:     # 11-08: a 10 s OFI blip may not fight the 5 m macro or the CVD regime
+            for m in (self.macro or {}, self.reg or {}):
+                if side not in m.get('allow', ('BUY', 'SELL')):
+                    return None, f'MACRO {m.get("label") or m.get("name")} forbids {side} scalp'
+        c3, lim = f.get('cvd_3m', 0.0), self.p.scalp_cvd3m_usd
+        if lim and c3 is not None and (c3 > lim if side == 'SELL' else c3 < -lim):   # UNKNOWN: ALIGN3 ('on')
+            return None, f'CVD_3M conflict ({c3:+.0f}) with {side}'
         return side, f'CHOP SCALP {side}: KER {k:.2f} · spread {spread:.2f} bps · OFI {ofi:+.2f}'
 
     async def chop_scalp(self, d: Decision, f: dict) -> None:
@@ -1222,10 +1346,44 @@ class Engine:
             return
         side, why = self.scalp_candidate(f)
         if side is None:
+            if mode == 'on' and why.startswith(('MACRO ', 'CVD_3M ')):
+                self.scalp_lock('MACRO_LOCK' if why.startswith('MACRO ') else 'CVD3M_LOCK', why)
             return
+        if mode == 'on' and (d is None or d.veto or d.side != side
+                             or d.score < self.p.scalp_min_score - 1e-9):
+            return
+        if mode == 'on' and self.p.scalp_align3:
+            al = self.align3_last = self.align3_check(side, force=True, f=f)   # ledger: the scalp's own check
+            if al:
+                self.scalp_lock('ALIGN3_LOCK', al)
+                return
         g = self.gates(f)
         if not all(ok for ok, _ in g.as_map().values()):
             return
+        if mode == 'on' and self.p.scalp_min_edge_bps:
+            edge = (self.diag or {}).get('edge_bps')
+            if edge is None or edge < self.p.scalp_min_edge_bps:
+                self.scalp_next = self.clock() + self.p.scalp_every_s
+                self.funnel.outcome('EDGE_LOW')
+                if self.clock() - getattr(self, '_edge_evt_t', 0.0) >= 60.0:
+                    self._edge_evt_t = self.clock()
+                    self.event(f'EDGE TOO LOW FOR FEES: SCALP {side} edge '
+                               f'{"UNKNOWN" if edge is None else f"{edge:.1f}"} bps '
+                               f'< {self.p.scalp_min_edge_bps:g} bps')
+                return
+        rr_min = self.scalp_rr_min()
+        if mode == 'on' and self.p.scalp_net_rr and rr_min:
+            bp = self.bracket_plan('SCALP', f)
+            rr = bp.get('rr_net')
+            if rr is None or rr < rr_min - 1e-12:
+                self.scalp_next = self.clock() + self.p.scalp_every_s
+                self.funnel.outcome('RR_LOW')
+                if self.clock() - getattr(self, '_rr_evt_t', 0.0) >= 60.0:
+                    self._rr_evt_t = self.clock()
+                    self.event(f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {rr_min:g}: SCALP '
+                               f'{side} TP {bp["tp_pct"]:.3f}% / SL {bp["sl_pct"]:.3f}% after fees '
+                               f'(break-even win rate {(bp.get("be_wr") or 1) * 100:.0f}%)')
+                return
         self.scalp_next = self.clock() + self.p.scalp_every_s
         if mode == 'shadow':
             b = self.book()
@@ -1236,6 +1394,38 @@ class Engine:
         self.event(why)
         sd = replace(d, side=side, allowed=True, veto=False, reason=why)
         await self.execute(side, sd, 'SCALP')
+
+    def scalp_lock(self, outcome: str, why: str) -> None:
+        """11-08: an 'on' scalp refused by the macro / CVD 3 m / ALIGN3 lock -> throttle, funnel count, event at most
+        once a minute per symbol.  Before any token, like EDGE_LOW and RR_LOW."""
+        self.scalp_next = self.clock() + self.p.scalp_every_s
+        self.funnel.outcome(outcome)
+        if self.clock() - getattr(self, '_lock_evt_t', 0.0) >= 60.0:
+            self._lock_evt_t = self.clock()
+            self.event(f'SCALP LOCK: {why}')
+
+    def swarm_override_eligible(self, d: Decision, votes: list, diag: dict) -> bool:
+        """Allow only a demo, KER-locked consensus override above both the policy quorum and its score floor."""
+        if (self.p.mode != 'demo' or not self.p.swarm_chop_override or not self.chop_locked
+                or d is None or d.side not in ('BUY', 'SELL') or not d.allowed or d.veto):
+            return False
+        if (diag or {}).get('path') != 'SWARM' or not math.isfinite(d.score):
+            return False
+        if not math.isfinite(self.p.swarm_override_min_score) or self.p.swarm_override_min_score > 1.0:
+            return False
+        floor = max(inv.SUPERMAJORITY, self.p.swarm_override_min_score)
+        score = (diag or {}).get('consensus')
+        if (not isinstance(score, (int, float)) or not math.isfinite(score)
+                or score < floor - 1e-12 or d.score < floor - 1e-12
+                or d.threshold < inv.SUPERMAJORITY - 1e-12):
+            return False
+        weights = self.consensus.weights
+        if len(votes) != len(weights) or {getattr(v, 'agent', None) for v in votes} != set(weights):
+            return False
+        if any(getattr(v, 'veto', False) for v in votes):
+            return False
+        rune = next(v for v in votes if v.agent == 'RUNE')
+        return rune.side == d.side and rune.confidence >= inv.VETO - 1e-12
 
     def _shadow_row(self, extra: dict) -> None:
         row = {'t': self.clock(), 'schema': 1, 'mode': self.p.mode, 'venue': self.venue.label,
@@ -1254,6 +1444,17 @@ class Engine:
         e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
         win, loss = pl['tp_pct'] - (e_in + self.p.maker_bps) / 100.0, pl['sl_pct'] + pl['fees_pct']
         return win / loss if loss > 0 else None
+
+    def scalp_rr_min(self) -> float:
+        """11-08: SCALP net-RR floor = max(net_rr_min, scalp_net_rr_min); 0 = no gate."""
+        return max(self.p.net_rr_min or 0.0, self.p.scalp_net_rr_min or 0.0)
+
+    def scalp_min_tp(self, sl: float, route: str = 'gtx') -> float:
+        """11-08: smallest TP % whose fee-true net RR at stop `sl` clears scalp_rr_min() (same fees as plan_rr;
+        gtx: TP pays maker in + maker out 0.04 %, the stop pays maker in + taker out + slip 0.08 %)."""
+        p = self.p
+        e_in = (p.taker_bps + p.slip_bps) if route == 'ioc' else p.maker_bps
+        return (sl + (e_in + p.taker_bps + p.slip_bps) / 100.0) * self.scalp_rr_min() + (e_in + p.maker_bps) / 100.0
 
     def super_conviction(self, d: Decision, diag: dict, f: dict) -> bool:
         """Raw swarm vote >= 0.95 (no JEV lift) AND OFI L10 >= 0.80 with the trade, SOL/DOGE only."""
@@ -1508,6 +1709,12 @@ class Engine:
 
     async def _tick(self) -> Optional[Decision]:
         f = self.features = self.feed.features(self.clock())
+        self.edge_shadow_step(f)                      # 11-09: the virtual NO EDGE probe moves on every tick
+        if self.regime_clf is not None and f.get('price'):
+            self.regime_state = self.regime_clf.update(self.clock(), float(f['price']))
+        if self.pos and self.p.regime_crash_flatten and self.regime_crash() and not self.trend_owned:
+            self.event(f'REGIME CRASH -> flatten {self.p.symbol}: {self.regime_state.reason}')
+            await self.close('REGIME-CRASH')
         if self.pos:                                  # MARIN reacts on every WS tick, not every REST poll
             await self.manage()
         elif self.autonomy is not None and not self.busy:
@@ -1523,20 +1730,27 @@ class Engine:
         self.sig = msig.signals(f, self.sig_cfg, self.reg)
         g_now = self.gates(f)
         d, votes, diag = swarm.evaluate(self.sig, g_now, self.consensus, self.p.jev_min,
-                                        self.p.min_confluence, self.p.edge_ratio_min, allow=self.reg['allow'])
+                                        self.p.min_confluence, self.p.edge_ratio_min, allow=self.reg['allow'],
+                                        collinear_penalty=self.p.collinear_penalty)
         if self.autonomy is not None and d.allowed:   # 10-09 (cc): learned weights may only REMOVE a trade
             d = self.autonomy.demote(self, d, lambda sg: swarm.evaluate(sg, g_now, self.consensus, self.p.jev_min,
                                                                          self.p.min_confluence, self.p.edge_ratio_min,
-                                                                         allow=self.reg['allow'])[0], swarm.ALPHA)
+                                                                         allow=self.reg['allow'],
+                                                                         collinear_penalty=self.p.collinear_penalty)[0],
+                                     swarm.ALPHA)
+        swarm_ok = d.allowed
+        scalp_only_block = bool(d.allowed and self.p.scalp_only and not self.observer)
+        if scalp_only_block:
+            d = replace(d, allowed=False, reason=f'ROUTER CHOP: scalp lane only · would be {d.side}')
         self.drift_probe = None
         self.blockers = []
-        swarm_ok = d.allowed
+        swarm_override = self.swarm_override_eligible(d, votes, diag)
         if d.allowed and not self.busy and not self.pos:
-            ok, why = self.churn_gate(d, diag)
+            ok, why = self.churn_gate(d, diag, swarm_override=swarm_override)
             if not ok:
                 d = replace(d, allowed=False, reason=why)
         self.candidate = None
-        stage = None
+        stage = 'SCALP_ONLY' if scalp_only_block else None
         if d.allowed and not self.busy and not self.pos:
             q = self.quality(d, diag)
             self.candidate = (self.clock(), q)
@@ -1553,7 +1767,9 @@ class Engine:
             self.funnel_sample(d, votes, diag, swarm_ok, stage)
         self.decision, self.votes, self.diag = d, votes, diag
         if d.allowed and not self.busy and not self.pos:
-            await self.execute(d.side, d, 'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
+            path = ('SWARM_OVERRIDE' if swarm_override else
+                    'MR' if self.lane(d) == 'MR' else (diag.get('path') or 'SWARM'))
+            await self.execute(d.side, d, path)
         elif not d.allowed and not self.busy and not self.pos and self.spec and not self.observer:
             await self.chop_scalp(d, f)
         return d
@@ -1588,10 +1804,11 @@ class Engine:
         p, gate = self.p, self.p.net_rr_min
         out = {}
 
-        def row(state, rr_lo, rr_hi, why):
-            feas = xf.rr_feasible(rr_hi, gate) if state in ('ENABLED', 'SHADOW') else None
+        def row(state, rr_lo, rr_hi, why, g=None):
+            g = gate if g is None else g                          # 11-08: SCALP passes its own floor
+            feas = xf.rr_feasible(rr_hi, g) if state in ('ENABLED', 'SHADOW') else None
             return {'state': state, 'rr_min': None if rr_lo is None else round(rr_lo, 3),
-                    'rr_max': None if rr_hi is None else round(rr_hi, 3), 'gate': gate, 'feasible': feas,
+                    'rr_max': None if rr_hi is None else round(rr_hi, 3), 'gate': g, 'feasible': feas,
                     'why': why}
 
         if p.max_loss_usdt is not None:                        # live: SL from the loss budget at min size
@@ -1618,11 +1835,22 @@ class Engine:
             out['MR'] = row('ENABLED', min(mr) if mr else None, max(mr) if mr else None,
                             f'TP {p.mr_tp_fixed} % / SL {p.mr_sl_fixed} % (fixed) + fees' if p.mr_bracket == 'fixed'
                             else f'TP clamped [{p.mr_tp_min}, {p.mr_tp_max}] %, SL {p.mr_sl_pct} % + fees')
-        sc = self.bracket_plan('SCALP', {}).get('rr_net')
+        bs = self.bracket_plan('SCALP', {})                         # 11-08: effective bracket (SL floor, TP lift)
+        sc, sg = bs.get('rr_net'), self.scalp_rr_min()
         st = {'on': 'ENABLED', 'shadow': 'SHADOW'}.get(p.chop_scalper, 'OFF')
-        out['SCALP'] = {**row(st, sc, sc, f'chop_scalper={p.chop_scalper}; exempt from net RR (break-even win rate '
-                                          f'{1 / (1 + sc) * 100 if sc else 100:.0f}%), replay holdout < 0 bps'),
-                        'gate': None, 'feasible': True if st == 'ENABLED' else None}
+        if p.scalp_net_rr and sg:
+            out['SCALP'] = row(st, sc, sc, f'chop_scalper={p.chop_scalper}; TP {bs["tp_pct"]:g} % / SL '
+                                           f'{bs["sl_pct"]:g} % + fees vs net RR {sg:g} (break-even win rate '
+                                           f'{1 / (1 + sc) * 100 if sc else 100:.0f}%), replay holdout < 0 bps', sg)
+        else:
+            out['SCALP'] = {**row(st, sc, sc, f'chop_scalper={p.chop_scalper}; exempt from net RR (break-even win rate '
+                                              f'{1 / (1 + sc) * 100 if sc else 100:.0f}%), replay holdout < 0 bps'),
+                            'gate': None, 'feasible': True if st == 'ENABLED' else None}
+        ov = self.bracket_plan('SWARM_OVERRIDE', {}).get('rr_net')
+        ov_state = 'ENABLED' if p.mode == 'demo' and p.swarm_chop_override else 'OFF'
+        out['SWARM_OVERRIDE'] = row(ov_state, ov, ov,
+                                    f'demo-only; raw score >= {max(inv.SUPERMAJORITY, p.swarm_override_min_score):g}; '
+                                    f'net RR {ov:.2f}' if ov is not None else 'override bracket unavailable')
         if self.observer:
             for k in out:
                 out[k] = {**out[k], 'state': 'OBSERVER', 'feasible': None,
@@ -1670,8 +1898,18 @@ class Engine:
         f = self.features if f is None else f
         f, p = f or {}, self.p
         atr_pct, trail = f.get('atr_pct'), None
-        if path == 'SCALP':
-            tp, sl, src = p.scalp_tp_pct, p.scalp_sl_pct, 'SCALP'
+        if path == 'SWARM_OVERRIDE':
+            tp = p.swarm_override_tp_pct
+            sl = min(p.swarm_override_sl_pct, p.swarm_override_sl_max_pct)
+            src = 'SWARM_OVERRIDE'
+            prof = replace(p, tp_pct=tp, sl_pct=sl, tp1_frac=1.0)
+        elif path == 'SCALP':
+            tp, sl, src = p.scalp_tp_pct, max(p.scalp_sl_pct, p.scalp_sl_min_pct), 'SCALP'
+            a15 = f.get('atr15_pct')
+            if p.scalp_tp_mode == 'atr' and a15:                        # 11-09: reachable TP = mult x ATR 15 m, clamped
+                tp = min(p.scalp_tp_max_pct, max(p.scalp_tp_min_pct, p.scalp_tp_atr_mult * a15))
+            if p.scalp_net_rr and p.scalp_net_rr_min:                   # 11-08: TP lifted to clear net RR 1.35
+                tp = max(tp, self.scalp_min_tp(sl, route))
             prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
         elif path == 'MR':
             dev = abs(f.get('vwap_dev_pct') or 0.0) or p.mr_tp_pct
@@ -1722,11 +1960,17 @@ class Engine:
 
     def kelly(self) -> dict:
         """Kelly on this symbol's settled trades (net PnL): f* = p - (1 - p) / b, b = avg win / avg loss."""
-        rows = [float(r['pnl']) for r in self.all_rows
-                if r.get('symbol', self.p.symbol) == self.p.symbol and r.get('pnl') is not None]
+        return self.kelly_of([float(r['pnl']) for r in self.all_rows
+                              if r.get('symbol', self.p.symbol) == self.p.symbol and r.get('pnl') is not None])
+
+    def kelly_of(self, rows: list) -> dict:
+        """The Kelly statistics of a list of net results (real ledger rows, or the NO EDGE shadow path's virtual ones)."""
+        window = self.p.kelly_window or None
+        if window:
+            rows = rows[-window:]
         n, wins, losses = len(rows), [x for x in rows if x > 0], [-x for x in rows if x <= 0]
         out = {'n': n, 'min_n': self.p.kelly_min_trades, 'lambda': self.p.kelly_lambda, 'p': None, 'b': None,
-               'f_star': None, 'f': None, 'state': 'SAMPLE'}
+               'f_star': None, 'f': None, 'state': 'SAMPLE', 'window': window}
         if n < self.p.kelly_min_trades or not wins:
             out['state'] = 'SAMPLE' if n < self.p.kelly_min_trades else 'NO EDGE'
             if wins == [] and n >= self.p.kelly_min_trades:
@@ -1738,6 +1982,143 @@ class Engine:
         out.update(p=pw, b=None if b == float('inf') else b, f_star=f_star, f=self.p.kelly_lambda * f_star,
                    state='EDGE' if f_star > 0 else 'NO EDGE')
         return out
+
+    def entry_edge_block(self, path: str, tag: str) -> Optional[str]:
+        """11-09: reason an AUTO entry must not be sent at all, else None.
+        1. Kelly state NO EDGE (f* <= 0 on the settled window): the old fallback traded the minimum size on negative
+           expectancy. SAMPLE (< kelly_min_trades) is UNKNOWN, not zero edge: it stays open so the window fills.
+           The block lifts only when the SHADOW path (virtual trades, edge_shadow_* in Profile) shows Kelly EDGE.
+        2. JEV path whose RAW swarm score is under the 0.768 quorum (score padded by jev/10): refused; an unknown raw
+           score on the JEV path cannot be shown to clear the quorum, so it is refused too."""
+        if tag != 'AUTO':
+            return None
+        p = self.p
+        if p.kelly and p.kelly_no_edge_gate and p.max_loss_usdt is None:
+            k = self.kelly()
+            fmt3 = lambda v, spec: '—' if v is None else format(v, spec)
+            if k['state'] == 'NO EDGE' or (k.get('f_star') is not None and k['f_star'] <= 0):
+                st, sh = self.edge_shadow, (self.edge_shadow_view() if p.edge_shadow else None)
+                if sh is not None and sh['state'] == 'EDGE':
+                    if not st['released']:
+                        st['released'] = True
+                        self.event(f'KELLY NO EDGE lifted by the shadow path: {sh["n"]} virtual trades, f* '
+                                   f'{fmt3(sh["f_star"], "+.3f")} (real f* {fmt3(k.get("f_star"), "+.3f")}) -> '
+                                   f'entries at the minimum size until the real window recovers')
+                else:
+                    if st['released']:
+                        st['released'] = False
+                        self.event(f'KELLY NO EDGE back: shadow f* {fmt3(sh and sh["f_star"], "+.3f")} over '
+                                   f'{sh["n"] if sh else 0} virtual trades')
+                    more = '' if sh is None else (f'; shadow path {sh["n"]}/{sh["min_n"]} virtual trades, f* '
+                                                  f'{fmt3(sh["f_star"], "+.3f")}')
+                    return (f'KELLY NO EDGE f* {fmt3(k.get("f_star"), "+.3f")} over {k["n"]} trades '
+                            f'(p {fmt3(k.get("p"), ".2f")}, b {fmt3(k.get("b"), ".2f")}) -> no entry, no minimum-size '
+                            f'fallback{more}')
+            else:
+                self.edge_shadow['released'] = False
+        if p.raw_quorum_gate and jev_lift(path, (self.diag or {}).get('consensus')) is not False:
+            raw = (self.diag or {}).get('consensus')
+            return (f'RAW QUORUM {"—" if raw is None else f"{raw * 100:.1f}%"} < {inv.SUPERMAJORITY * 100:.1f}% '
+                    f'(JEV lift refused)')
+        return None
+
+    # ------------------------------------------------------------------ NO EDGE shadow path (11-09)
+    def _edge_shadow_load(self) -> list:
+        """Settled virtual results of this symbol from engine_orders.jsonl (a restart keeps the evidence)."""
+        out = []
+        try:
+            with open(self.ledger.parent / 'engine_orders.jsonl', encoding='utf-8') as fh:
+                for line in fh:
+                    if 'SHADOW_EDGE_CLOSE' not in line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if r.get('symbol') == self.p.symbol and r.get('net_pct') is not None:
+                        out.append(float(r['net_pct']))
+        except OSError:
+            pass
+        return out[-200:]
+
+    def edge_shadow_rows(self) -> list:
+        st = self.edge_shadow
+        if st['pnls'] is None:
+            st['pnls'] = self._edge_shadow_load()
+        return st['pnls']
+
+    def edge_shadow_view(self) -> dict:
+        """Kelly statistics of the virtual trades + the open one, for the gate and the snapshot."""
+        v = self.edge_shadow['pos']
+        return {**self.kelly_of(self.edge_shadow_rows()),
+                'open': None if v is None else {k: v[k] for k in ('side', 'state', 'quote', 'tp_pct', 'sl_pct')}}
+
+    def edge_shadow_arm(self, side: str, path: str) -> None:
+        """A NO EDGE refusal opens ONE virtual trade, never an order: the maker quote the real entry would have joined
+        and the same TP / SL bracket. It fills only when the tape trades THROUGH the quote (queue not assumed won),
+        exits at TP only when the tape trades through it, at the stop with slip, or at the touch after the hold."""
+        st, p, f = self.edge_shadow, self.p, self.features or {}
+        if not p.edge_shadow or st['pos'] is not None or self.clock() < st['next'] or not self.spec:
+            return
+        px = self.gtx_price(side, f)
+        bp = self.bracket_plan(path, f) if px else None
+        if not bp or not bp.get('tp_pct') or not bp.get('sl_pct'):
+            return
+        st['next'] = self.clock() + p.edge_shadow_every_s
+        st['pos'] = {'side': side, 'path': path, 'quote': px, 't': self.clock(), 'state': 'PENDING',
+                     'tp_pct': bp['tp_pct'], 'sl_pct': bp['sl_pct'], 'mfe': 0.0}
+        self._shadow_row({'outcome': 'SHADOW_EDGE_OPEN', 'side': side, 'path': path, 'quote': px,
+                          'tp_pct': bp['tp_pct'], 'sl_pct': bp['sl_pct'], 'why': 'KELLY NO EDGE'})
+
+    def edge_shadow_step(self, f: dict) -> None:
+        """Advance the virtual trade on this tick (cheap when none is open)."""
+        st, p = self.edge_shadow, self.p
+        v = st['pos']
+        px = f.get('price')
+        if v is None or not px:
+            return
+        now, q, d = self.clock(), v['quote'], (1 if v['side'] == 'BUY' else -1)
+        tick = self.spec['tick'] if self.spec else 0.0
+        if v['state'] == 'PENDING':
+            if d * (px - q) <= -tick - 1e-12:                    # BUY: tape traded below our bid; SELL: above our ask
+                v.update(state='OPEN', t_fill=now)
+            elif now - v['t'] >= p.edge_shadow_ttl_s:
+                st['pos'] = None
+                self._shadow_row({'outcome': 'SHADOW_EDGE_NOFILL', 'side': v['side'], 'path': v['path'], 'quote': q})
+            return
+        fee_rt = 2 * p.maker_bps / 100.0                         # maker in + maker out (TP / time exit)
+        tp_px, sl_px = q * (1 + d * v['tp_pct'] / 100.0), q * (1 - d * v['sl_pct'] / 100.0)
+        v['mfe'] = max(v['mfe'], d * (px / q - 1) * 100.0)
+        if d * (px - tp_px) >= tick - 1e-12:
+            why, net = 'TP', v['tp_pct'] - fee_rt
+        elif d * (px - sl_px) <= 0:                              # stop: taker + slip, at the print when it gapped past
+            exit_px = px if d * (px - sl_px) < 0 else sl_px
+            why = 'SL'
+            net = d * (exit_px / q - 1) * 100.0 - (p.maker_bps + p.taker_bps + p.slip_bps) / 100.0
+        elif now - v['t_fill'] >= p.edge_shadow_hold_s:
+            exit_px = (f.get('bid') if d > 0 else f.get('ask')) or px
+            why, net = 'TIME', d * (exit_px / q - 1) * 100.0 - fee_rt
+        else:
+            return
+        rows = self.edge_shadow_rows()
+        rows.append(round(net, 5))
+        del rows[:-200]
+        st['pos'] = None
+        k = self.kelly_of(rows)
+        self._shadow_row({'outcome': 'SHADOW_EDGE_CLOSE', 'side': v['side'], 'path': v['path'], 'quote': q,
+                          'why': why, 'net_pct': round(net, 5), 'mfe_pct': round(v['mfe'], 4),
+                          'hold_s': round(now - v['t_fill'], 1), 'shadow_n': k['n'], 'shadow_f_star': k['f_star']})
+        fs = k['f_star']
+        self.event(f'SHADOW-EDGE {v["side"]} {why} {net:+.3f}% net · {k["n"]} virtual trades, {k["state"]}'
+                   + ('' if fs is None else f' f* {fs:+.3f}'))
+
+    def tox_check(self, side: str) -> tuple:
+        """Return the passive quote action from tape and own-fill markouts."""
+        markouts = getattr(self.feed, 'markouts', None)
+        result = tg.decide(side, self.feed.vpin_now(), markouts.view(side, 5.0) if markouts else None,
+                           list(self.own_mk5), self.tox_policy)
+        self.tox_last = (side, *result)
+        return result
 
     def kelly_qty(self, price: float, prof: Profile, route: str = 'gtx') -> Optional[float]:
         """Quarter-Kelly size: money at the stop = min(cap, f x equity). None -> exchange minimum / profile qty."""
@@ -1786,6 +2167,50 @@ class Engine:
                        f'{self.p.vpin_pause_s:g}s, {side or "—"} vẫn được vào')
         self.toxic_until, self.toxic_side, self.toxic_vpin = now + self.p.vpin_pause_s, side, v
 
+    def regime_crash(self) -> bool:
+        return (self.p.regime_gate == 'on' and self.regime_state is not None
+                and self.regime_state.state == rc.CRASH)
+
+    def regime_check(self, path: str, tag: str, decision: Optional[Decision] = None) -> tuple:
+        """Return (refusal, policy) for AUTO entries; shadow logs the gate without blocking or resizing."""
+        if tag != 'AUTO' or self.p.regime_gate not in ('shadow', 'on'):
+            return None, None
+        state = self.regime_state
+        st = state.state if state is not None else rc.UNKNOWN
+        reason = state.reason if state is not None else 'no classifier update yet'
+        if st not in rc.STATES:
+            reason, st = f'INVALID_INPUT: unknown regime state {st!r}', rc.UNKNOWN
+        pol = rc.policy_for(st)
+        regime_label = st
+        if st == rc.CRASH:
+            why = f'{st}: no directional entries ({reason})'
+        elif path == 'SWARM_OVERRIDE':
+            # Known non-crash regimes allow the override past style compatibility. During a clean cold-start
+            # WARMUP only, require the same full demo quorum / RUNE agreement checks used by the override router.
+            if st != rc.UNKNOWN:
+                why = None
+            elif (self.p.mode == 'demo' and state is not None and reason == 'WARMUP'
+                  and self.swarm_override_eligible(decision or self.decision, self.votes, self.diag or {})):
+                why, pol = None, None                # UNKNOWN's zero-size policy must not erase this qualified probe
+                regime_label = 'WARMUP_OVERRIDE'
+            else:
+                why = f'{st}: no directional entries ({reason})'
+        elif st == rc.UNKNOWN:
+            why = f'{st}: no directional entries ({reason})'
+        elif st == rc.JUMPY and path == 'SCALP':
+            why = 'JUMPY: micro-scalping frozen'
+        else:
+            style = rc.MEAN_REVERSION if path in ('MR', 'SCALP') else rc.TREND
+            why = None if style in pol.styles else f'{st}: {style} entries off'
+        if getattr(self, '_xm', None) is not None:
+            self._xm['regime_gate'] = regime_label if why is None else f'{st}: refuse'
+        if self.p.regime_gate == 'shadow':
+            if why and self.clock() - self._regime_evt_t >= 60.0:
+                self._regime_evt_t = self.clock()
+                self.event(f'(shadow) REGIME GATE would refuse {path}: {why}')
+            return None, None
+        return why, pol
+
     def toxic_blocks(self, side: str) -> bool:
         return (self.p.vpin_gate and self.clock() < self.toxic_until and self.toxic_side is not None
                 and side != self.toxic_side)
@@ -1802,6 +2227,8 @@ class Engine:
             label = 'ORDER'
         elif self.observer:
             label = 'OBSERVER'
+        elif self.p.scalp_only:
+            label = 'SCALP ONLY (router CHOP)'
         elif self.p.vfr_gate and vv['frozen'] and vv['vfr'] is not None:
             label = f'FROZEN VFR {vv["vfr"]:.1f}'
         elif self.p.drift_lock and (self.reg or {}).get('name') == 'DRIFT':
@@ -1848,7 +2275,7 @@ class Engine:
             return f'CHOP LOCKED KER {k:.2f} < {c.ker_lock:.2f}'
         return f'CHOP LOCKED KER {k:.2f} < {c.ker_unlock:.2f} (hysteresis)'
 
-    def churn_checks(self, d: Decision, diag: dict) -> tuple:
+    def churn_checks(self, d: Decision, diag: dict, swarm_override: bool = False) -> tuple:
         """Every evaluable churn gate for decision `d` (no early return) -> ([(gate, why), ...], drift_probe).
         Order = the hot-path priority; the first entry is what churn_gate returns.  Read-only (10-08v funnel)."""
         score, edge = self.conviction(d, diag), diag.get('edge_bps') or 0.0
@@ -1876,7 +2303,8 @@ class Engine:
             else:
                 out.append(('DRIFT', f'DRIFT LOCK: {reg.get("label", "DRIFT")} · {reg.get("why", "")}'))
         self.ker_adapt = None
-        if lane == 'TREND' and self.p.ker_gate and self.chop_locked:
+        if lane == 'TREND' and self.p.ker_gate and self.chop_locked and not (
+                swarm_override and self.p.mode == 'demo' and self.p.swarm_chop_override):
             ad = self.adaptive_ker(d, diag)
             if ad['unlock'] and self.p.adaptive_ker == 'on':
                 self.ker_adapt = ad                               # 10-08x: lock lowered for super-conviction
@@ -1914,7 +2342,8 @@ class Engine:
             if sv is None or sv < self.p.min_velocity_pct:
                 out.append(('VELOCITY', f'VELOCITY {d.side} 15s {"—" if vel is None else f"{vel:+.3f}%"} '
                                         f'< {self.p.min_velocity_pct}% cùng chiều'))
-        if score < self.p.min_score:
+        if score < self.p.min_score and not (swarm_override and score >= max(
+                inv.SUPERMAJORITY, self.p.swarm_override_min_score) - 1e-12):
             out.append(('SCORE', f'CHURN score {score * 100:.1f}% < {self.p.min_score * 100:.1f}%'))
         if edge < self.p.min_edge_bps:
             out.append(('EDGE', f'CHURN edge {edge:.1f} bps < {self.p.min_edge_bps:g} bps '
@@ -1952,12 +2381,13 @@ class Engine:
         return f'CVD SHIELD no {side}: ' + ' · '.join(f'{n} {v / 1e3:+.0f}k vs {"-" if sg > 0 else "+"}{lim / 1e3:.0f}k'
                                                        for n, v, lim in bad)
 
-    def align3_check(self, side: str) -> Optional[str]:
+    def align3_check(self, side: str, force: bool = False, f: Optional[dict] = None) -> Optional[str]:
         """10-08z2 three layers with the trade: CVD 3 m and CVD 60 s (macro), CVD 15 s and OFI L10 (micro), OBI
-        (book).  -> reason of the first layer that disagrees, else None.  A missing feature counts as disagreement."""
-        if self.p.align3 not in ('shadow', 'on') or side not in ('BUY', 'SELL'):
+        (book).  -> reason of the first layer that disagrees, else None.  A missing feature counts as disagreement.
+        11-08: force=True (the 'on' scalp lock) checks even when align3 is 'off'/'shadow'; f = that tick's features."""
+        if (not force and self.p.align3 not in ('shadow', 'on')) or side not in ('BUY', 'SELL'):
             return None
-        f, sg = self.features or {}, (1 if side == 'BUY' else -1)
+        f, sg = (self.features if f is None else f) or {}, (1 if side == 'BUY' else -1)
         for name in ('cvd_3m', 'cvd_60s', 'cvd_15s', 'ofi_10s', 'obi'):
             v = f.get(name)
             if v is None or sg * v <= 0:
@@ -1982,10 +2412,11 @@ class Engine:
                                          f'{vel / 1e3:+.1f}k/s · confluence {conf}/3)')
         return out
 
-    def churn_gate(self, d: Decision, diag: dict) -> tuple:
+    def churn_gate(self, d: Decision, diag: dict, swarm_override: bool = False) -> tuple:
         """Anti-churn (2026-10-07f): auto entries need score >= min_score AND expected edge >= min_edge_bps.
         10-08v: every blocker is evaluated (self.blockers); the first one is returned, as before."""
-        out, probe = self.churn_checks(d, diag)
+        override = (swarm_override and self.p.mode == 'demo' and self.p.swarm_chop_override)
+        out, probe = self.churn_checks(d, diag, swarm_override=override)
         self.blockers = [k for k, _ in out]
         ad = self.ker_adapt
         if ad and self.p.adaptive_ker == 'shadow' and self.clock() >= getattr(self, 'ker_shadow_next', 0.0):
@@ -2045,6 +2476,12 @@ class Engine:
         if res.get('ok'):
             q = float(res.get('qty') or 0)
             outcome = 'FILLED' if q >= (xm.get('qty_req') or 0) - 1e-12 else 'PARTIAL'
+        elif 'REGIME GATE' in err:
+            outcome = 'REGIME_REFUSED'
+        elif 'TOX HOLD' in err:
+            outcome = 'TOX_HOLD'
+        elif 'TOX PULL' in err:
+            outcome = 'TOX_PULL'
         elif 't_send' not in xm:
             outcome = 'REFUSED'
         elif 'post-only' in err:
@@ -2059,6 +2496,7 @@ class Engine:
         row = {'t': self.clock(), 'schema': 1, 'mode': self.p.mode, 'venue': self.venue.label, 'symbol': self.p.symbol,
                'side': xm.get('side'), 'path': xm.get('path'), 'tag': xm.get('tag'), 'route': xm.get('route'),
                'outcome': outcome, 'qty_req': xm.get('qty_req'), 'qty_filled': float(res.get('qty') or 0) or None,
+               'regime_gate': xm.get('regime_gate'),
                'px_first': xm.get('px_first'), 'px_last': xm.get('px_last'), 'reprices': xm.get('reprices'),
                'touch_last': xm.get('touch_last'), 'touch_qty_last': xm.get('touch_qty_last'),
                'post_rejects': xm.get('post_rejects', 0), 'signal_mid': xm.get('signal_mid'),
@@ -2066,9 +2504,10 @@ class Engine:
                'decide_to_send_ms': ms('t0', 't_send'), 'ack_ms': xm.get('ack_ms'),
                'fill_wait_ms': ms('t_ack', 't_fill'), 'total_ms': ms('t0', 't_done'),
                'score': decision.score, 'consensus': (self.diag or {}).get('consensus'),
+               'jev_lift': jev_lift(xm.get('path'), (self.diag or {}).get('consensus')),
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
-               'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'),
+                'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
         try:
@@ -2086,11 +2525,23 @@ class Engine:
         if self.busy or self.pos or self.slot_block():
             why = self.slot_block()
             return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
+        why_edge = self.entry_edge_block(path, tag)                    # 11-09: no edge / padded quorum -> no order
+        if why_edge:
+            if why_edge.startswith('KELLY NO EDGE'):
+                self.edge_shadow_arm(side, path)                       # probe with a virtual trade, no order
+            if self.clock() - getattr(self, '_edge_evt_t', -1e9) >= 60.0:
+                self._edge_evt_t = self.clock()
+                self.event(f'OKAPI refused {side} {path}: {why_edge}')
+            return {'ok': False, 'error': why_edge}
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
         xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag}
         try:
+            why_regime, rpol = self.regime_check(path, tag, decision)
+            if why_regime:
+                self.event(f'REGIME GATE refused {side} {path}: {why_regime}')
+                return {'ok': False, 'error': f'REGIME GATE: {why_regime}'}
             await self.refresh_book(0.0)
             f = {**self.feed.features(self.clock()), **{k: v for k, v in self.book().items() if v is not None}}
             xm.update(signal_mid=self.feed.price(), venue_mid=self.book().get('price'))
@@ -2098,8 +2549,38 @@ class Engine:
             if px is None:
                 return {'ok': False, 'error': 'no book'}
             route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
+            skew = 0
+            if route == 'gtx' and self.p.tox_guard in ('shadow', 'on'):
+                action, ticks, tox_why = self.tox_check(side)
+                xm['tox'] = None if action == tg.QUOTE else f'{action}: {tox_why}'
+                if action != tg.QUOTE and self.p.tox_guard == 'shadow':
+                    if self.clock() - self._tox_evt_t >= 60.0:
+                        self._tox_evt_t = self.clock()
+                        self.event(f'(shadow) TOX {action} {side}: {tox_why}')
+                elif action == tg.PULL:
+                    self.cooldown_until = max(self.cooldown_until, self.clock() + self.p.tox_hold_cooldown_s)
+                    self.event(f'TOX HOLD {side}: {tox_why} -> no passive quote, retry in '
+                               f'{self.p.tox_hold_cooldown_s:g}s')
+                    return {'ok': False, 'error': f'TOX HOLD: {tox_why}'}
+                elif action == tg.SKEW:
+                    skew = ticks
+                    px = round_tick(px - ticks * tick if side == 'BUY' else px + ticks * tick, tick,
+                                    'down' if side == 'BUY' else 'up')
+                    self.event(f'TOX SKEW {side}: {tox_why} -> quote {ticks} tick behind the touch at {fmt(px, tick)}')
             bp = self.bracket_plan(path, f, route)
             base = bp['profile']
+            if rpol is not None and base.max_loss_usdt is None and (
+                    rpol.stop_mult != 1.0 or rpol.tp_mult != 1.0):
+                new_sl = base.sl_pct * rpol.stop_mult
+                new_tp = base.tp_pct * rpol.tp_mult
+                if path == 'SCALP':                                 # 11-08: SIDEWAYS x0.75 stops at the floor
+                    new_sl = max(new_sl, self.p.scalp_sl_min_pct)
+                if path == 'SCALP' and self.p.scalp_net_rr:
+                    # Maker TP costs 0.04%; maker entry + taker stop + slip cost 0.08%.
+                    min_tp = self.scalp_min_tp(new_sl, route)       # (new_sl + 0.08) x scalp_rr_min() + 0.04
+                    new_tp = max(new_tp, min_tp)
+                base = replace(base, sl_pct=new_sl, tp_pct=new_tp)
+                bp.update(sl_pct=new_sl, tp_pct=new_tp, rr_gross=new_tp / new_sl if new_sl > 0 else None)
             touch = f.get('ask') if side == 'BUY' else f.get('bid')
             if path == 'MR':
                 px = self.mr_quote(side, f, px)
@@ -2115,7 +2596,7 @@ class Engine:
                 kq = floor_step(min(floor_q, ALT_SIZE[sym][2] / ref), step)
             if mult > 1.0:
                 kq = ceil_step(max(kq or base.qty or 0.0, self.min_qty(ref)) * mult, step)
-            boosted = tag == 'AUTO' and path != 'MR' and self.alt_boosted(decision, self.diag)
+            boosted = tag == 'AUTO' and path not in ('MR', 'SCALP') and self.alt_boosted(decision, self.diag)
             cap = self.alt_cap(ref, boosted)
             if boosted and cap and cap > (kq or 0.0):
                 kk = self.alt_kelly()
@@ -2125,7 +2606,7 @@ class Engine:
                            f' (Kelly {kk["n"]} lệnh, f {0 if kk["f"] is None else kk["f"]:.3f}, '
                            f'scale {kk["scale"]:.2f})')
                 kq = cap
-            superc = tag == 'AUTO' and path != 'MR' and self.super_conviction(decision, self.diag, f)
+            superc = tag == 'AUTO' and path not in ('MR', 'SCALP') and self.super_conviction(decision, self.diag, f)
             if superc:
                 tgt = floor_step(min(SUPER_SIZE[sym], ALT_SIZE[sym][2] / ref), step)
                 if tgt > (kq or 0.0):
@@ -2150,6 +2631,30 @@ class Engine:
             if probe_mult < 1.0:
                 kq = floor_step(max(kq or base.qty or 0.0, self.min_qty(ref)) * probe_mult, step)
                 kq = max(kq, self.min_qty(ref))                    # never below what the venue accepts
+            if rpol is not None and rpol.size_mult < 1.0:
+                q_regime = floor_step((kq or base.qty or self.min_qty(ref)) * rpol.size_mult, step)
+                minimum = self.min_qty(ref)
+                if q_regime < minimum - 1e-12:
+                    msg = (f'REGIME GATE: {rpol.state} size x{rpol.size_mult:g} = {fmt(q_regime, step)} '
+                           f'is below the venue minimum {fmt(minimum, step)}')
+                    self.event(f'OKAPI refused {side}: {msg}')
+                    return {'ok': False, 'error': msg}
+                kq = q_regime
+            sr_mult = None                                      # 11-08 owner: scalp size vs the 0.15 % stop floor
+            if path == 'SCALP' and self.p.scalp_floor_resize and base.max_loss_usdt is None:
+                raw = self.p.scalp_sl_pct * (rpol.stop_mult if rpol is not None else 1.0)   # stop without the floor
+                e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
+                lf = (e_in + self.p.taker_bps + self.p.slip_bps) / 100.0                 # plan() fees_pct
+                sr_mult = min(1.0, (raw + lf) / (base.sl_pct + lf))
+                if sr_mult < 1.0 - 1e-12:
+                    q_risk = floor_step((kq or base.qty or self.min_qty(ref)) * sr_mult, step)
+                    minimum = self.min_qty(ref)
+                    if q_risk < minimum - 1e-12:
+                        msg = (f'SCALP SIZE: stop {raw:.3f}% -> floor {base.sl_pct:.3f}% gives size x{sr_mult:.3f} = '
+                               f'{fmt(q_risk, step)}, below the venue minimum {fmt(minimum, step)}')
+                        self.event(f'OKAPI refused {side}: {msg}')
+                        return {'ok': False, 'error': msg}
+                    kq = q_risk
             mkpl = lambda q: plan(side, px if route == 'gtx' else touch, self.spec,
                                   replace(base, entry='gtx' if route == 'gtx' else 'market'),
                                   self.account.get('available'), qty=q)
@@ -2158,8 +2663,13 @@ class Engine:
                 self.event(f'OKAPI refused {side}: {pl["why"]}')
                 return {'ok': False, 'error': pl['why']}
             rr = self.plan_rr(pl, route)
-            if tag == 'AUTO' and path != 'SCALP' and self.p.net_rr_min and (rr is None or rr < self.p.net_rr_min):
-                msg = (f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
+            bp.update(tp_pct=pl['tp_pct'], sl_pct=pl['sl_pct'],
+                      rr_gross=pl['tp_pct'] / pl['sl_pct'] if pl['sl_pct'] > 0 else None,
+                      rr_net=rr, be_wr=1.0 / (1.0 + rr) if rr is not None and rr > -1.0 else None)
+            rr_gate = self.scalp_rr_min() if path == 'SCALP' else self.p.net_rr_min    # 11-08: SCALP floor 1.35
+            if (tag == 'AUTO' and (path != 'SCALP' or self.p.scalp_net_rr) and rr_gate
+                    and (rr is None or rr < rr_gate - 1e-12)):
+                msg = (f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {rr_gate:g} '
                        f'(TP {pl["tp_pct"]:.3f}% / SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}%)')
                 self.event(f'OKAPI refused {side}: {msg}')
                 return {'ok': False, 'error': msg}
@@ -2197,7 +2707,7 @@ class Engine:
             self.authority.consume(token, intent)      # VESKA spends the one-use token right before routing
             cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
             posted_ms = int(self.clock() * 1000)       # entry fill can land any time in the GTX window
-            px0, reprices, toxic_abort = px, 0, None
+            px0, reprices, toxic_abort, tox_abort = px, 0, None, None
             if route == 'ioc':
                 d = 1 if side == 'BUY' else -1
                 lim = round_tick(touch * (1 + d * self.p.ioc_max_slip_pct / 100.0), tick, 'up' if d > 0 else 'down')
@@ -2283,11 +2793,20 @@ class Engine:
                         self.mark_toxic(v, vs)                       # toxic flow AGAINST our quote: pull it now
                         toxic_abort = v
                         break
+                    if self.p.tox_guard == 'on':
+                        action_r, _, tox_why = self.tox_check(side)
+                        if action_r == tg.PULL:
+                            tox_abort = tox_why
+                            xm['tox'] = f'PULL: {tox_why}'
+                            break
                     if peg and time.monotonic() - last_post >= self.p.peg_interval_s:
                         # Dynamic pegged maker: follow the touch while the book walks away, never cross it,
                         # never further than peg_max_drift_pct from the first quote (bounded chase).
                         await self.refresh_book(0.0)
                         new = self.gtx_price(side, self.book())
+                        if new is not None and skew:
+                            new = round_tick(new - skew * tick if side == 'BUY' else new + skew * tick, tick,
+                                             'down' if side == 'BUY' else 'up')
                         d = 1 if side == 'BUY' else -1
                         if (new is not None and d * (new - px) > 0
                                 and abs(new / px0 - 1) * 100 <= self.p.peg_max_drift_pct):
@@ -2326,6 +2845,9 @@ class Engine:
             if filled <= 0:
                 self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
                 self.phase = 'SCANNING'
+                if tox_abort is not None:
+                    self.event(f'GTX {side} {pl["qty_str"]} @ {fmt(px, tick)} cancelled: TOX PULL {tox_abort}')
+                    return {'ok': False, 'error': f'TOX PULL: {tox_abort}', 'latency_ms': ms, 'route': 'GTX'}
                 if route == 'ioc':
                     self.event(f'IOC {side} {pl["qty_str"]} limit {fmt(px, tick)} found no liquidity inside '
                                f'{self.p.ioc_max_slip_pct}% -> expired, rescan in {self.p.unfilled_cooldown_s:g}s')
@@ -2362,7 +2884,9 @@ class Engine:
                         'be_locked': False, 'mbe_locked': False, 'trail_on': False, 'peak': fill, 'mfe_pct': 0.0,
                         'adverse_usd': 0.0, 'regime': (self.reg or {}).get('name'),
                         'trigger_usd': abs(f.get('cvd_exit_win') or 0.0), 'flow_limit': self.flow_limit(f),
-                        'edge_bps': (self.diag or {}).get('edge_bps'), 'ker': f.get('ker'),
+                        'edge_bps': (self.diag or {}).get('edge_bps'),
+                        'consensus': (self.diag or {}).get('consensus'),
+                        'jev_lift': jev_lift(path, (self.diag or {}).get('consensus')), 'ker': f.get('ker'),
                         'atr_pct': bp['atr_pct'], 'atr_trail_pct': bp['trail_pct'], 'bracket_src': bp['src'],
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
@@ -2374,7 +2898,8 @@ class Engine:
                         **(self.autonomy.entry_tags(self) if self.autonomy is not None else {}),
                         'align3': (self.align3_last or 'OK') if self.p.align3 in ('shadow', 'on') else None,
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
-                        **({'eject_s': self.p.scalp_be_s, 'eject_mfe': 1e9} if path == 'SCALP' else {}),
+                        **({'eject_s': self.p.scalp_be_s, 'eject_hard_s': self.p.scalp_hard_s,
+                            'eject_mfe': 1e9, 'scalp_risk_mult': sr_mult} if path == 'SCALP' else {}),
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'hold_s': hold_s or self.p.max_hold_s, 'latency_ms': ms,
@@ -2527,7 +3052,7 @@ class Engine:
     # ------------------------------------------------------------------ MARIN
     def be_price(self, p: dict) -> float:
         d = 1 if p['side'] == 'BUY' else -1
-        off = self.cost.stop_out_pct() + self.p.be_offset_pct      # maker in + taker stop + slip + 0.02 %
+        off = self.cost.stop_out_pct() + self.p.be_offset_hard_pct  # maker in + taker stop + slip + 0.02 %
         return round_tick(p['entry'] * (1 + d * off / 100.0), self.spec['tick'], 'up' if d > 0 else 'down')
 
     async def move_stop(self, price: float, kind: str) -> bool:
@@ -2630,9 +3155,9 @@ class Engine:
                           'up' if d > 0 else 'down')
 
     def soft_be_price(self, p: dict) -> float:
-        """Maker-exit breakeven: entry + maker in + maker out + offset (+0.06 % on VIP0)."""
+        """Maker-exit breakeven: entry + maker in + maker out + offset (+0.12 % on VIP0 since 11-09: 0.04 + 0.08)."""
         d = 1 if p['side'] == 'BUY' else -1
-        off = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0 + self.p.be_offset_pct
+        off = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0 + self.be_offset_eff()
         return round_tick(p['entry'] * (1 + d * off / 100.0), self.spec['tick'], 'up' if d > 0 else 'down')
 
     def shield_price(self, p: dict) -> float:
@@ -2642,6 +3167,27 @@ class Engine:
                            'up' if d > 0 else 'down')
         be = self.soft_be_price(p)
         return max(fixed, be) if d > 0 else min(fixed, be)
+
+    def be_offset_eff(self) -> float:
+        """11-09: SOFT BE offset, never below the fee-aware floor of this coin (0.08 %, SOL 0.065 %): a configured
+        value under it (or a negative one) cannot bring back a breakeven target that loses money once the maker exit
+        escalates to a taker order."""
+        return max(self.p.be_offset_pct, BE_OFFSET_FLOOR.get(self.p.symbol, BE_OFFSET_FLOOR_DEFAULT))
+
+    def be_level_pct(self, p: dict, soft: bool = True) -> float:
+        """Favourable % at which the BE exit level sits: shield_price (soft maker exit) or be_price (hard stop)."""
+        d = 1 if p['side'] == 'BUY' else -1
+        px = self.shield_price(p) if soft else self.be_price(p)
+        return d * (px / p['entry'] - 1.0) * 100.0
+
+    def be_arm_pct(self, p: dict, soft: bool = True) -> float:
+        """MFE % needed before a BE tier may be chosen: be_trigger_pct, and never below the level it would lock."""
+        return max(self.p.be_trigger_pct, self.be_level_pct(p, soft))
+
+    def fee_hurdle_covered(self, p: dict, soft: bool = True) -> bool:
+        """True once the best excursion reached the BE level, i.e. the fee hurdle is paid: the only time be_locked
+        may be declared (11-09: a soft target chosen below it was a fake breakeven)."""
+        return p['mfe_pct'] >= self.be_level_pct(p, soft) - 1e-9
 
     def plock_price(self, p: dict) -> float:
         d = 1 if p['side'] == 'BUY' else -1
@@ -2746,14 +3292,18 @@ class Engine:
             k = f'{h:g}s'
             if k not in mk and age >= h:
                 mk[k] = [round(fav * 100, 3), round(age, 2)]    # [bps with the trade, actual age at sample]
+                if k == '5s':
+                    self.own_mk5.append(mk[k][0])
         if p.get('exiting'):
             x = p['exiting']
             if self.soft_exit_due(p, x, mark):
                 await self.escalate_exit(p, x, mark)
                 return
-            if x.get('floor') and self.clock() - p['opened'] >= self.p.eject_hard_s:
+            hard_eject_s = p.get('eject_hard_s', self.p.eject_hard_s)
+            if (x.get('floor') and self.clock() - p['opened'] >= hard_eject_s
+                    and self.eject_escalate_ok(p, f, fav, hard_eject_s)):
                 x.update(floor=None, reason='EJECT')
-                self.event(f'MARIN EJECT escalate: BE order unfilled after {self.p.eject_hard_s:.0f}s -> '
+                self.event(f'MARIN EJECT escalate: BE order unfilled after {hard_eject_s:.0f}s -> '
                            f'maker at the touch ({fav:+.3f}%, hard SL {p["sl"]:g} stays)')
             await self.work_soft_exit()
             return
@@ -2876,6 +3426,45 @@ class Engine:
                 and now - p['opened'] >= self.p.eject_fast_s and p['mfe_pct'] < self.p.eject_fast_mfe_pct
                 and vel is not None and abs(vel) < self.p.eject_fast_vel_pct)
 
+    def adverse_momentum(self, p: dict, f: dict) -> Optional[str]:
+        """11-09: confirmed momentum against the position -> reason, else None: CVD velocity 10 s <= -early_inval_vel_usd,
+        OFI L10 <= -early_inval_ofi, price velocity 15 s <= -eject_fast_vel_pct (all signed with the trade), or toxic
+        VPIN. A missing feature is unknown, never adverse."""
+        d = 1 if p['side'] == 'BUY' else -1
+        vel = (f.get('cvd_vel_10s') or 0.0) * d
+        if vel <= -self.p.early_inval_vel_usd:
+            return f'CVD {vel / 1e3:+.0f}k/s against'
+        ofi = f.get('ofi_10s')
+        if ofi is not None and ofi * d <= -self.p.early_inval_ofi:
+            return f'OFI {ofi:+.2f} against'
+        pv = f.get('px_vel_15s')
+        if pv is not None and d * pv <= -self.p.eject_fast_vel_pct:
+            return f'15 s velocity {pv:+.3f}% against'
+        if (getattr(self, 'tox', None) or {}).get('toxic'):
+            return 'toxic flow'
+        return None
+
+    def eject_escalate_ok(self, p: dict, f: dict, fav: float, hard_s: float) -> bool:
+        """11-09: may the EJECT-BE scratch order drop its floor and exit at the touch? Not while gross is below the fee
+        hurdle (entry fee + maker exit: a touch exit there books a net loss) unless adverse momentum / toxic flow is
+        confirmed; after eject_defer_max_s past hard_s the old behaviour returns, so the time stop stays bounded."""
+        if not self.p.eject_guard:
+            return True
+        hurdle = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0
+        if fav >= hurdle or self.clock() - p['opened'] >= hard_s + self.p.eject_defer_max_s:
+            return True
+        why = self.adverse_momentum(p, f)
+        if why:
+            if not p.get('eject_adverse'):
+                p['eject_adverse'] = why
+                self.event(f'MARIN EJECT escalate on {why} ({fav:+.3f}% < fee hurdle {hurdle:.3f}%)')
+            return True
+        if not p.get('eject_deferred'):
+            p['eject_deferred'] = round(self.clock() - p['opened'], 1)
+            self.event(f'MARIN EJECT held: {fav:+.3f}% < fee hurdle {hurdle:.3f}%, no adverse momentum -> scratch order '
+                       f'stays up to {self.p.eject_defer_max_s:.0f}s more (hard SL {p["sl"]:g} stays)')
+        return False
+
     def eject_floor(self, p: dict) -> float:
         """Fee-true scratch: entry +/- (entry fee + maker exit fee) -> net PnL ~ 0 when the reduce order fills."""
         d = 1 if p['side'] == 'BUY' else -1
@@ -2947,7 +3536,7 @@ class Engine:
         cands = []
         if p['mfe_pct'] >= self.p.microbe_trigger_pct:
             cands.append((self.mbe_price(p), 'LOCK'))
-        if p['mfe_pct'] >= self.p.be_trigger_pct:
+        if p['mfe_pct'] >= self.be_arm_pct(p, soft=True):           # 11-09: MFE must have paid the level it locks
             cands.append((self.shield_price(p), 'BE'))
         if p['mfe_pct'] >= self.p.lock_trigger_pct:
             cands.append((self.plock_price(p), 'PROFIT'))
@@ -2971,15 +3560,15 @@ class Engine:
                     self.event({'LOCK': f'MARIN T1 MICRO-LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
                                         f'{self.p.microbe_lock_pct}%, loss <= fees)',
                                 'BE': f'MARIN T2 FEE-SHIELD at {fav:+.3f}% -> exit level {px:g} (>= entry +'
-                                      f'{self.p.fee_shield_pct}% and entry + fees + {self.p.be_offset_pct}%)',
+                                      f'{self.p.fee_shield_pct}% and entry + fees + {self.be_offset_eff():g}%)',
                                 'PROFIT': f'MARIN T2b PROFIT LOCK at {fav:+.3f}% -> exit level {px:g} (entry +'
                                           f'{self.p.lock_pct}%)',
                                 'TRAIL': f'MARIN T4 TRAIL {p.get("trail_gap")}% behind peak {p["peak"]:g} -> {px:g}',
                                 'PRESTOP': f'MARIN PRE-STOP MAKER exit level {px:g} = exchange stop {p["sl"]:g} '
                                            f'+ {self.p.pre_stop_gap_pct}% (maker before the taker stop)'}[k])
                 level, kind = px, k
-        if kind in ('BE', 'PROFIT', 'TRAIL', 'PRESTOP'):
-            p['be_locked'] = True
+        if kind in ('BE', 'PROFIT', 'TRAIL', 'PRESTOP') and self.fee_hurdle_covered(p, soft=True):
+            p['be_locked'] = True                                   # 11-09: only once MFE has paid the fee hurdle
         if kind in ('PROFIT', 'TRAIL'):
             p['plock'] = True
         if kind == 'LOCK':
@@ -2995,7 +3584,7 @@ class Engine:
         target, kind = None, None
         if p['stop_kind'] == 'SL' and p['mfe_pct'] >= self.p.microbe_trigger_pct:
             target, kind = self.mbe_price(p), 'MBE'
-        if not p['be_locked'] and p['mfe_pct'] >= self.p.be_trigger_pct:
+        if not p['be_locked'] and p['mfe_pct'] >= self.be_arm_pct(p, soft=False):
             target, kind = self.be_price(p), 'BE'
         if not p.get('plock') and p['mfe_pct'] >= self.p.lock_trigger_pct:
             lk = max(self.plock_price(p), self.be_price(p)) if d > 0 else min(self.plock_price(p), self.be_price(p))
@@ -3016,7 +3605,7 @@ class Engine:
                     self.event(f'MARIN MICRO-BE at {fav:+.3f}% -> stop {target:g}')
                 elif kind == 'BE' and not p['be_locked']:
                     p['be_locked'] = True
-                    self.event(f'MARIN BREAKEVEN LOCK at +{fav:.3f}% -> stop {target:g} (net >= +{self.p.be_offset_pct}%)')
+                    self.event(f'MARIN BREAKEVEN LOCK at +{fav:.3f}% -> stop {target:g} (net >= +{self.p.be_offset_hard_pct}%)')
                 elif kind == 'PROFIT':
                     p['be_locked'] = p['plock'] = True
                     self.event(f'MARIN PROFIT LOCK at +{fav:.3f}% -> stop {target:g} (entry +{self.p.lock_pct}%)')
@@ -3180,11 +3769,13 @@ class Engine:
                'shadow_escalate': (x or {}).get('shadow_escalate'),
                'stop_covered_entry': self.stop_covers_entry(p), 'stop_events': p.get('stop_events') or None,
                'cost_complete': p.get('cost_complete', True),
-               'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'edge_bps': p.get('edge_bps'),
+               'tag': p['tag'], 'path': p['path'], 'score': p['score'], 'consensus': p.get('consensus'),
+               'jev_lift': p.get('jev_lift'), 'edge_bps': p.get('edge_bps'),
                'ker': p.get('ker'), 'flow_limit': p.get('flow_limit'), 'macro': p.get('macro'),
                'bracket_src': p.get('bracket_src'), 'atr_pct': p.get('atr_pct'), 'rr_gross': p.get('rr_gross'),
                'rr_net': p.get('rr_net'), 'be_wr': p.get('be_wr'), 'vpin': p.get('vpin'), 'ofi': p.get('ofi'),
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
+               'scalp_risk_mult': p.get('scalp_risk_mult'),          # 11-08: SCALP size vs the stop floor
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
                'conviction': p.get('conviction'), 'align3': p.get('align3'), 'early_invalid': p.get('early_invalid'),
@@ -3340,11 +3931,25 @@ class Engine:
     def quant_view(self) -> dict:
         f = self.features or {}
         bp = {k: v for k, v in self.bracket_plan('SWARM', f).items() if k != 'profile'}
+        now, rs, clf = self.clock(), self.regime_state, self.regime_clf
+        regime_warming = (self.p.regime_gate in ('on', 'shadow') and
+                          (rs is None or (rs.state == rc.UNKNOWN and rs.reason.startswith('WARMUP'))))
+        regime_warmup_elapsed = (max(0.0, now - clf.warmup_since) if clf and clf.warmup_since is not None
+                                 else 0.0 if regime_warming else None)
+        regime_warmup_required = (max(clf.cfg.er_min_span_s, float(clf.cfg.garch_warmup))
+                                  if clf and regime_warming else None)
         return {'ofi': f.get('ofi_10s'), 'ofi_n': f.get('ofi_n'), 'vpin': f.get('vpin'), 'vpin_n': f.get('vpin_n'),
                 'vpin_side': self.toxic_side if self.clock() < self.toxic_until else None, 'symbol': self.p.symbol,
                 'tox': self.tox.get('state'), 'toxic_left': max(0.0, self.toxic_until - self.clock()),
+                'tox_guard': self.p.tox_guard, 'tox_last': self.tox_last, 'own_mk5_n': len(self.own_mk5),
+                'maker_markout': f.get('maker_markout'),
+                'regime_gate': self.p.regime_gate,
+                'regime_state': rs.as_dict() if rs is not None else None,
+                'regime_warmup_elapsed_s': regime_warmup_elapsed,
+                'regime_warmup_required_s': regime_warmup_required,
                 'atr_pct': f.get('atr_pct'), 'yz_pct': f.get('yz_pct'), 'sigma_bps': f.get('sigma_bps'),
-                'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly()}
+                'bars_n': f.get('bars_n'), 'brackets': bp, 'kelly': self.kelly(),
+                'edge_shadow': self.edge_shadow_view()}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')
@@ -3569,6 +4174,8 @@ class Runner:
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.tel = None
         self.ws = {'connected': False, 'error': '', 'reconnects': 0}
+        self.carry_state = None
+        self.carry_sim_state = None
 
     def profile(self, mode: str) -> Profile:
         p = PROFILES[mode]
@@ -3891,6 +4498,16 @@ class Runner:
                     if e0:
                         e0.event(f'CARRY SHADOW {it["kind"]} {it["coin"]} short {it["short"]} / long {it["long"]} '
                                  f'{it["spread_8h_bps"]:+.2f} bps/8h · {it["why"]}')
+                if e0 and getattr(e0.p, 'carry_sim', False):
+                    from research.carry_lane import CarrySim
+                    sim = getattr(self, 'carry_sim', None)
+                    if sim is None:
+                        sim = self.carry_sim = CarrySim(wallet or 1000.0)
+                    self.carry_sim_state = await sim.step(quotes)
+                    for message in self.carry_sim_state.get('new_events', ()):
+                        e0.event(message)
+                else:
+                    self.carry_sim_state = None
             except Exception as exc:
                 self.carry_state = dict(self.carry_state or {}, error=f'{type(exc).__name__}: {exc}'[:160],
                                         error_t=time.time())

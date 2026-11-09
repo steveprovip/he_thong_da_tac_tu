@@ -609,10 +609,10 @@ async def test_soft_breakeven_exit_is_maker_and_net_positive(tmp_path):
     book_at(feed, round(entry * 1.0009, 1))                          # +0.09 %: T1 micro-lock
     await e.tick()
     assert e.pos['soft_kind'] == 'LOCK' and e.pos['soft_stop'] == pytest.approx(entry * 1.0003, abs=0.2)
-    book_at(feed, round(entry * 1.0013, 1))                          # +0.13 %: T2 breakeven (maker in + out + 0.02)
+    book_at(feed, round(entry * 1.0013, 1))                          # +0.13 %: T2 breakeven (maker in + out + 0.08)
     await e.tick()
     lvl = e.pos['soft_stop']
-    assert e.pos['be_locked'] and lvl == pytest.approx(entry * 1.0006, abs=0.2) and e.pos['sl'] == sl0
+    assert e.pos['be_locked'] and lvl == pytest.approx(entry * 1.0012, abs=0.2) and e.pos['sl'] == sl0
     book_at(feed, round(lvl - 0.1, 1))                               # bid ticks under the level, ask == level
     await e.tick()
     assert e.pos['exiting']['reason'] == 'SOFT-BE' and e.pos['exiting']['px'] == pytest.approx(lvl, abs=0.11)
@@ -778,9 +778,12 @@ async def test_ioc_entry_uses_taker_aware_breakeven(tmp_path):
     book_at(feed, round(entry * 1.0010, 1))                              # +0.10 %: below the 0.12 % taker trigger
     await e.tick()
     assert not e.pos['be_locked']
-    book_at(feed, round(entry * 1.0013, 1))
+    book_at(feed, round(entry * 1.0013, 1))                              # 11-09: +0.13 % has not paid the 0.15 % level
     await e.tick()
-    assert e.pos['be_locked'] and e.pos['soft_stop'] == pytest.approx(entry * (1 + (5 + 2) / 1e4 + 0.0002), abs=0.2)
+    assert not e.pos['be_locked']
+    book_at(feed, round(entry * 1.0016, 1))
+    await e.tick()
+    assert e.pos['be_locked'] and e.pos['soft_stop'] == pytest.approx(entry * (1 + (5 + 2) / 1e4 + 0.0008), abs=0.2)
 
 
 def test_default_execution_profile_values():
@@ -836,7 +839,9 @@ async def test_squeeze_breakout_lifts_consensus_to_super_edge(tmp_path):
     e, venue, _ = mock_engine(tmp_path, feed=feed, super_ker=0.0, gtx_ttl_s=0.2)
     await e.sync()
     d = await e.tick()
-    assert e.diag['consensus'] >= 0.95 and e.diag['confluence']['C5_SQUEEZE']
+    # 11-09: SQUEEZE (TIDAL) requires SURGE (LUMEN), the same CVD velocity, so TIDAL counts x0.5: 0.20 + 0.20 + 0.10 +
+    # 0.40 gates = 0.90 (was 1.00 with the delta voted twice); 0.90 still clears super_consensus 0.85
+    assert e.diag['consensus'] == pytest.approx(0.90, abs=0.02) and e.diag['confluence']['C5_SQUEEZE']
     # 2026-10-07h strict maker: consensus 100 % alone no longer buys IOC - CVD 10 s is $0.87M < $3M -> pegged GTX
     assert d.allowed and e.route(d, fx) == 'gtx' and not any(not f['maker'] for f in venue.fills)
 
@@ -844,7 +849,7 @@ async def test_squeeze_breakout_lifts_consensus_to_super_edge(tmp_path):
 async def test_four_tier_profit_ladder_and_tight_trail(tmp_path):
     e, venue, feed = await opened(tmp_path, **OLD_TIERS)
     entry = e.pos['entry']
-    steps = [(1.0009, 'LOCK', 1.0003), (1.0013, 'BE', 1.0006)]
+    steps = [(1.0009, 'LOCK', 1.0003), (1.0013, 'BE', 1.0012)]
     for k, kind, lvl in steps:
         book_at(feed, round(entry * k, 1))
         await e.tick()

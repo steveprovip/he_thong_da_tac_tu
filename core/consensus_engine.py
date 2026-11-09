@@ -63,14 +63,22 @@ class ConsensusEngine:
             raise ValueError('Unknown market regime')
         return self.threshold
 
-    def record_outcome(self, votes, side, pnl):
+    def record_outcome(self, votes, side, pnl, fee_paid=None):
         """Bayesian-like bounded update for alpha weights only.
 
         Safety-gate weights remain policy constants; successful alpha agents share
         exactly the original 60% alpha budget, so learning cannot subsidize a gate.
+
+        The label is the NET result of the trade: `pnl` is net of fees (core.runtime passes net_pnl). A caller that
+        only has the gross result passes `fee_paid` and the label becomes gross - fee_paid > 0, so a trade that
+        made money before fees and lost it after them is never a win for the agents that voted for it.
         """
         if side not in ('BUY', 'SELL') or not math.isfinite(pnl):
             raise ValueError('Invalid outcome')
+        if fee_paid is not None:
+            if not math.isfinite(fee_paid) or fee_paid < 0:
+                raise ValueError('Invalid fee')
+            pnl = pnl - fee_paid
         for vote in votes:
             if vote.agent in self.performance:
                 self.performance[vote.agent].append(1 if pnl > 0 and vote.side == side else 0)
