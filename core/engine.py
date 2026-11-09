@@ -349,10 +349,29 @@ class Profile:
     micro_bracket_rr: float = 1.40      # TP = (SL + in + taker out + slip) x 1.40 + (in + maker out): 0.46 % at SL 0.22 %
     micro_tp_atr_mult: float = 1.8      # ... and at least 1.8 x ATR 1 m (non-scalp)
     micro_align: bool = True            # 11-09d micro entries need KER and a triple alignment (below)
-    micro_ker_min: float = 0.30         # KER (2 min) >= 0.30: the TP has to be reachable by a directional move
+    micro_ker_min: float = 0.28         # KER (2 min) >= 0.28 = TREND lane (11-09e: was 0.30); below it = CHOP lane (the harvester)
     micro_ofi_min: float = 0.65         # OFI L10 WITH the trade >= 0.65 ...
     micro_cvd3m_usd: float = 0.0        # ... CVD 3 m must not oppose the trade (x usd_scale; 0 = any opposing sign blocks) ...
                                         # ... and the 5 m macro must not forbid the side. Unknown = not shown = blocked
+    micro_cvd_soft: bool = True         # 11-09e: CVD 3 m is lagging; when OFI L10 >= micro_cvd_soft_ofi AND the 1 m price move
+                                        # favour the trade it only SIZES the trade down (x micro_cvd_soft_mult), no hard block
+    micro_cvd_soft_ofi: float = 0.50
+    micro_cvd_soft_mult: float = 0.75   # cannot go under the venue lot: at E <= ~6.7 U the lot is already the minimum
+    micro_px1m_atr: float = 0.5         # "1 m price favours the trade" = the 60 s move WITH it >= 0.5 x ATR 1 m ...
+    micro_px1m_min_pct: float = 0.03    # ... and at least 0.03 % (ATR unknown -> this alone); unknown 60 s move = not favouring
+    micro_harvester: str = 'shadow'     # 11-09e CHOP lane (micro, KER < micro_ker_min): 'off' | 'shadow' (log would-be harvests)
+                                        # | 'on' (maker orders; a Demo rehearsal, armed live refuses it). Replay of the sister
+                                        # scalper shape: -6.3..-7.5 bps net -> shadow until a time-separated holdout says otherwise
+    micro_harvest_tp_pct: float = 0.15  # gross TP 0.12-0.18 % (net = TP - 0.04 % maker round trip; 0.12 % locks 0.08 %)
+    micro_harvest_sl_pct: float = 0.15  # stop; with the stop costs (maker in + taker out + slip = 0.08 %) the break-even win
+                                        # rate at 0.15 / 0.15 is 67.6 %: the lane has NO fee-true RR >= 1, it lives on win rate
+    micro_harvest_be_wr_max: float = 0.70  # refuse a harvest whose break-even win rate is above this (replaces the net-RR floor)
+    micro_harvest_ttl_s: float = 45.0   # an unfilled resting entry is cancelled after 45 s (hard cuts: adverse / spread / drift)
+    micro_harvest_rotate_ker: float = 0.15  # a coin with KER < 0.15 is dead tape: it neither harvests nor competes for the slot
+    micro_sniper_tp_max_pct: float = 0.70   # TREND lane: TP slides from the RR-1.40 TP (0.46 %) to 0.70 % as KER goes ...
+    micro_sniper_ker_full: float = 0.60     # ... from micro_ker_min to this (the MARIN trail takes over from +0.50 % MFE)
+    micro_equity_track: bool = True     # forced micro on a big (Demo) wallet: virtual equity = micro_bankroll + realized micro
+                                        # PnL (capped at micro_equity_max), so every won USDT raises the lot (it was constant)
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
     micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
     micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
@@ -1397,7 +1416,13 @@ class Engine:
         account) rehearses a micro_bankroll account instead of sizing from thousands of virtual USDT."""
         w = self.micro_wallet()
         if self.p.micro_capital == 'on' and (w is None or w > self.p.micro_equity_max):
-            return self.p.micro_bankroll
+            if not self.p.micro_equity_track:
+                return self.p.micro_bankroll
+            # 11-09e compounding: the bankroll was a constant, so a won USDT never raised the lot on the Demo account.
+            # Realized NET pnl of the micro-flagged settled trades (the ledger, restart-proof); unknown pnl is skipped,
+            # never zero-filled; capped at the micro ceiling (above it the small-account rules end anyway).
+            pnl = math.fsum(float(r['pnl']) for r in self.all_rows if r.get('micro') and r.get('pnl') is not None)
+            return min(self.p.micro_equity_max, max(0.0, self.p.micro_bankroll + pnl))
         return w
 
     def micro_window_hi(self) -> float:
@@ -1423,8 +1448,77 @@ class Engine:
         floor = max(p.micro_sl_floor_pct, p.micro_sl_atr_mult * atr) if atr else p.micro_sl_floor_pct
         sl2 = max(sl, floor)
         rr = p.micro_net_rr_min if scalp else p.micro_bracket_rr
-        tp2 = max(tp, self.min_tp_for(sl2, route, rr) if rr else 0.0, p.micro_tp_atr_mult * atr if atr and not scalp else 0.0)
-        return sl2, tp2
+        base_tp = max(self.min_tp_for(sl2, route, rr) if rr else 0.0, p.micro_tp_atr_mult * atr if atr and not scalp else 0.0)
+        if not scalp and p.micro_sniper_tp_max_pct > base_tp and self.micro_lane(f) == 'TREND':
+            # 11-09e TREND SNIPER: the cleaner the tape (KER micro_ker_min -> micro_sniper_ker_full) the further the TP,
+            # from the RR-1.40 TP up to micro_sniper_tp_max_pct. A pure function of (sl2, ATR, KER): applying it twice
+            # (bracket_plan, then the regime block of _execute) gives the same TP.
+            span = max(p.micro_sniper_ker_full - p.micro_ker_min, 1e-9)
+            w = min(1.0, max(0.0, (f['ker'] - p.micro_ker_min) / span))
+            base_tp += w * (p.micro_sniper_tp_max_pct - base_tp)
+        return sl2, max(tp, base_tp)
+
+    # ------------------------------------------------------------------ 11-09e dual mode: CHOP harvester / TREND sniper
+    def micro_lane(self, f: dict) -> Optional[str]:
+        """'CHOP' (KER < micro_ker_min) | 'TREND' (KER >= it) | None (KER unknown: no lane, UNKNOWN is not CHOP)."""
+        k = (f or {}).get('ker')
+        if k is None:
+            return None
+        return 'CHOP' if k < self.p.micro_ker_min - 1e-12 else 'TREND'
+
+    def harvest_lane(self, f: dict) -> bool:
+        """The chop harvester applies: micro account, harvester not 'off', KER known and under micro_ker_min."""
+        return (self.p.micro_harvester in ('shadow', 'on') and self.micro_active() and self.micro_lane(f) == 'CHOP')
+
+    def px1m_favors(self, side: str, f: dict) -> bool:
+        """The last 60 s of price action moved WITH the trade by >= max(micro_px1m_min_pct, micro_px1m_atr x ATR 1 m)."""
+        v = (f or {}).get('px_vel_60s')
+        if v is None or side not in ('BUY', 'SELL'):
+            return False
+        atr = f.get('atr_pct')
+        need = max(self.p.micro_px1m_min_pct, self.p.micro_px1m_atr * atr) if atr else self.p.micro_px1m_min_pct
+        return (1 if side == 'BUY' else -1) * v >= need - 1e-12
+
+    def cvd3m_soft(self, side: str, f: dict) -> Optional[str]:
+        """11-09e: CVD 3 m opposes `side`, yet the fast evidence is strongly with it -> reason (relax the block, size down by
+        micro_cvd_soft_mult), else None (not opposing, or not enough fast evidence: the hard block stands).
+        Fast evidence = OFI L10 >= micro_cvd_soft_ofi WITH the trade and px1m_favors().  Unknown inputs never relax."""
+        p, f = self.p, f or {}
+        if not (p.micro_cvd_soft and self.micro_active()) or side not in ('BUY', 'SELL'):
+            return None
+        d, c3, o = (1 if side == 'BUY' else -1), f.get('cvd_3m'), f.get('ofi_10s')
+        if c3 is None or o is None or d * c3 >= -p.micro_cvd3m_usd * self.feed.cfg.usd_scale - 1e-9:
+            return None
+        if d * o < p.micro_cvd_soft_ofi - 1e-12 or not self.px1m_favors(side, f):
+            return None
+        return (f'CVD 3m {c3 / 1e3:+.0f}k opposes {side}, relaxed: OFI {o:+.2f} + 1m move {f.get("px_vel_60s"):+.3f}% with it '
+                f'-> size x{p.micro_cvd_soft_mult:g}')
+
+    def harvest_score(self, f: dict) -> Optional[float]:
+        """Rotation key of the chop lane: ATR 1 m (%) x |OFI L10|. None = unknown or dead tape (KER < micro_harvest_rotate_ker)."""
+        f = f or {}
+        a, o, k = f.get('atr_pct'), f.get('ofi_10s'), f.get('ker')
+        if a is None or o is None or k is None or k < self.p.micro_harvest_rotate_ker - 1e-12:
+            return None
+        return float(a) * abs(float(o))
+
+    def harvest_pick(self, f: dict) -> tuple:
+        """-> (ok, why).  Only the micro coin with the highest harvest_score among the coins in the chop lane harvests; a
+        coin in dead chop (KER < micro_harvest_rotate_ker) yields at once to any live rival."""
+        mine = self.harvest_score(f)
+        if mine is None:
+            return False, 'dead or unknown tape (KER < %g / ATR / OFI unknown)' % self.p.micro_harvest_rotate_ker
+        best = None
+        for o in self.risk.engines:
+            if o is self or o.p.symbol not in self.p.micro_symbols:
+                continue
+            of = o.features or {}
+            s = o.harvest_score(of) if o.harvest_lane(of) else None
+            if s is not None and s > mine + 1e-12 and (best is None or s > best[1]):
+                best = (o.p.symbol, s)
+        if best is not None:
+            return False, f'yield to {best[0]} (ATR x |OFI| {best[1]:.4f} > {mine:.4f})'
+        return True, ''
 
     def micro_entry_block(self, side: str, f: dict) -> list:
         """11-09d micro entry filter -> [(gate, reason), ...] (empty = pass).  MICRO_KER: KER (2 min) known and >= micro_ker_min.
@@ -1444,7 +1538,7 @@ class Engine:
         c3, lim = f.get('cvd_3m'), p.micro_cvd3m_usd * self.feed.cfg.usd_scale
         if c3 is None:
             bad.append('CVD 3m unknown')
-        elif d * c3 < -lim - 1e-9:
+        elif d * c3 < -lim - 1e-9 and self.cvd3m_soft(side, f) is None:     # 11-09e: strong fast evidence only sizes it down
             bad.append(f'CVD 3m {c3 / 1e3:+.0f}k opposes {side}')
         o = f.get('ofi_10s')
         if o is None:
@@ -1565,8 +1659,9 @@ class Engine:
         k, spread, ofi = f.get('ker'), f.get('spread_bps'), f.get('ofi_10s')
         if k is None or k >= self.p.scalp_ker_max:
             return None, f'KER {k} >= {self.p.scalp_ker_max}'
-        if spread is None or spread > self.p.scalp_spread_max_bps:
-            return None, f'spread {spread} > {self.p.scalp_spread_max_bps} bps'
+        smax = max(self.p.scalp_spread_max_bps, self.p.micro_max_spread_bps) if self.harvest_lane(f) else self.p.scalp_spread_max_bps
+        if spread is None or spread > smax:        # 11-09e harvester: the 3 bps micro cap (1 tick of ADA is ~2.5 bps)
+            return None, f'spread {spread} > {smax} bps'
         if ofi is None or abs(ofi) < self.p.scalp_ofi_min:
             return None, f'OFI {ofi} below {self.p.scalp_ofi_min}'
         side = 'BUY' if ofi > 0 else 'SELL'
@@ -1578,12 +1673,14 @@ class Engine:
                     return None, f'MACRO {m.get("label") or m.get("name")} forbids {side} scalp'
         c3, lim = f.get('cvd_3m', 0.0), self.p.scalp_cvd3m_usd
         if lim and c3 is not None and (c3 > lim if side == 'SELL' else c3 < -lim):   # UNKNOWN: ALIGN3 ('on')
-            return None, f'CVD_3M conflict ({c3:+.0f}) with {side}'
+            if self.cvd3m_soft(side, f) is None:        # 11-09e micro: lagging CVD 3 m + strong OFI / 1 m move = size penalty
+                return None, f'CVD_3M conflict ({c3:+.0f}) with {side}'
         return side, f'CHOP SCALP {side}: KER {k:.2f} · spread {spread:.2f} bps · OFI {ofi:+.2f}'
 
     async def chop_scalp(self, d: Decision, f: dict) -> None:
         """Second engine for chop: maker scalp at the touch (on) or a logged would-be scalp (shadow)."""
-        mode = self.p.chop_scalper
+        harvest = self.harvest_lane(f)              # 11-09e: micro account, KER < micro_ker_min -> the CHOP HARVESTER lane
+        mode = self.p.micro_harvester if harvest else self.p.chop_scalper
         if mode not in ('shadow', 'on') or self.busy or self.pos or self.clock() < self.scalp_next:
             return
         side, why = self.scalp_candidate(f)
@@ -1591,6 +1688,15 @@ class Engine:
             if mode == 'on' and why.startswith(('MACRO ', 'CVD_3M ')):
                 self.scalp_lock('MACRO_LOCK' if why.startswith('MACRO ') else 'CVD3M_LOCK', why)
             return
+        if harvest:
+            ok, why_pick = self.harvest_pick(f)     # ROTATION: the live-chop coin with the highest ATR x |OFI| takes the slot
+            if not ok:
+                self.scalp_next = self.clock() + self.p.micro_rank_s
+                self.funnel.outcome('HARVEST_YIELD')
+                return
+            why = f'HARVEST {why}'
+        # VESKA / AuthToken is NOT bypassed: TokenAuthority.issue refuses a decision under the 76.8 % supermajority, so an
+        # 'on' harvest still needs the swarm to back the OFI side (d.score >= scalp_min_score).
         if mode == 'on' and (d is None or d.veto or d.side != side
                              or d.score < self.p.scalp_min_score - 1e-9):
             return
@@ -1614,7 +1720,20 @@ class Engine:
                                f'< {self.p.scalp_min_edge_bps:g} bps')
                 return
         rr_min = self.scalp_rr_min()
-        if mode == 'on' and self.p.scalp_net_rr and rr_min:
+        hbp = self.bracket_plan('SCALP', f, harvest=True) if harvest else None
+        if mode == 'on' and harvest:
+            # the harvester has no fee-true RR >= 1 (TP 0.15 % pays 0.11 %, the stop costs 0.23 %): the guard is the
+            # break-even win rate, so a mistyped TP / SL cannot arm a lane that needs an impossible hit rate
+            be = hbp.get('be_wr')
+            if be is None or be > self.p.micro_harvest_be_wr_max + 1e-12:
+                self.scalp_next = self.clock() + self.p.scalp_every_s
+                self.funnel.outcome('RR_LOW')
+                if self.clock() - getattr(self, '_rr_evt_t', 0.0) >= 60.0:
+                    self._rr_evt_t = self.clock()
+                    self.event(f'HARVEST break-even win rate {"—" if be is None else f"{be * 100:.0f}%"} > '
+                               f'{self.p.micro_harvest_be_wr_max * 100:.0f}% (TP {hbp["tp_pct"]:.3f}% / SL {hbp["sl_pct"]:.3f}%)')
+                return
+        elif mode == 'on' and self.p.scalp_net_rr and rr_min:
             bp = self.bracket_plan('SCALP', f)
             rr = bp.get('rr_net')
             if rr is None or rr < rr_min - 1e-12:
@@ -1631,10 +1750,13 @@ class Engine:
             b = self.book()
             self._shadow_row({'outcome': 'SHADOW_SCALP', 'side': side, 'path': 'SCALP', 'why': why,
                               'touch': b.get('bid') if side == 'BUY' else b.get('ask'), 'ker': f.get('ker'),
-                              'spread_bps': f.get('spread_bps'), 'ofi': f.get('ofi_10s')})
+                              'spread_bps': f.get('spread_bps'), 'ofi': f.get('ofi_10s'),
+                              **({'harvest': True, 'tp_pct': hbp['tp_pct'], 'sl_pct': hbp['sl_pct'], 'be_wr': hbp['be_wr'],
+                                  'atr_pct': f.get('atr_pct'), 'cvd_soft': self.cvd3m_soft(side, f)} if harvest else {})})
             return
         self.event(why)
         sd = replace(d, side=side, allowed=True, veto=False, reason=why)
+        self._harvest_next = harvest                # consumed (and cleared) at the top of _execute
         await self.execute(side, sd, 'SCALP')
 
     def scalp_lock(self, outcome: str, why: str) -> None:
@@ -2159,7 +2281,7 @@ class Engine:
     def mr_profile(self, f: Optional[dict] = None) -> Profile:
         return self.bracket_plan('MR', f)['profile']
 
-    def bracket_plan(self, path: str = 'SWARM', f: Optional[dict] = None, route: str = 'gtx') -> dict:
+    def bracket_plan(self, path: str = 'SWARM', f: Optional[dict] = None, route: str = 'gtx', harvest: bool = False) -> dict:
         """TP / SL / trail for the next entry + gross and fee-true reward:risk.
         MR: TP = |VWAP dev| clamped [mr_tp_min, mr_tp_max], SL mr_sl_pct, whole size.
         TREND with ATR known: SL = max(floor, 1.0 ATR), TP1 = max(2.5 ATR, 2.5 SL), trail 1.2 ATR after TP1.
@@ -2173,6 +2295,9 @@ class Engine:
             sl = min(p.swarm_override_sl_pct, p.swarm_override_sl_max_pct)
             src = 'SWARM_OVERRIDE'
             prof = replace(p, tp_pct=tp, sl_pct=sl, tp1_frac=1.0)
+        elif path == 'SCALP' and harvest:                               # 11-09e chop harvester: fixed small bracket, no RR lift
+            tp, sl, src = min(0.18, max(0.12, p.micro_harvest_tp_pct)), p.micro_harvest_sl_pct, 'HARVEST'   # TP guard 0.12-0.18 %
+            prof = replace(p, tp_pct=tp, tp1_frac=1.0, **({'sl_pct': sl} if p.max_loss_usdt is None else {}))
         elif path == 'SCALP':
             tp, sl, src = p.scalp_tp_pct, max(p.scalp_sl_pct, p.scalp_sl_min_pct), 'SCALP'
             a15 = f.get('atr15_pct')
@@ -2201,7 +2326,7 @@ class Engine:
             prof = replace(p, sl_pct=sl, tp_pct=tp)
         else:
             tp, sl, src, prof = p.tp_pct, p.sl_pct, 'STATIC', p
-        if p.max_loss_usdt is None and p.micro_bracket and self.micro_active():      # 11-09d noise floor (live derives SL from the loss budget)
+        if p.max_loss_usdt is None and p.micro_bracket and self.micro_active() and src != 'HARVEST':   # 11-09d noise floor (live derives SL from the loss budget)
             sl2, tp2 = self.micro_bracket(sl, tp, f, route, scalp=path == 'SCALP')
             if (sl2, tp2) != (sl, tp):
                 sl, tp = sl2, tp2
@@ -2684,6 +2809,8 @@ class Engine:
         for name in ('cvd_3m', 'cvd_60s', 'cvd_15s', 'ofi_10s', 'obi'):
             v = f.get(name)
             if v is None or sg * v <= 0:
+                if name == 'cvd_3m' and v is not None and self.cvd3m_soft(side, f) is not None:
+                    continue                  # 11-09e (micro): the lagging 3 m layer is a size penalty when OFI + 1 m move agree
                 return f'ALIGN3 {name} {"—" if v is None else f"{v:+.3g}"} not with {side}'
         return None
 
@@ -2802,6 +2929,7 @@ class Engine:
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
                'micro_floor': xm.get('micro_floor'), 'tp_lift': xm.get('tp_lift'),
+               'harvest': xm.get('harvest'), 'cvd_soft': xm.get('cvd_soft'),
                'bracket': xm.get('bracket'), 'micro_bracket': xm.get('micro_bracket'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
@@ -2816,6 +2944,8 @@ class Engine:
 
     async def _execute(self, side: str, decision: Decision, path: str, tag: str = 'AUTO',
                        entry: Optional[str] = None, hold_s: Optional[float] = None) -> dict:
+        harvest = path == 'SCALP' and tag == 'AUTO' and bool(getattr(self, '_harvest_next', False))   # 11-09e chop harvester
+        self._harvest_next = False                          # one-shot: set by chop_scalp right before execute()
         if self.observer:
             return {'ok': False, 'error': f'OBSERVER: {self.p.symbol} is observe-only (no entries)'}
         if self.busy or self.pos or self.slot_block():
@@ -2832,7 +2962,7 @@ class Engine:
         self.busy, self.phase = True, 'EXECUTING'
         sym, tick, step = self.p.symbol, self.spec['tick'], self.spec['step']
         t0 = time.perf_counter()
-        xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag}
+        xm = self._xm = {'t0': t0, 'side': side, 'path': path, 'tag': tag, **({'harvest': True} if harvest else {})}
         try:
             why_regime, rpol = self.regime_check(path, tag, decision)
             if why_regime:
@@ -2844,7 +2974,7 @@ class Engine:
             px = self.gtx_price(side, f)
             if px is None:
                 return {'ok': False, 'error': 'no book'}
-            blk = self.micro_entry_block(side, f) if tag == 'AUTO' else []
+            blk = self.micro_entry_block(side, f) if tag == 'AUTO' and not harvest else []   # harvest = the CHOP lane by design
             if blk:                                              # 11-09d: KER + triple alignment, every AUTO path
                 for gate, _ in blk:
                     self.funnel.outcome(gate)
@@ -2852,7 +2982,7 @@ class Engine:
                     self._align_evt_t = self.clock()
                     self.event(f'OKAPI refused {side} {path}: ' + ' | '.join(w for _, w in blk))
                 return {'ok': False, 'error': blk[0][1]}
-            route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' else 'gtx'
+            route = self.route(decision, f) if tag == 'AUTO' and path != 'MR' and not harvest else 'gtx'   # harvest: maker only
             if route == 'gtx' and tag == 'AUTO' and path not in ('MR', 'SCALP'):
                 route = self.micro_ioc_route(decision, f, side, path, xm)       # 11-09 hybrid IOC (micro mode only)
             skew = 0
@@ -2873,9 +3003,9 @@ class Engine:
                     px = round_tick(px - ticks * tick if side == 'BUY' else px + ticks * tick, tick,
                                     'down' if side == 'BUY' else 'up')
                     self.event(f'TOX SKEW {side}: {tox_why} -> quote {ticks} tick behind the touch at {fmt(px, tick)}')
-            bp = self.bracket_plan(path, f, route)
+            bp = self.bracket_plan(path, f, route, harvest=harvest)
             base = bp['profile']
-            if rpol is not None and base.max_loss_usdt is None and (
+            if rpol is not None and not harvest and base.max_loss_usdt is None and (
                     rpol.stop_mult != 1.0 or rpol.tp_mult != 1.0):
                 new_sl = base.sl_pct * rpol.stop_mult
                 new_tp = base.tp_pct * rpol.tp_mult
@@ -2966,7 +3096,7 @@ class Engine:
                 if q_regime is not None:
                     kq = q_regime
             sr_mult = None                                      # 11-08 owner: scalp size vs the 0.15 % stop floor
-            if path == 'SCALP' and self.p.scalp_floor_resize and base.max_loss_usdt is None:
+            if path == 'SCALP' and not harvest and self.p.scalp_floor_resize and base.max_loss_usdt is None:
                 raw = self.p.scalp_sl_pct * (rpol.stop_mult if rpol is not None else 1.0)   # stop without the floor
                 e_in = (self.p.taker_bps + self.p.slip_bps) if route == 'ioc' else self.p.maker_bps
                 lf = (e_in + self.p.taker_bps + self.p.slip_bps) / 100.0                 # plan() fees_pct
@@ -2997,6 +3127,14 @@ class Engine:
                     self.event(f'OKAPI refused {side}: {why_micro}')
                     return {'ok': False, 'error': why_micro}
                 kq = q_micro
+                soft = self.cvd3m_soft(side, f) if tag == 'AUTO' else None
+                if soft:                                        # 11-09e: lagging CVD 3 m = size penalty, not a block
+                    q_min, _ = msz.qty(ref, step, self.spec['min_qty'], self.spec['min_notional'], equity=None,
+                                       leverage=self.p.leverage, risk_notional=cap_n)     # equity unknown -> smallest window lot
+                    q_soft = floor_step(q_micro * self.p.micro_cvd_soft_mult, step)
+                    kq = max(q_soft, q_min) if q_min else q_soft
+                    xm['cvd_soft'] = f'{soft} | lot {fmt(q_micro, step)} -> {fmt(kq, step)}' + (
+                        ' (at the venue lot: no size left to cut)' if kq >= q_micro - 1e-12 else '')
             mkpl = lambda q: plan(side, px if route == 'gtx' else touch, self.spec,
                                   replace(base, entry='gtx' if route == 'gtx' else 'market'),
                                   self.account.get('available'), qty=q)
@@ -3014,7 +3152,7 @@ class Engine:
                       rr_gross=pl['tp_pct'] / pl['sl_pct'] if pl['sl_pct'] > 0 else None,
                       rr_net=rr, be_wr=1.0 / (1.0 + rr) if rr is not None and rr > -1.0 else None)
             rr_gate = self.scalp_rr_min() if path == 'SCALP' else self.net_rr_eff()    # 11-08: SCALP floor 1.35
-            if (tag == 'AUTO' and (path != 'SCALP' or self.p.scalp_net_rr) and rr_gate
+            if (tag == 'AUTO' and not harvest and (path != 'SCALP' or self.p.scalp_net_rr) and rr_gate
                     and (rr is None or rr < rr_gate - 1e-12)):
                 msg = (f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {rr_gate:g} '
                        f'(TP {pl["tp_pct"]:.3f}% / SL {pl["sl_pct"]:.3f}% + fees {pl["fees_pct"]:.3f}%)')
@@ -3089,7 +3227,7 @@ class Engine:
                         cid = f'gk{tag[0].lower()}-' + uuid.uuid4().hex[:26]
                         self.event(f'GTX {side} post-only reject -> back off 1 tick to {fmt(px, tick)} '
                                    f'({backoff}/{self.p.gtx_backoff_ticks})')
-                st, deadline = {}, time.monotonic() + self.p.gtx_ttl_s
+                st, deadline = {}, time.monotonic() + (self.p.micro_harvest_ttl_s if harvest else self.p.gtx_ttl_s)
                 peg = self.p.peg and decision.score >= self.p.peg_min_score and path != 'MR'
                 last_post = t_post = time.monotonic()
                 auto = tag == 'AUTO' and path not in ('MR', 'SCALP')
@@ -3136,6 +3274,12 @@ class Engine:
                         micro_next = now_m + 0.5
                         keep, why_keep = await self.micro_keep(side, px0, mid0, now_m - t_post)
                         if not keep:                              # adverse / toxic / drifted: pull it at once
+                            xm['ttl_cut'] = why_keep
+                            break
+                    elif harvest and now_m >= micro_next:
+                        micro_next = now_m + 0.5                  # 11-09e: rests up to 45 s, only the HARD cuts apply (age 0 =
+                        keep, why_keep = await self.micro_keep(side, px0, mid0, 0.0)   # inside the floor): adverse / spread / drift
+                        if not keep:
                             xm['ttl_cut'] = why_keep
                             break
                     if cross_at is not None and now_m >= cross_at:
@@ -4326,7 +4470,10 @@ class Engine:
                 'micro_capital': {**self.micro_sizer().view(self.micro_wallet(), self.p.micro_capital),
                                   'equity': self.micro_equity(), 'window_hi': round(self.micro_window_hi(), 3),
                                   'scores': dict(self.micro_scores()) if self.micro_active() else {},
-                                  'ioc': self.p.micro_ioc, 'ttl': self.p.micro_ttl}}
+                                  'ioc': self.p.micro_ioc, 'ttl': self.p.micro_ttl,
+                                  'lane': self.micro_lane(f) if self.micro_active() else None,      # 11-09e dual mode
+                                  'harvester': self.p.micro_harvester,
+                                  'harvest_score': self.harvest_score(f) if self.micro_active() else None}}
 
     def fee_model(self) -> Optional[dict]:
         px = (self.features or {}).get('price')

@@ -1,5 +1,5 @@
 """11-09d noise elimination after the 21:33 / 21:34 Demo losses (docs/harness/plan_micro_noise.md): micro SL noise floor, TP sized
-for net RR 1.40, KER >= 0.30 + triple alignment, and the micro halt counting only micro trades of the last 24 h.
+for net RR 1.40, KER >= 0.28 (11-09e; was 0.30) + triple alignment, and the micro halt counting only micro trades of the last 24 h.
 Mock venue, synthetic books.  A wider stop and a stricter filter remove one specific way to lose; they add no edge."""
 import json
 import time
@@ -101,8 +101,8 @@ def test_both_logged_losses_would_have_been_blocked(tmp_path):
 
 
 @pytest.mark.parametrize('side, ker, ofi, cvd, ok', [
-    ('SELL', 0.30, -0.65, -1.0, True), ('SELL', 0.299, -0.65, -1.0, False), ('SELL', 0.30, -0.64, -1.0, False),
-    ('BUY', 0.30, +0.65, +1.0, True), ('BUY', 0.30, +0.64, +1.0, False), ('BUY', 0.50, +0.90, -1.0, False),
+    ('SELL', 0.28, -0.65, -1.0, True), ('SELL', 0.279, -0.65, -1.0, False), ('SELL', 0.28, -0.64, -1.0, False),
+    ('BUY', 0.28, +0.65, +1.0, True), ('BUY', 0.28, +0.64, +1.0, False), ('BUY', 0.50, +0.90, -1.0, False),
     ('SELL', 0.50, -0.90, 0.0, True)])                                    # CVD exactly 0 does not oppose
 def test_boundaries(tmp_path, side, ker, ofi, cvd, ok):
     e = align_engine(tmp_path)
@@ -127,7 +127,7 @@ def test_the_filter_is_micro_only_and_switchable(tmp_path):
     assert burst_engine(tmp_path / 'b', micro_align=False).micro_entry_block('SELL', feats(ker=0.0, ofi=0.9)) == []
     assert align_engine(tmp_path / 'c').micro_entry_block('HOLD', feats(ker=0.0)) == []
     p = eng.PROFILES['demo']
-    assert (p.micro_ker_min, p.micro_ofi_min, p.micro_cvd3m_usd, p.micro_align) == (0.30, 0.65, 0.0, True)
+    assert (p.micro_ker_min, p.micro_ofi_min, p.micro_cvd3m_usd, p.micro_align) == (0.28, 0.65, 0.0, True)   # 11-09e: 0.30 -> 0.28 (the TREND / CHOP boundary)
 
 
 def test_the_blockers_reach_the_why_no_trade_funnel(tmp_path):
@@ -144,7 +144,7 @@ async def test_every_auto_path_is_refused_in_the_funnel_and_a_qualified_setup_go
     feed.features = lambda *a, **k: {**orig(*a, **k), 'ker': 0.11, 'ofi_10s': 0.15, 'cvd_3m': 1.0e5}   # the PEPE tape
     for path in ('MR', 'SWARM', 'SCALP'):
         res = await e.execute('SELL', SELL, path)
-        assert not res['ok'] and res['error'].startswith('MICRO KER 0.11 < 0.3')
+        assert not res['ok'] and res['error'].startswith('MICRO KER 0.11 < 0.28')
     assert e.funnel.outcomes['MICRO_KER'] == 3 and e.funnel.outcomes['MICRO_ALIGN'] == 3
     assert not [r for r in rows(tmp_path) if r.get('qty_req')] and not venue.fills
     feed.features = lambda *a, **k: {**orig(*a, **k), 'ker': 0.45, 'ofi_10s': -0.80, 'cvd_3m': -2.0e5}   # a real burst

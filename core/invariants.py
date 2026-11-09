@@ -87,6 +87,8 @@ def check_profile(p) -> list:
             out.append(f'live max_loss_usdt {p.max_loss_usdt} > {LIVE_MAX_LOSS}')
         if p.autonomy != 'off':
             out.append(f'live autonomy {p.autonomy!r} != off')
+        if getattr(p, 'micro_harvester', 'off') == 'on':      # 11-09e: maker-only, but the lane has no holdout evidence
+            out.append("live micro_harvester 'on': chop harvester is a Demo rehearsal (shadow is allowed)")
     return out
 
 

@@ -587,14 +587,17 @@ class MicroFeed:
     def _concordance(self, now: float) -> dict:
         """CVD and price change over the last absorb_window_s (price = last print at/before t-15 s)."""
         w = self.cfg.absorb_window_s
-        ref, cvd = None, 0.0
+        ref, ref60, cvd = None, None, 0.0
         for t, s, px in self.cvd_long:
             if now - t >= w:
                 ref = px
             elif now - t >= 0:
                 cvd += s
+            if now - t >= 60.0:
+                ref60 = px                                  # last print at/before t-60 s (the buffer keeps 180 s)
         vel = (self.last / ref - 1) * 100 if (ref and self.last) else None
-        return {'cvd_15s': cvd if ref is not None else None, 'px_vel_15s': vel}
+        vel60 = (self.last / ref60 - 1) * 100 if (ref60 and self.last) else None   # 11-09e: 1 m price action; None = unknown
+        return {'cvd_15s': cvd if ref is not None else None, 'px_vel_15s': vel, 'px_vel_60s': vel60}
 
     # ------------------------------------------------------------------ features
     def price(self) -> Optional[float]:
