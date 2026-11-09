@@ -79,21 +79,53 @@ async def test_a_clean_book_extends_the_resting_order_past_3s_and_it_fills(tmp_p
 
 
 @pytest.mark.parametrize('vpin, reason', [(None, 'VPIN unknown'), (0.70, 'VPIN 0.70 >= 0.65'), (0.65, 'VPIN 0.65 >= 0.65')])
-async def test_unknown_or_dirty_vpin_keeps_the_old_ttl(tmp_path, vpin, reason):
+async def test_unknown_or_dirty_vpin_cannot_cancel_inside_the_floor_only_after_it(tmp_path, vpin, reason):
+    """11-09b: 'never cancel at 3 s because VPIN is initialising'. The floor here is micro_ttl_s = 1.2 s (10 s in production)."""
     e, venue, feed = await doge_micro(tmp_path, vpin=vpin)
     t0 = time.monotonic()
-    res = await e.execute('BUY', BUY, 'SWARM')
+    task = asyncio.ensure_future(e.execute('BUY', BUY, 'SWARM'))
+    await asyncio.sleep(0.8)                                              # 2.7x the 0.3 s base TTL, inside the floor
+    assert not task.done() and any(o['status'] == 'NEW' for o in venue.orders.values())
+    res = await task
     r = rows(tmp_path)[-1]
-    assert not res['ok'] and time.monotonic() - t0 < 1.0                  # cancelled at the base TTL
-    assert r['ttl_cut'] == reason and r['micro_ttl_s'] is None
+    assert not res['ok'] and time.monotonic() - t0 >= 1.15                # it rested the whole floor
+    assert r['ttl_cut'] == reason and r['micro_ttl_s'] == 1.2
 
 
-async def test_toxic_markouts_cut_the_extension(tmp_path):
+async def test_a_fill_inside_the_floor_needs_no_vpin_reading(tmp_path):
+    """The 19:57 XRP case: VPIN still warming up, the order must be allowed to wait for the queue."""
+    e, venue, feed = await doge_micro(tmp_path, vpin=None)
+    task = asyncio.ensure_future(e.execute('BUY', BUY, 'SWARM'))
+    await asyncio.sleep(0.8)
+    await trade_through(feed)
+    res = await task
+    assert res['ok'] and rows(tmp_path)[-1]['outcome'] == 'FILLED'
+
+
+async def test_toxic_markouts_do_not_cut_inside_the_floor_but_end_the_extension_after_it(tmp_path):
     e, venue, feed = await doge_micro(tmp_path)
     e.tox_check = lambda side: (tg.PULL, 0, 'own 5 s markouts negative')
+    task = asyncio.ensure_future(e.execute('BUY', BUY, 'SWARM'))
+    await asyncio.sleep(0.8)
+    assert not task.done()
+    res = await task
+    assert not res['ok'] and rows(tmp_path)[-1]['ttl_cut'].startswith('markout PULL')
+
+
+async def test_a_spread_wider_than_3_bps_pulls_the_order_even_inside_the_floor(tmp_path):
+    e, venue, feed = await doge_micro(tmp_path, peg=False)                # no chasing: the order stays where it was posted
+    task = asyncio.ensure_future(e.execute('BUY', BUY, 'SWARM'))
+    await asyncio.sleep(0.6)
+    for _ in range(3):
+        feed.on_message(depth(PX, round(PX + 3 * TICK, 5), bq=50_000.0, aq=50_000.0, sym=DOGE))   # 4.4 bps wide
     t0 = time.monotonic()
-    await e.execute('BUY', BUY, 'SWARM')
-    assert time.monotonic() - t0 < 1.0 and rows(tmp_path)[-1]['ttl_cut'].startswith('markout PULL')
+    res = await task
+    assert not res['ok'] and time.monotonic() - t0 < 0.9 and rows(tmp_path)[-1]['ttl_cut'].startswith('spread 4.4 bps > 3')
+
+
+def test_the_production_ttl_defaults_are_the_owner_numbers():
+    p = eng.PROFILES['demo']
+    assert (p.micro_ttl_s, p.micro_ttl_max_s, p.micro_max_spread_bps, p.micro_max_reprices) == (10.0, 15.0, 3.0, 2)
 
 
 async def test_an_adverse_move_pulls_the_extended_order_at_once(tmp_path):
@@ -182,12 +214,12 @@ def test_an_extreme_burst_that_pays_for_a_taker_entry_routes_ioc(tmp_path):
 
 
 @pytest.mark.parametrize('diag, ofi, prof, word', [
-    ({'consensus': 0.79}, -0.94, {}, 'raw consensus 0.790 < 0.8'),
-    (None, -0.94, {}, 'raw consensus — < 0.8'),
-    ({'consensus': 0.9}, -0.79, {}, 'OFI +0.79 < 0.8'),
-    ({'consensus': 0.9}, +0.90, {}, 'OFI -0.90 < 0.8'),                    # flow against the SELL
+    ({'consensus': 0.77}, -0.94, {}, 'raw consensus 0.770 < 0.78'),
+    (None, -0.94, {}, 'raw consensus — < 0.78'),
+    ({'consensus': 0.9}, -0.69, {}, 'OFI +0.69 < 0.7'),
+    ({'consensus': 0.9}, +0.90, {}, 'OFI -0.90 < 0.7'),                    # flow against the SELL
     ({'consensus': 0.9}, -0.94, {'micro_ioc_min_tp_pct': 2.0}, 'TP 1.250% < 2.0%'),
-    ({'consensus': 0.9}, -0.94, {'net_rr_min': 5.0}, 'net RR 1.89 < 5 with a taker entry')])
+    ({'consensus': 0.9}, -0.94, {'micro_ioc_net_rr_min': 5.0}, 'net RR 1.89 < 5 with a taker entry')])
 def test_every_ioc_gate_falls_back_to_post_only_gtx(tmp_path, diag, ofi, prof, word):
     e = burst_engine(tmp_path, micro_ioc='on', **prof)
     e.diag = diag

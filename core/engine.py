@@ -334,9 +334,18 @@ class Profile:
     micro_vpin_clean: float = 0.65
     micro_max_reprices: int = 2         # smart re-pegs: at most 2, then the order keeps its queue place
     micro_ioc: str = 'off'              # 11-09 hybrid IOC in micro mode: 'off' | 'shadow' | 'on' (I5: 'on' is reported)
-    micro_ioc_consensus: float = 0.80   # RAW swarm score >= 0.80 ...
-    micro_ioc_ofi: float = 0.80         # ... OFI L10 with the trade >= 0.80 ...
-    micro_ioc_min_tp_pct: float = 0.25  # ... TP >= 0.25 % AND fee-true net RR (taker entry) >= net_rr_min
+    micro_ioc_consensus: float = 0.78   # RAW swarm score >= 0.78 (11-09b: was 0.80) ...
+    micro_ioc_ofi: float = 0.70         # ... OFI L10 with the trade >= 0.70 (was 0.80) ...
+    micro_ioc_min_tp_pct: float = 0.20  # ... TP >= 0.20 % (was 0.25) AND fee-true net RR with the taker entry ...
+    micro_ioc_net_rr_min: float = 1.05  # ... >= 1.05 (was net_rr_min 1.30). With a taker entry and stop (0.12 % of fees)
+                                        # that needs TP >= 1.05 x SL + 0.206 %: the 0.20 % TP floor is moot, the RR binds
+    micro_net_rr_min: float = 1.10      # 11-09b micro mode: net-RR floor of every AUTO entry (was 1.30 / scalp 1.35); the
+                                        # break-even win rate is 1 / (1 + RR) = 47.6 %, not a guaranteed edge
+    micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
+    micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
+    micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
+    micro_max_spread_bps: float = 3.0   # a resting micro entry is pulled when the spread widens past 3 bps
+    micro_adverse_bps: float = 3.0      # ... or the mid moves this far against it (the owner spec says 0.15 %: see the plan)
     raw_quorum_gate: bool = True        # 11-09: AUTO entry needs the RAW swarm score >= 0.768; a JEV-lifted one is refused
     alt_risk_share: float = 0.85       # 85 % of portfolio_risk_usdt for SOL/DOGE: BTC may use only 15 % (0.15 U)
     alt_kelly_window: int = 15          # rolling Kelly over this coin's last 15 settled trades ...
@@ -1411,35 +1420,45 @@ class Engine:
         s = self.micro_scores().get(self.p.symbol)
         return (s if s is not None else 0.0) + 1e-3 * self.conviction(d, diag)
 
-    async def micro_keep(self, side: str, px0: float, mid0: Optional[float]) -> tuple:
-        """Adaptive TTL (micro mode): keep the resting GTX while the book is CLEAN - VPIN known and under
-        micro_vpin_clean, markout / tape guard says QUOTE, the mid has not moved dyn_ttl_adverse_bps against the trade
-        and the touch has not left more than peg_max_drift_pct from the first quote.  -> (keep, reason)."""
+    async def micro_keep(self, side: str, px0: float, mid0: Optional[float], age: float = 1e9) -> tuple:
+        """Adaptive TTL (micro mode) -> (keep, reason).  HARD FLOOR (11-09b): until the order has rested micro_ttl_s (10 s)
+        only a hard cut applies - the mid moved micro_adverse_bps against the trade, the spread widened past
+        micro_max_spread_bps, or the touch left more than peg_max_drift_pct from the first quote.  VPIN warm-up (unknown),
+        a dirty VPIN or toxic markouts do not cancel inside the floor (the loop's own 'toxic flow AGAINST our quote' abort
+        and tox_guard PULL still run).  Past the floor, going on to micro_ttl_max_s needs a CLEAN book: VPIN known and
+        under micro_vpin_clean and the markout guard says QUOTE."""
         p, d = self.p, 1 if side == 'BUY' else -1
         v = self.feed.vpin_now()
-        if v is None:
-            return False, 'VPIN unknown'
-        if v >= p.micro_vpin_clean:
-            return False, f'VPIN {v:.2f} >= {p.micro_vpin_clean}'
-        action, _, why = self.tox_check(side)
-        if action != tg.QUOTE:
-            return False, f'markout {action}: {why}'
+        floor = age < p.micro_ttl_s - 1e-9
+        if not floor:
+            if v is None:
+                return False, 'VPIN unknown'
+            if v >= p.micro_vpin_clean:
+                return False, f'VPIN {v:.2f} >= {p.micro_vpin_clean}'
+            action, _, why = self.tox_check(side)
+            if action != tg.QUOTE:
+                return False, f'markout {action}: {why}'
         mid = self.feed.price()
         if mid and mid0:
             mv = d * (mid / mid0 - 1) * 1e4
-            if mv <= -p.dyn_ttl_adverse_bps:
+            if mv <= -p.micro_adverse_bps:
                 return False, f'ADVERSE {mv:+.1f} bps'
         await self.refresh_book(0.5)
         b = self.book()
-        touch = b.get('bid') if side == 'BUY' else b.get('ask')
+        bid, ask = b.get('bid'), b.get('ask')
+        if bid and ask and ask >= bid:
+            sp = (ask - bid) / ((ask + bid) / 2) * 1e4
+            if sp > p.micro_max_spread_bps:
+                return False, f'spread {sp:.1f} bps > {p.micro_max_spread_bps:g}'
+        touch = bid if side == 'BUY' else ask
         if touch and px0 and d * (touch - px0) > 0 and abs(touch / px0 - 1) * 100 > p.peg_max_drift_pct:
             return False, f'touch left {abs(touch / px0 - 1) * 100:.3f}% > {p.peg_max_drift_pct}%'
-        return True, f'clean VPIN {v:.2f}'
+        return True, ('hard floor' if floor else f'clean VPIN {v:.2f}')
 
     def micro_ioc_route(self, decision: Decision, f: dict, side: str, path: str, xm: dict) -> str:
         """Hybrid execution (micro mode): 'ioc' only on an extreme directional burst that pays for a taker entry:
         RAW swarm score >= micro_ioc_consensus, OFI L10 with the trade >= micro_ioc_ofi, TP >= micro_ioc_min_tp_pct,
-        fee-true net RR with the taker entry >= net_rr_min, tape guard QUOTE.  Anything else stays Post-Only GTX.
+        fee-true net RR with the taker entry >= micro_ioc_net_rr_min, tape guard QUOTE.  Anything else stays Post-Only GTX.
         'shadow' only records what it would have done."""
         p = self.p
         if p.micro_ioc not in ('shadow', 'on') or not self.micro_active():
@@ -1456,8 +1475,8 @@ class Engine:
             tp, rr = bp.get('tp_pct'), bp.get('rr_net')
             if tp is None or tp < p.micro_ioc_min_tp_pct - 1e-12:
                 why = f'TP {"—" if tp is None else f"{tp:.3f}"}% < {p.micro_ioc_min_tp_pct}%'
-            elif p.net_rr_min and (rr is None or rr < p.net_rr_min - 1e-12):
-                why = f'net RR {"—" if rr is None else f"{rr:.2f}"} < {p.net_rr_min:g} with a taker entry'
+            elif p.micro_ioc_net_rr_min and (rr is None or rr < p.micro_ioc_net_rr_min - 1e-12):
+                why = f'net RR {"—" if rr is None else f"{rr:.2f}"} < {p.micro_ioc_net_rr_min:g} with a taker entry'
             else:
                 action, _, tox_why = self.tox_check(side)
                 if action != tg.QUOTE:
@@ -1611,8 +1630,16 @@ class Engine:
         win, loss = pl['tp_pct'] - (e_in + self.p.maker_bps) / 100.0, pl['sl_pct'] + pl['fees_pct']
         return win / loss if loss > 0 else None
 
+    def net_rr_eff(self) -> float:
+        """Net-RR floor of an AUTO entry: net_rr_min, or micro_net_rr_min while the micro mode is active (11-09b: the regime
+        multipliers shrink TP and SL together while the fees stay fixed, e.g. MR 0.29 / 0.10 x SIDEWAYS 0.75 = 0.217 / 0.075
+        is RR 1.15, which a 1.30 floor refused 8 times in a row)."""
+        return self.p.micro_net_rr_min if self.micro_active() else self.p.net_rr_min
+
     def scalp_rr_min(self) -> float:
-        """11-08: SCALP net-RR floor = max(net_rr_min, scalp_net_rr_min); 0 = no gate."""
+        """11-08: SCALP net-RR floor = max(net_rr_min, scalp_net_rr_min); 0 = no gate. Micro mode: micro_net_rr_min."""
+        if self.micro_active():
+            return self.p.micro_net_rr_min or 0.0
         return max(self.p.net_rr_min or 0.0, self.p.scalp_net_rr_min or 0.0)
 
     def scalp_min_tp(self, sl: float, route: str = 'gtx') -> float:
@@ -1978,7 +2005,7 @@ class Engine:
     def lane_feasibility(self, price: Optional[float] = None) -> dict:
         """Can any valid input pass every gate of a lane in this mode?  Fee-true RR range from the real config
         (no market data needed for demo; live needs a price + filters).  10-08v form §A."""
-        p, gate = self.p, self.p.net_rr_min
+        p, gate = self.p, self.net_rr_eff()
         out = {}
 
         def row(state, rr_lo, rr_hi, why, g=None):
@@ -2351,6 +2378,20 @@ class Engine:
         return (self.p.regime_gate == 'on' and self.regime_state is not None
                 and self.regime_state.state == rc.CRASH)
 
+    def micro_jumpy_scalp(self) -> Optional[str]:
+        """JUMPY + SCALP: None (allowed) in micro mode while the spread is under micro_jumpy_spread_bps and VPIN is known and
+        under micro_jumpy_vpin; otherwise the freeze reason. Unknown spread / VPIN cannot show the condition, so they freeze.
+        The JUMPY policy still applies its stop x1.5; its size x0.3 cannot go under the venue lot (see _execute)."""
+        p, frozen = self.p, 'JUMPY: micro-scalping frozen'
+        if not (p.micro_jumpy_scalp and self.micro_active()):
+            return frozen
+        sp, v = (self.features or {}).get('spread_bps'), self.feed.vpin_now()
+        if sp is None or sp >= p.micro_jumpy_spread_bps:
+            return f'{frozen} (spread {"—" if sp is None else f"{sp:.1f}"} bps, needs < {p.micro_jumpy_spread_bps:g})'
+        if v is None or v >= p.micro_jumpy_vpin:
+            return f'{frozen} (VPIN {"—" if v is None else f"{v:.2f}"}, needs known and < {p.micro_jumpy_vpin:g})'
+        return None
+
     def regime_check(self, path: str, tag: str, decision: Optional[Decision] = None) -> tuple:
         """Return (refusal, policy) for AUTO entries; shadow logs the gate without blocking or resizing."""
         if tag != 'AUTO' or self.p.regime_gate not in ('shadow', 'on'):
@@ -2378,7 +2419,9 @@ class Engine:
         elif st == rc.UNKNOWN:
             why = f'{st}: no directional entries ({reason})'
         elif st == rc.JUMPY and path == 'SCALP':
-            why = 'JUMPY: micro-scalping frozen'
+            why = self.micro_jumpy_scalp()
+            if why is None:
+                regime_label = 'JUMPY·MICRO-SCALP'
         else:
             style = rc.MEAN_REVERSION if path in ('MR', 'SCALP') else rc.TREND
             why = None if style in pol.styles else f'{st}: {style} entries off'
@@ -2505,11 +2548,12 @@ class Engine:
                                     self.p.mr_cvd60_usd * self.feed.cfg.usd_scale)
             if why:
                 out.append(('MR_FLOW', why))
-        if self.p.net_rr_min and self.p.max_loss_usdt is None:      # live (loss-budget SL): checked in execute()
+        rr_floor = self.net_rr_eff()
+        if rr_floor and self.p.max_loss_usdt is None:               # live (loss-budget SL): checked in execute()
             bp = self.bracket_plan('MR' if lane == 'MR' else 'SWARM', self.features)
             rr = bp.get('rr_net')
-            if rr is None or rr < self.p.net_rr_min:
-                out.append(('NET_RR', f'NET RR {"—" if rr is None else f"{rr:.2f}"} < {self.p.net_rr_min:g} '
+            if rr is None or rr < rr_floor:
+                out.append(('NET_RR', f'NET RR {"—" if rr is None else f"{rr:.2f}"} < {rr_floor:g} '
                                       f'({lane} TP {bp["tp_pct"]:.3f}% / SL {bp["sl_pct"]:.3f}% after fees, '
                                       f'break-even win rate {(bp.get("be_wr") or 1) * 100:.0f}%)'))
         if lane == 'MR':
@@ -2688,6 +2732,7 @@ class Engine:
                'edge_bps': (self.diag or {}).get('edge_bps'), 'policy': policy_id(self.p), 'code': CODE_VERSION,
                'crossed': xm.get('crossed'), 'cross_check': xm.get('cross_check'), 'dyn_ttl_s': xm.get('dyn_ttl_s'),
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
+               'micro_floor': xm.get('micro_floor'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
         self.funnel.outcome(outcome)
@@ -2817,12 +2862,16 @@ class Engine:
             if rpol is not None and rpol.size_mult < 1.0:
                 q_regime = floor_step((kq or base.qty or self.min_qty(ref)) * rpol.size_mult, step)
                 minimum = self.min_qty(ref)
-                if q_regime < minimum - 1e-12:
+                if q_regime < minimum - 1e-12 and path == 'SCALP' and self.micro_active():
+                    xm['micro_floor'] = f'{rpol.state} size x{rpol.size_mult:g} -> venue lot'   # the micro lot IS the minimum;
+                    q_regime = None                                                           # micro_check bounds the loss
+                elif q_regime < minimum - 1e-12:
                     msg = (f'REGIME GATE: {rpol.state} size x{rpol.size_mult:g} = {fmt(q_regime, step)} '
                            f'is below the venue minimum {fmt(minimum, step)}')
                     self.event(f'OKAPI refused {side}: {msg}')
                     return {'ok': False, 'error': msg}
-                kq = q_regime
+                if q_regime is not None:
+                    kq = q_regime
             sr_mult = None                                      # 11-08 owner: scalp size vs the 0.15 % stop floor
             if path == 'SCALP' and self.p.scalp_floor_resize and base.max_loss_usdt is None:
                 raw = self.p.scalp_sl_pct * (rpol.stop_mult if rpol is not None else 1.0)   # stop without the floor
@@ -2832,12 +2881,16 @@ class Engine:
                 if sr_mult < 1.0 - 1e-12:
                     q_risk = floor_step((kq or base.qty or self.min_qty(ref)) * sr_mult, step)
                     minimum = self.min_qty(ref)
-                    if q_risk < minimum - 1e-12:
+                    if q_risk < minimum - 1e-12 and self.micro_active():
+                        xm['micro_floor'] = f'scalp stop floor size x{sr_mult:.2f} -> venue lot'
+                        q_risk = None
+                    elif q_risk < minimum - 1e-12:
                         msg = (f'SCALP SIZE: stop {raw:.3f}% -> floor {base.sl_pct:.3f}% gives size x{sr_mult:.3f} = '
                                f'{fmt(q_risk, step)}, below the venue minimum {fmt(minimum, step)}')
                         self.event(f'OKAPI refused {side}: {msg}')
                         return {'ok': False, 'error': msg}
-                    kq = q_risk
+                    if q_risk is not None:
+                        kq = q_risk
             if self.micro_active():                             # 11-09: on a small wallet the venue minimum sets the size
                 msz = self.micro_sizer()
                 fees_m = ((self.p.maker_bps if route == 'gtx' else self.p.taker_bps + self.p.slip_bps)
@@ -2866,7 +2919,7 @@ class Engine:
             bp.update(tp_pct=pl['tp_pct'], sl_pct=pl['sl_pct'],
                       rr_gross=pl['tp_pct'] / pl['sl_pct'] if pl['sl_pct'] > 0 else None,
                       rr_net=rr, be_wr=1.0 / (1.0 + rr) if rr is not None and rr > -1.0 else None)
-            rr_gate = self.scalp_rr_min() if path == 'SCALP' else self.p.net_rr_min    # 11-08: SCALP floor 1.35
+            rr_gate = self.scalp_rr_min() if path == 'SCALP' else self.net_rr_eff()    # 11-08: SCALP floor 1.35
             if (tag == 'AUTO' and (path != 'SCALP' or self.p.scalp_net_rr) and rr_gate
                     and (rr is None or rr < rr_gate - 1e-12)):
                 msg = (f'ZEPHR NET RR {"—" if rr is None else f"{rr:.2f}"} < {rr_gate:g} '
@@ -2957,7 +3010,7 @@ class Engine:
                         # 11-09 adaptive TTL: a clean book earns micro_ttl_s (then +1 s steps to micro_ttl_max_s)
                         if now_m - t_post >= self.p.micro_ttl_max_s - 1e-9:
                             break
-                        keep, why_keep = await self.micro_keep(side, px0, mid0)
+                        keep, why_keep = await self.micro_keep(side, px0, mid0, now_m - t_post)
                         if not keep:
                             xm['ttl_cut'] = why_keep
                             break
@@ -2987,7 +3040,7 @@ class Engine:
                             break
                     elif micro_ttl_on and xm.get('micro_ttl_s') and now_m >= micro_next:
                         micro_next = now_m + 0.5
-                        keep, why_keep = await self.micro_keep(side, px0, mid0)
+                        keep, why_keep = await self.micro_keep(side, px0, mid0, now_m - t_post)
                         if not keep:                              # adverse / toxic / drifted: pull it at once
                             xm['ttl_cut'] = why_keep
                             break

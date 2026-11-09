@@ -12,6 +12,8 @@ the fixes are mechanisms with order-log fields that let the next run measure the
 - Universe: `SCAN_SYMBOLS` = BTC, SOL, DOGE. `run.bat micro` passed `--symbol DOGEUSDT --no-scan`, so one engine. `USD_SCALE` already has XRP 0.1; unknown symbols default to 0.1; `FALLBACK_SPECS` lacks ADA and 1000PEPE.
 - Compounding: none. The micro sizer always returns the smallest legal lot.
 
+> Thresholds and the unknown-VPIN rule of sections 1 and 2 are superseded by [plan_micro_unshackle.md](plan_micro_unshackle.md) (10 s hard floor, IOC 0.78 / 0.70 / 0.20 / RR 1.05, micro net-RR floor 1.10).
+
 ## 1. Pillar 1 - adaptive TTL (micro mode only)
 `Profile.micro_ttl` (True), `micro_ttl_s` 10, `micro_ttl_max_s` 15, `micro_vpin_clean` 0.65, `micro_max_reprices` 2. Active only while `micro_active()` for AUTO non-MR / non-SCALP GTX entries, so every existing test and the 5 000 U demo path are untouched.
 - At the 3.0 s deadline: extend to 10 s if CLEAN = VPIN known and < 0.65 AND `tox_check(side)` says QUOTE (own-fill and tape markouts non-toxic). Unknown VPIN = not clean (UNKNOWN is not zero) -> the old 3 s.
