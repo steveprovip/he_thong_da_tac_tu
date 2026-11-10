@@ -986,3 +986,31 @@ Branch `feat/janas-autoresearch-smc`, base commit `23370f7`. Changed: `research/
 - The hold is fixed at entry from the entry spread (time, not realized funding): simple and testable. If the spread decays the pair has not actually broken even at `hold_until`; the docstring says so.
 - Not a profit claim: the replay-validated rule is H28|k2 at 1.90 %/yr and says instantaneous spreads decay. This removes a cost the book charged itself every hour; a session shorter than the hold still ends below zero by its entry costs.
 - Rollback: `carry_hold_breakeven=False` on the profile (or `hold_breakeven=False`), or `git revert` the commit.
+
+## Handoff 6C — 2026-11-10 (i) (carry sim: a spread flip must last one funding hour before it closes a pair; DEMO sim only, nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner approved (2026-11-10, after entry h) the second follow-up: a spread that goes <= 0 closes a simulated carry pair only when it persists, not on the first print. Done means: the rule in `CarrySim` behind a value, the demo loop using it, tests, full suite green, committed.
+
+### 2. Ràng buộc (Constraints)
+Simulated book only (paper venues); no engine start / restart. Unchanged: entry rule, slots, guard, kill switch, the -3 bps basis stop, the 15 bps basis freeze, the break-even minimum hold (entry h), discrete settlement. `CarrySim`'s library default stays "close at once" (`flip_persist_s=0`), so the earlier carry tests keep their meaning. No AI attribution in commits; nothing pushed.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, base commit `9f26447`. Changed: `research/carry_lane.py` (`CarrySim(flip_persist_s=0.0)`; each pair tracks `flip_since`; the flip exit needs `now - flip_since >= flip_persist_s`; one CARRY SIM FLIP event when a flip is first seen; view keys `positions[].flip_since`, `rule.flip_persist_s`; close reason says how long the flip lasted), `core/engine.py` (Profile `carry_flip_persist_s` 3600.0; `Runner.funding_loop` passes it), `tests/test_runner_guards_2026_11_10.py` (3 new tests, 18 in the file). `web_ui/` untouched. The running bot still has the old book until `run.bat micro` is restarted.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/`: 2157 passed before, 2160 passed after (3 new in tests/test_runner_guards_2026_11_10.py), 0 failed, 238.4 s.
+- The one logged flip close (snapshot of entry g): WLD, "spread -0.36 bps/8h (flipped or gone)" after 55 minutes, net -0.5387 U at 573.75 U per leg. Holding through that print for an hour costs 0.36 / 8 = 0.045 bps of notional; the close it triggered cost the exit half of a 15 bps round trip plus the next pair's entry. n = 1: carry events are not persisted, so how often a flip reverts inside an hour is NOT measured.
+- Why 3600 s: funding is paid at settlement instants only (HL hourly, BN 8 h), so a predicted rate that dips between two instants and recovers costs nothing; one Hyperliquid hour is the shortest funding period on either venue. With the 300 s refresh the flip has to hold for 12 more refreshes with no known positive print.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: restart `run.bat micro` to load the book with both changes (h, i).
+2. Persist carry events or the closed list: without it neither the flip-reversion rate nor the effect of (h) and (i) can be measured over more than one session.
+3. A deep flip is not treated differently: at -5 bps/8 h the hour costs 0.6 bps. If spreads can flip by tens of bps, an immediate-exit threshold is the next owner decision; none is set.
+4. Runner guards (entry g): still need >= 30 `runner: true` rows.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Persistence is measured from the first flipped print with no KNOWN positive print in between. An UNKNOWN refresh neither resets the clock nor closes the pair (UNKNOWN is not a flip and not a recovery); the next known refresh decides.
+- The guard and the basis stop run before the flip check and do not wait for it; a rotation after the break-even hold can still close a flipped pair.
+- Not a profit claim, and not validated: it removes a round trip paid on a single print. If flips usually persist, the rule only adds an hour of negative carry before the same close.
+- Rollback: `carry_flip_persist_s=0` on the profile (or `flip_persist_s=0`), or `git revert` the commit.

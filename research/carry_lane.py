@@ -505,7 +505,14 @@ class CarrySim:
     11-10 (h) hold_breakeven (the demo engine loop): the hourly scan rotated a pair out after one hour while its 15 bps
     round trip needs breakeven_h(entry spread) hours of funding (40 h at 3 bps / 8 h). With the flag a pair is not
     ROTATEd before that time has passed; the scan fills free slots only. Risk and thesis exits (guard, basis stop,
-    spread flipped or gone) are unchanged. It stops paying a round trip per hour; it does not make the spread last."""
+    spread flipped or gone) are unchanged. It stops paying a round trip per hour; it does not make the spread last.
+
+    11-10 (i) flip_persist_s (the demo engine loop: 3600): a predicted rate that dips below the other venue's between
+    two settlement instants costs nothing unless it is still there at the instant, and closing on it pays a round trip.
+    With the value set, a spread <= 0 closes the pair only once it has stayed <= 0 for that long (first seen -> now, no
+    known positive print in between; an UNKNOWN refresh neither resets nor closes). 3600 s is one Hyperliquid funding
+    period, the shortest on either venue. Waiting costs the flipped spread for that time (a -2 bps / 8 h flip is 0.25 bps
+    for the hour) against a 15 bps round trip. 0 = at once."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
@@ -515,7 +522,9 @@ class CarrySim:
                  min_apr_pct: float = 20.0, min_basis_bps: float = 1.5, half_spread_bps: float = 0.5,
                  clock: Callable[[], float] = time.time, rotation_interval_s: float = 3600.0,
                  basis_stop_bps: float = -3.0, min_net_apr_pct: float = 0.0, settlement: str = 'continuous',
-                 basis_freeze_bps: float = 15.0, hold_breakeven: bool = False):
+                 basis_freeze_bps: float = 15.0, hold_breakeven: bool = False, flip_persist_s: float = 0.0):
+        if not _finite(flip_persist_s) or flip_persist_s < 0:
+            raise ValueError('flip_persist_s must be finite and >= 0')
         if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps, min_net_apr_pct, basis_freeze_bps)
                  and capital_usdt > 0 and slots >= 1 and 0 < utilization <= 1 and rotation_interval_s > 0
                  and basis_stop_bps < 0 and basis_freeze_bps > 0)):
@@ -524,6 +533,7 @@ class CarrySim:
             raise ValueError('settlement must be continuous or discrete')
         self.min_net_apr, self.settlement = float(min_net_apr_pct), settlement
         self.hold_breakeven = bool(hold_breakeven)           # 11-10 (h): no ROTATE before breakeven_h(entry spread) has passed
+        self.flip_persist_s = float(flip_persist_s)          # 11-10 (i): a spread <= 0 closes the pair once it has lasted this long
         self.cash = self.start = float(capital_usdt)
         self.slots, self.utilization = int(slots), float(utilization)
         self.min_spread, self.min_apr, self.min_basis = float(min_spread_8h), float(min_apr_pct), float(min_basis_bps)
@@ -664,7 +674,12 @@ class CarrySim:
                 self.events.append(f'CARRY SIM BASIS DIVERGENCE {coin}: {p["basis_drag_bps"]:+.2f} bps against the pair since '
                                    f'entry (limit -{self.basis_freeze_bps:g}) -> no new pair for '
                                    f'{self.rotation_interval_s / 60:.0f} min')
-            legs ={'BN': (await p['bn'].margin_view(), await p['bn'].position_view(p['bs'])),
+            flipped = p['spread_8h'] <= 0                    # 11-10 (i): when the flip was first seen; a positive print resets it
+            if flipped and p.get('flip_since') is None and self.flip_persist_s > 0:
+                self.events.append(f'CARRY SIM FLIP {coin}: spread {p["spread_8h"]:+.2f} bps/8h -> closes if it is still '
+                                   f'<= 0 in {self.flip_persist_s / 60:.0f} min')
+            p['flip_since'] = (now if p.get('flip_since') is None else p['flip_since']) if flipped else None
+            legs = {'BN': (await p['bn'].margin_view(), await p['bn'].position_view(p['bs'])),
                     'HL': (await p['hl'].margin_view(), await p['hl'].position_view(p['hs']))}
             action, why = self.guard.assess(legs, True, 1.0)
             if action in (CLOSE, DERISK):
@@ -675,8 +690,9 @@ class CarrySim:
                 self.basis_eject_until[coin] = next_scan
                 await self._close(coin, f'EJECT-BASIS drag {p["basis_drag_bps"]:+.2f} bps <= '
                                        f'{self.basis_stop_bps:+.2f} bps')
-            elif p['spread_8h'] <= 0:
-                await self._close(coin, f'spread {p["spread_8h"]:+.2f} bps/8h (flipped or gone)')
+            elif flipped and now - p['flip_since'] >= self.flip_persist_s - EPS:
+                await self._close(coin, f'spread {p["spread_8h"]:+.2f} bps/8h (flipped or gone' +
+                                  (f' for {(now - p["flip_since"]) / 60:.0f} min)' if self.flip_persist_s > 0 else ')'))
         ok, kill_why = self.kill.check(self.equity())
         self.basis_eject_until = {c: until for c, until in self.basis_eject_until.items() if until > now}
         ranked = sorted((x for x in views.values() if x[1] is not None and self._entry_ok(x[1])
@@ -736,7 +752,7 @@ class CarrySim:
                 'spread_8h': round(p['spread_8h'], 3), 'apr_pct': round(p['net_apr_pct'], 2),
                 'net_apr_pct': round(p['net_apr_pct'], 2), 'gross_apr_pct': round(p['gross_apr_pct'], 2),
                 'basis_drag_bps': round(p['basis_drag_bps'], 2), 'breakeven_h': breakeven_h(p['spread_8h']),
-                'min_hold_h': p['min_hold_h'], 'hold_until': p['hold_until'],
+                'min_hold_h': p['min_hold_h'], 'hold_until': p['hold_until'], 'flip_since': p.get('flip_since'),
                 'funding_usdt':round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
                 'fees_usdt': round(p['bn'].fees + p['hl'].fees, 4),
                 'net_usdt': round(p['bn'].equity() + p['hl'].equity() - 2 * n, 4)} for c, p in self.pairs.items()]
@@ -749,6 +765,7 @@ class CarrySim:
                          'slots': self.slots, 'validated': False, 'rotation_interval_s': self.rotation_interval_s,
                          'basis_stop_bps': self.basis_stop_bps, 'basis_freeze_bps': self.basis_freeze_bps,
                          'round_trip_bps': HEDGE_ROUND_TRIP_BPS, 'hold_breakeven': self.hold_breakeven,
+                         'flip_persist_s': self.flip_persist_s,
                          'tie_priority': ['1000PEPE', 'WLD'],
                          'replay_reference': 'XV H28|k2 holdout +14.59 bps / 28 d = 1.90 %/yr net'},
                 'rotation': {'interval_s': self.rotation_interval_s, 'last_scan': self.last_rotation_t,

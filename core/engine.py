@@ -718,6 +718,8 @@ class Profile:
                                             # 25.4 % net already). An annualized instant spread, not a forecast: replay realized 1.90 %/yr
     carry_hold_breakeven: bool = True       # 11-10 (h) CarrySim: a pair is not ROTATEd before its entry spread has had the hours it needs
                                             # to repay the 15 bps round trip (40 h at 3 bps/8 h); guard / basis / flip exits still act
+    carry_flip_persist_s: float = 3600.0    # 11-10 (i) CarrySim: a spread <= 0 closes a pair only after it has lasted one Hyperliquid
+                                            # funding hour (it closed WLD on a single -0.36 bps/8 h print after 55 min). 0 = at once
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -5279,9 +5281,10 @@ class Runner:
                     sim = getattr(self, 'carry_sim', None)
                     if sim is None:
                         # 11-10 (e): funding paid at the venues' settlement instants (HL hourly, BN 8 h), net-APR entry floor
-                        # 11-10 (h): no rotation before a pair's break-even hours
+                        # 11-10 (h): no rotation before a pair's break-even hours; (i): a flip must last before it closes
                         sim = self.carry_sim = CarrySim(wallet or 1000.0, min_net_apr_pct=e0.p.carry_min_net_apr_pct,
-                                                        settlement='discrete', hold_breakeven=e0.p.carry_hold_breakeven)
+                                                        settlement='discrete', hold_breakeven=e0.p.carry_hold_breakeven,
+                                                        flip_persist_s=e0.p.carry_flip_persist_s)
                     self.carry_sim_state = await sim.step(quotes)
                     for message in self.carry_sim_state.get('new_events', ()):
                         e0.event(message)

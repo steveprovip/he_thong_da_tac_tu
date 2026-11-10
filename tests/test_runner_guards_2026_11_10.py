@@ -258,3 +258,67 @@ async def test_the_demo_loop_holds_pairs_to_break_even():
     r = SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
     await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
     assert r.carry_sim.hold_breakeven is True and r.carry_sim_state['positions'][0]['min_hold_h'] == 40.0
+
+
+# ============================================================================= 11-10 (i): a spread flip must last before it closes
+def patient(t, **kw):
+    return cl.CarrySim(1000.0, clock=lambda: t[0], settlement='discrete', hold_breakeven=True, flip_persist_s=3600.0, **kw)
+
+
+async def test_a_flip_closes_a_pair_only_after_it_has_lasted_an_hour():
+    t = [T0]
+    sim = patient(t)
+    v = await sim.step([LINK])
+    assert v['positions'][0]['flip_since'] is None and v['rule']['flip_persist_s'] == 3600.0
+    t[0] = T0 + 300.0
+    v = await sim.step([LINK_FLIP])                                    # first flipped print: seen, not acted on
+    assert 'LINK' in sim.pairs and v['positions'][0]['flip_since'] == T0 + 300.0 and v['positions'][0]['spread_8h'] < 0
+    assert any('CARRY SIM FLIP LINK' in m and '60 min' in m for m in v['new_events'])
+    t[0] = T0 + 600.0
+    v = await sim.step([LINK_FLIP])
+    assert 'LINK' in sim.pairs and not any('CARRY SIM FLIP' in m for m in v['new_events'])      # announced once
+    t[0] = T0 + 900.0
+    v = await sim.step([LINK])                                         # a positive print: the clock is cleared
+    assert v['positions'][0]['flip_since'] is None
+    t[0] = T0 + 1200.0
+    await sim.step([LINK_FLIP])                                        # flipped again: a new clock from here
+    t[0] = T0 + 1200.0 + 3599.0
+    await sim.step([LINK_FLIP])
+    assert 'LINK' in sim.pairs and not sim.closed
+    t[0] += 1.0
+    await sim.step([LINK_FLIP])
+    assert 'LINK' not in sim.pairs and 'flipped or gone for 60 min' in sim.closed[-1]['why']
+
+
+async def test_an_unknown_refresh_neither_resets_nor_closes_a_flip_and_the_stops_do_not_wait():
+    t = [T0]
+    sim = patient(t)
+    await sim.step([LINK])
+    t[0] = T0 + 300.0
+    await sim.step([LINK_FLIP])
+    t[0] = T0 + 4000.0
+    await sim.step([fx.FundingQuote('LINK', None, None, None, None)])   # UNKNOWN past the hour: hold, decide nothing
+    assert 'LINK' in sim.pairs and sim.pairs['LINK']['flip_since'] == T0 + 300.0
+    t[0] = T0 + 4300.0
+    await sim.step([LINK_FLIP])                                        # known again and still flipped: now it closes
+    assert 'LINK' not in sim.pairs and 'flipped or gone' in sim.closed[-1]['why']
+
+    t2 = [T0]
+    stop = patient(t2)
+    await stop.step([LINK])
+    t2[0] = T0 + 300.0
+    await stop.step([fx.FundingQuote('LINK', 0.0006, 0.00005, 20.0, 20.02)])     # flipped AND -5 bps of basis: the stop acts at once
+    assert 'LINK' not in stop.pairs and stop.closed[-1]['why'].startswith('EJECT-BASIS')
+    for bad in (-1.0, float('nan')):
+        with pytest.raises(ValueError, match='flip_persist_s'):
+            cl.CarrySim(1000.0, flip_persist_s=bad)
+    assert cl.CarrySim(1000.0).flip_persist_s == 0.0                   # library default: a flip closes at once, as before
+
+
+async def test_the_demo_loop_waits_one_funding_hour_on_a_flip():
+    from types import SimpleNamespace
+    assert eng.PROFILES['demo'].carry_flip_persist_s == 3600.0
+    e0 = SimpleNamespace(account={'wallet': 1000.0}, p=eng.PROFILES['demo'], event=lambda m: None)
+    r = SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
+    await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
+    assert r.carry_sim.flip_persist_s == 3600.0 and r.carry_sim_state['rule']['flip_persist_s'] == 3600.0
