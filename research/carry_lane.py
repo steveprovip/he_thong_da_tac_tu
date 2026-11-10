@@ -482,18 +482,29 @@ class CarrySim:
     Exit: the spread flips or falls to <= 0. Maker leg on Binance (post-only at its touch, assumed filled: the replay's
     HEDGE assumption); limit IOC hedge on Hyperliquid at its touch + 3 bps, widened to 12. Each pair has its own pair of
     isolated paper accounts at leverage 1. Funding accrues per refresh at the current per-hour rates (an estimate
-    between prints). Kill switch: 15 % drawdown of the simulated book halts new pairs; the guard can close a pair."""
+    between prints). Kill switch: 15 % drawdown of the simulated book halts new pairs; the guard can close a pair.
+
+    11-10 settlement='discrete' (the demo engine loop): funding is paid only at the venue's settlement instants that passed
+    while the pair was open - Hyperliquid every hour on the hour, Binance at 00:00 / 08:00 / 16:00 UTC - at the rate last
+    seen BEFORE the instant (the quote after it already estimates the next period). A pair opened and closed inside one
+    Binance window earns no Binance funding, which the continuous estimate credited. A Binance symbol on a 4 h interval is
+    settled as its 8 h equivalent on the 8 h grid. A refresh with UNKNOWN quotes settles nothing; the instants it skipped
+    are settled at the next known refresh from the last known rates. min_net_apr_pct adds a net-APR entry floor."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
+    SETTLE_S = {'bn': 8 * 3600.0, 'hl': 3600.0}
 
     def __init__(self, capital_usdt: float, slots: int = 3, utilization: float = 0.7, min_spread_8h: float = 2.5,
                  min_apr_pct: float = 20.0, min_basis_bps: float = 1.5, half_spread_bps: float = 0.5,
                  clock: Callable[[], float] = time.time, rotation_interval_s: float = 3600.0,
-                 basis_stop_bps: float = -3.0):
-        if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps) and capital_usdt > 0
+                 basis_stop_bps: float = -3.0, min_net_apr_pct: float = 0.0, settlement: str = 'continuous'):
+        if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps, min_net_apr_pct) and capital_usdt > 0
                  and slots >= 1 and 0 < utilization <= 1 and rotation_interval_s > 0 and basis_stop_bps < 0)):
             raise ValueError('need positive capital, slots >= 1, utilization in (0, 1]')
+        if settlement not in ('continuous', 'discrete'):
+            raise ValueError('settlement must be continuous or discrete')
+        self.min_net_apr, self.settlement = float(min_net_apr_pct), settlement
         self.cash = self.start = float(capital_usdt)
         self.slots, self.utilization = int(slots), float(utilization)
         self.min_spread, self.min_apr, self.min_basis = float(min_spread_8h), float(min_apr_pct), float(min_basis_bps)
@@ -544,7 +555,8 @@ class CarrySim:
                             'qty': res.maker_filled, 'maker_side': maker_side, 'opened': self.clock(),
                             'spread_8h_entry': v['spread_bps_8h'], 'spread_8h': v['spread_bps_8h'],
                             'gross_apr_pct': v['gross_apr_pct'], 'net_apr_pct': v['net_apr_pct'],
-                            'entry_bn_mark': q.bn_mark, 'entry_hl_mark': q.hl_mark, 'basis_drag_bps': 0.0}
+                            'entry_bn_mark': q.bn_mark, 'entry_hl_mark': q.hl_mark, 'basis_drag_bps': 0.0,
+                            'rates': (q.bn_rate_8h, q.hl_rate_1h), 'settle_t': self.clock(), 'settled': {'bn': 0, 'hl': 0}}
         self.events.append(f'CARRY SIM OPEN {coin}: short {v["short"]} / long {v["long"]} {v["spread_bps_8h"]:+.2f} '
                            f'bps/8h (net APR {v["net_apr_pct"]:.1f} %) · {n:,.0f} USDT per leg · BN post-only + HL IOC '
                            f'(simulated)')
@@ -567,15 +579,31 @@ class CarrySim:
 
     def _accrue(self, coin: str, q, dt_h: float) -> None:
         p = self.pairs[coin]
+        if self.settlement == 'discrete':
+            return self._settle(p, q)
         if dt_h <= 0 or q.bn_rate_8h is None or q.hl_rate_1h is None:
             return                                           # UNKNOWN rates: nothing accrues, nothing is guessed
         t = int(self.clock() * 1000)
         p['bn'].settle_funding(p['bs'], q.bn_rate_8h / 8.0 * dt_h, t)
         p['hl'].settle_funding(p['hs'], q.hl_rate_1h * dt_h, t)
 
+    def _settle(self, p: dict, q) -> None:
+        """Discrete funding: one payment per settlement instant in (p['settle_t'], now], at the rates stored before it."""
+        now, rates = self.clock(), p['rates']
+        for venue, sym, rate in (('bn', p['bs'], rates[0]), ('hl', p['hs'], rates[1])):
+            step = self.SETTLE_S[venue]
+            n = int(now // step) - int(p['settle_t'] // step)
+            if n > 0 and rate is not None:
+                for _ in range(n):
+                    p[venue].settle_funding(sym, rate, int(now * 1000))     # bn: fraction per 8 h, hl: per 1 h
+                p['settled'][venue] += n
+        p['settle_t'] = now
+        if q.bn_rate_8h is not None and q.hl_rate_1h is not None:
+            p['rates'] = (q.bn_rate_8h, q.hl_rate_1h)
+
     def _entry_ok(self, v: dict) -> bool:
         return (v['spread_bps_8h'] >= self.min_spread and v['gross_apr_pct'] >= self.min_apr
-                and v['net_apr_pct'] > 0
+                and v['net_apr_pct'] > 0 and v['net_apr_pct'] >= self.min_net_apr
                 and v['basis_bps'] >= self.min_basis)
 
     async def step(self, quotes) -> dict:
@@ -668,11 +696,15 @@ class CarrySim:
                 'spread_8h': round(p['spread_8h'], 3), 'apr_pct': round(p['net_apr_pct'], 2),
                 'net_apr_pct': round(p['net_apr_pct'], 2), 'gross_apr_pct': round(p['gross_apr_pct'], 2),
                 'basis_drag_bps': round(p['basis_drag_bps'], 2),
-                'funding_usdt': round(p['bn'].funding + p['hl'].funding, 4),
+                'funding_usdt': round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
                 'fees_usdt': round(p['bn'].fees + p['hl'].fees, 4),
                 'net_usdt': round(p['bn'].equity() + p['hl'].equity() - 2 * n, 4)} for c, p in self.pairs.items()]
         return {'t': self.clock(), 'mode': 'SIMULATED · paper venues · no real order',
+                'settlement': self.settlement,
+                'next_settlement': ({k: (self.clock() // v + 1) * v for k, v in self.SETTLE_S.items()}
+                                    if self.settlement == 'discrete' else None),
                 'rule': {'min_spread_8h': self.min_spread, 'min_apr_pct': self.min_apr, 'min_basis_bps': self.min_basis,
+                         'min_net_apr_pct': self.min_net_apr,
                          'slots': self.slots, 'validated': False, 'rotation_interval_s': self.rotation_interval_s,
                          'basis_stop_bps': self.basis_stop_bps,
                          'tie_priority': ['1000PEPE', 'WLD'],

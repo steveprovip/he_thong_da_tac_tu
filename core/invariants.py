@@ -89,6 +89,8 @@ def check_profile(p) -> list:
             out.append(f'live autonomy {p.autonomy!r} != off')
         if getattr(p, 'micro_harvester', 'off') == 'on':      # 11-09e: maker-only, but the lane has no holdout evidence
             out.append("live micro_harvester 'on': chop harvester is a Demo rehearsal (shadow is allowed)")
+        if getattr(p, 'micro_sniper_runner', 'off') == 'on':    # 11-10 (e): unvalidated exit policy (no eject, far TP)
+            out.append("live micro_sniper_runner 'on': the runner exit policy is a Demo rehearsal")
         if getattr(p, 'micro_max_positions', 1) > 1:             # 11-09f: several concurrent positions are a Demo rehearsal
             out.append(f'live micro_max_positions {p.micro_max_positions} > 1')
         if getattr(p, 'micro_accel_k', 0.0) > 0:

@@ -58,6 +58,11 @@ def micro_capital_env(env):
         if harvester not in ('off', 'shadow', 'on'):
             raise ValueError('MICRO_HARVESTER must be off, shadow or on')
         out['micro_harvester'] = harvester
+    runner = str(env.get('MICRO_SNIPER_RUNNER', '')).strip().lower()      # 11-10 (e) runner exits of high-conviction trend entries
+    if runner:
+        if runner not in ('off', 'on'):
+            raise ValueError('MICRO_SNIPER_RUNNER must be off or on')
+        out['micro_sniper_runner'] = runner
     banks = {k: str(env.get(k, '')).strip() for k in ('MICRO_CAPITAL_BANKROLL', 'MICRO_BANKROLL_DEMO')}   # 11-09f: same knob, 2 names
     for key, raw in banks.items():
         if raw:

@@ -373,6 +373,15 @@ class Profile:
     micro_harvest_rotate_ker: float = 0.15  # a coin with KER < 0.15 is dead tape: it neither harvests nor competes for the slot
     micro_sniper_tp_max_pct: float = 0.70   # TREND lane: TP slides from the RR-1.40 TP (0.46 %) to 0.70 % as KER goes ...
     micro_sniper_ker_full: float = 0.60     # ... from micro_ker_min to this (the MARIN trail takes over from +0.50 % MFE)
+    micro_sniper_runner: str = 'off'    # 11-10 (e) 'off' | 'on' (opt-in, Demo; armed live refuses it; UNVALIDATED). A micro AUTO entry on
+                                        # the SWARM / SWARM_OVERRIDE path whose raw score AND consensus are >= swarm_override_min_score
+                                        # is managed as a RUNNER: the resting TP moves out to micro_runner_tp_pct (a cap, not a target),
+                                        # the time-decay ejects (EJECT / EJECT-FAST) do not apply, and the +0.50 % trail gap becomes
+                                        # max(trail_gap_pct, micro_runner_trail_atr x ATR 1 m at entry). Entry gates, the net-RR check
+                                        # (judged on the UNCHANGED bracket), the exchange SL, RATCHET / RATCHET2 and the 0.05 U loss
+                                        # cap are untouched. Ledger: 0 of 129 trades ever reached MFE +0.5 % (max 0.441 %)
+    micro_runner_tp_pct: float = 2.5
+    micro_runner_trail_atr: float = 2.0
     micro_equity_track: bool = True     # forced micro on a big (Demo) wallet: virtual equity = micro_bankroll + realized micro
                                         # PnL (capped at max(micro_equity_max, micro_bankroll)): every won USDT raises the lot
     micro_accel_k: float = 0.0          # 11-09f lot = plain compounding target x (1 + k x realized micro PnL USDT), capped at one
@@ -698,6 +707,8 @@ class Profile:
     funding_shadow: bool = False
     funding_every_s: float = 300.0
     carry_sim: bool = False
+    carry_min_net_apr_pct: float = 25.0     # 11-10 (e) CarrySim entry floor on the instantaneous net APR (the RFC rule's 2.5 bps/8 h is
+                                            # 25.4 % net already). An annualized instant spread, not a forecast: replay realized 1.90 %/yr
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -1542,7 +1553,8 @@ class Engine:
             self.harvest_log.post(key, self.p.symbol, side, px, self.feed.price(), self.book().get('price'),
                                   self.hlog_features(f, side, px, decision),
                                   extra={'macro_soft': bool(xm.get('macro_soft')), 'cvd_soft': xm.get('cvd_soft'),
-                                         'qty_req': xm.get('qty_req'), 'policy': self.p.micro_exit_policy})
+                                         'qty_req': xm.get('qty_req'), 'policy': self.p.micro_exit_policy,
+                                         **({'shadow': True, 'swarm_ok': xm.get('swarm_ok')} if xm.get('shadow') else {})})
         self.hlog_call(go)
 
     def hlog_fill(self, xm: dict, fill: float) -> None:
@@ -1861,8 +1873,17 @@ class Engine:
         self.scalp_next = self.clock() + self.p.scalp_every_s
         if mode == 'shadow':
             b = self.book()
+            touch = b.get('bid') if side == 'BUY' else b.get('ask')
+            if harvest and touch:
+                # 11-10 (e): a shadow harvest still writes its quote-side markouts (the q_* series; no order, so no fill and no f_*)
+                # to data/harvest_markouts.jsonl, flagged `shadow`. swarm_ok = the 'on' lane would have had its VESKA quorum here
+                sx = {'macro_soft': 'softened' in why, 'cvd_soft': self.cvd3m_soft(side, f), 'shadow': True,
+                      'swarm_ok': bool(d is not None and not d.veto and d.side == side
+                                       and d.score >= self.p.scalp_min_score - 1e-9)}
+                self.hlog_post(sx, side, touch, f, d)
+                self.hlog_close(sx)
             self._shadow_row({'outcome': 'SHADOW_SCALP', 'side': side, 'path': 'SCALP', 'why': why,
-                              'touch': b.get('bid') if side == 'BUY' else b.get('ask'), 'ker': f.get('ker'),
+                              'touch': touch, 'ker': f.get('ker'),
                               'spread_bps': f.get('spread_bps'), 'ofi': f.get('ofi_10s'),
                               **({'harvest': True, 'tp_pct': hbp['tp_pct'], 'sl_pct': hbp['sl_pct'], 'be_wr': hbp['be_wr'],
                                   'atr_pct': f.get('atr_pct'), 'cvd_soft': self.cvd3m_soft(side, f),
@@ -1882,6 +1903,17 @@ class Engine:
         if self.clock() - getattr(self, '_lock_evt_t', 0.0) >= 60.0:
             self._lock_evt_t = self.clock()
             self.event(f'SCALP LOCK: {why}')
+
+    def runner_grade(self, path: str, tag: str, d: Optional[Decision]) -> bool:
+        """11-10 (e): is this fill managed as a TREND SNIPER runner (Profile.micro_sniper_runner)?  Demo micro AUTO entries on the
+        swarm trend / override paths only, raw score and raw consensus both at or above the override floor.  Unknown = no."""
+        p = self.p
+        if (p.micro_sniper_runner != 'on' or p.mode != 'demo' or tag != 'AUTO' or path not in ('SWARM', 'SWARM_OVERRIDE')
+                or d is None or not self.micro_active()):
+            return False
+        floor, cons = max(inv.SUPERMAJORITY, p.swarm_override_min_score), (self.diag or {}).get('consensus')
+        return (isinstance(cons, (int, float)) and math.isfinite(cons) and math.isfinite(d.score)
+                and min(cons, d.score) >= floor - 1e-12)
 
     def swarm_override_eligible(self, d: Decision, votes: list, diag: dict) -> bool:
         """Allow only a demo, KER-locked consensus override above both the policy quorum and its score floor."""
@@ -3522,6 +3554,10 @@ class Engine:
                         if qty * fill >= self.p.cs_big_notional - 1e-9 else self.p.tp1_scaled_pct)
                 tp1p = min(tp1p, pl['tp_pct'])
                 tp = round_tick(fill * (1 + d1 * tp1p / 100.0), tick, 'up' if d1 > 0 else 'down')
+            runner = self.runner_grade(path, tag, decision)
+            if runner and self.p.micro_runner_tp_pct > pl['tp_pct']:    # 11-10 (e): the TP order is a far cap, the trail exits
+                d1 = 1 if side == 'BUY' else -1
+                tp = round_tick(fill * (1 + d1 * self.p.micro_runner_tp_pct / 100.0), tick, 'up' if d1 > 0 else 'down')
             opp = 'SELL' if side == 'BUY' else 'BUY'
             self.pos = {'symbol': sym, 'side': side, 'qty': qty, 'qty_str': qty_str, 'entry': fill,
                         'opened': self.clock(), 'opened_ms': posted_ms - 1000, 'sl': sl, 'tp': tp,
@@ -3537,7 +3573,7 @@ class Engine:
                         'rr_gross': bp['rr_gross'], 'rr_net': bp['rr_net'], 'be_wr': bp['be_wr'],
                         'vpin': f.get('vpin'), 'ofi': f.get('ofi_10s'), 'kelly_f': self.kelly().get('f'),
                         'quote_px': px, 'size_mult': mult, 'alt_boost': boosted, 'probe': probe, 'super_size': superc,
-                        'tp_plan': tp_plan,
+                        'tp_plan': tp_plan, 'runner': runner,
                         'conviction': {k[3:]: v for k, v in xm.items() if k.startswith('cs_')} or None,
                         'agents': {v.agent: [v.side, v.confidence] for v in (self.votes or [])
                                    if v.agent in swarm.ALPHA} or None,
@@ -3569,7 +3605,9 @@ class Engine:
             how = (f'IOC TAKER super-edge, cons {(self.diag or {}).get("consensus", 0) * 100:.1f}% JEV '
                    f'{(self.diag or {}).get("jev", 0):.1f}' if route == 'ioc' else 'POST-ONLY GTX maker')
             self.event(f'VESKA {tag} {side} {qty_str} {sym} @ {fill:g} ({how}, {ms:.0f} ms) · {path} '
-                       f'{decision.score * 100:.1f}% · TP1 {tp:g} x{fmt(self.pos["tp_qty"], step)} · SL {sl:g}')
+                       f'{decision.score * 100:.1f}% · TP1 {tp:g} x{fmt(self.pos["tp_qty"], step)} · SL {sl:g}'
+                       + (f' · RUNNER (TP is a cap, planned {tp_plan:g}; no time eject; trail from '
+                          f'+{self.p.trail_activate_pct}%)' if runner else ''))
             try:
                 await self.place_entry_stop(sym, opp, fmt(sl, tick), self.pos['sl_cid'])
             except Exception as exc:
@@ -4066,6 +4104,8 @@ class Engine:
     def eject_due(self, p: dict, now: float) -> bool:
         """Time decay: a soft-exit position open >= eject_s whose best excursion never reached +eject_mfe_pct."""
         own = p.get('eject_s')                                        # per-position schedule (SCALP 90 s)
+        if p.get('runner'):                                           # 11-10 (e): a runner leaves by SL / ratchet / trail / flow / regime
+            return False
         if p.get('patient'):
             # 11-10 patient harvest: the BE scratch is for a trade that already RAN >= patient_mfe and then stalled; a trade that
             # never moved is not scratched (it keeps its TP and its exchange SL)
@@ -4079,6 +4119,7 @@ class Engine:
         """Low-velocity time decay: >= 120 s, MFE never reached +0.08 %, |px_vel_15s| < 0.025 % (unknown -> no)."""
         vel = f.get('px_vel_15s')
         return (self.p.eject_fast and self.p.soft_exits and p.get('eject_s') is None and not p.get('tp1_filled')
+                and not p.get('runner')
                 and now - p['opened'] >= self.p.eject_fast_s and p['mfe_pct'] < self.p.eject_fast_mfe_pct
                 and vel is not None and abs(vel) < self.p.eject_fast_vel_pct)
 
@@ -4227,6 +4268,8 @@ class Engine:
             gaps.append(p['atr_trail_pct'])
         if gaps:
             gap = min(gaps)
+            if p.get('runner'):                                     # 11-10 (e): room for the move, never tighter than the plain trail
+                gap = max(self.p.trail_gap_pct, self.p.micro_runner_trail_atr * (p.get('atr_pct') or 0.0))
             cands.append((round_tick(p['peak'] * (1 - d * gap / 100.0), self.spec['tick'], 'down' if d > 0 else 'up'),
                           'TRAIL'))
             p['trail_gap'] = round(gap, 4)
@@ -4454,6 +4497,7 @@ class Engine:
                'micro': bool(p.get('micro')),
                'scalp_risk_mult': p.get('scalp_risk_mult'),          # 11-08: SCALP size vs the stop floor
                'exit_policy': 'patient' if p.get('patient') else None,   # 11-10
+               'runner': True if p.get('runner') else None, 'tp_plan': p.get('tp_plan'),   # 11-10 (e): planned TP vs the runner cap
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
                'conviction': p.get('conviction'), 'align3': p.get('align3'), 'early_invalid': p.get('early_invalid'),
@@ -5201,7 +5245,9 @@ class Runner:
                     from research.carry_lane import CarrySim
                     sim = getattr(self, 'carry_sim', None)
                     if sim is None:
-                        sim = self.carry_sim = CarrySim(wallet or 1000.0)
+                        # 11-10 (e): funding paid at the venues' settlement instants (HL hourly, BN 8 h), net-APR entry floor
+                        sim = self.carry_sim = CarrySim(wallet or 1000.0, min_net_apr_pct=e0.p.carry_min_net_apr_pct,
+                                                        settlement='discrete')
                     self.carry_sim_state = await sim.step(quotes)
                     for message in self.carry_sim_state.get('new_events', ()):
                         e0.event(message)
