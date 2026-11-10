@@ -1014,3 +1014,38 @@ Branch `feat/janas-autoresearch-smc`, base commit `9f26447`. Changed: `research/
 - The guard and the basis stop run before the flip check and do not wait for it; a rotation after the break-even hold can still close a flipped pair.
 - Not a profit claim, and not validated: it removes a round trip paid on a single print. If flips usually persist, the rule only adds an hour of negative carry before the same close.
 - Rollback: `carry_flip_persist_s=0` on the profile (or `flip_persist_s=0`), or `git revert` the commit.
+
+## Handoff 6C — 2026-11-10 (j) (carry sim rows persisted to data/carry_sim.jsonl; DEMO sim only, nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner approved (2026-11-10, after entry i) the third follow-up: log the simulated carry book's opens and closes to a file, so the rules of entries g / h / i can be measured over more than one session. Done means: structured rows from `CarrySim`, the demo loop appending them to a file, tests, full suite green, committed.
+
+### 2. Ràng buộc (Constraints)
+Bookkeeping only: no decision reads the file, a failed write cannot stop the funding loop, an engine without a ledger path writes nothing. `CarrySim` itself still does no IO (it lives in research/). The cockpit snapshot does not carry the rows. No engine start / restart; no AI attribution in commits; nothing pushed.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, base commit `1186712`. Changed: `research/carry_lane.py` (`CarrySim.records` = the rows of the last step via `_rec`; `_close(..., code)` with GUARD / BASIS / FLIP / ROTATE), `core/engine.py` (`write_carry_rows(ledger, rows)`, `CARRY_LOG_SCHEMA` 1, Profile `carry_sim_log` True, the call in `Runner.funding_loop`), `tests/test_runner_guards_2026_11_10.py` (3 new tests, 21 in the file). File: `carry_sim.jsonl` beside the trade ledger (`data/carry_sim.jsonl` in production, git-ignored by `data/*.jsonl`); it does not exist yet, the first refresh after a restart of `run.bat micro` creates it.
+
+Row kinds (every row has `kind`, `t`, `schema`, `code` = commit of the checkout):
+- `START` once per process: capital, slots, notional per leg, settlement, the rule values (so a session is self-describing).
+- `OPEN`: coin, short / long, spread_8h, gross / net APR, basis_bps, min_hold_h, both marks and both rates. `OPEN_FAIL`: state, why.
+- `CLOSE`: coin, `code`, why, opened, hold_s, net_usdt, funding_usdt, fees_usdt, spread at entry and at the close, basis_drag_bps, min_hold_h, flip_s (None when not flipped), settlements. `CLOSE_FAIL`: state, why.
+- `FLIP` (first flipped print: spread_8h, held_s) and `FLIP_CLEAR` (lasted_s, measured between 300 s refreshes).
+- `BASIS_FREEZE`: coin, drag_bps, until.
+- `BOOK` once per refresh: equity, pnl, funding_total_usdt, fees_total_usdt, kill, and per open pair net / funding / fees / spread / basis drag / flip_since.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/`: 2160 passed before, 2163 passed after (3 new in tests/test_runner_guards_2026_11_10.py), 0 failed, 230.1 s. The suite wrote no `data/carry_sim.jsonl` (the tests use temporary ledgers).
+- Size, measured on a three-pair book: `BOOK` 605 bytes, `OPEN` 338, `START` 410. One `BOOK` row per 300 s refresh is 0.17 MB per day of run time.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: restart `run.bat micro`; the file starts with the next refresh.
+2. Readings the rows allow once there are sessions: flip reversion rate = `FLIP_CLEAR` / `FLIP` and the distribution of `lasted_s` (is one hour the right wait?); round trips per day and net per `CLOSE` by `code`; fees against funding from the last `BOOK` row of each `START`. No report tool was written.
+3. The book still restarts from zero at every process start (state in memory): a pair's 40 h hold cannot complete in a 1-2 h session. Restoring the book from the file is a separate decision.
+4. Runner guards (entry g): still need >= 30 `runner: true` rows.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- A `BOOK` mark per refresh goes beyond "opens and closes": with the break-even hold a pair rarely closes inside a session, and a pair that is open when the process stops has no CLOSE row. Without the mark the file would hold opens and no outcome.
+- `FLIP_CLEAR` exists only for the log (no cockpit event): it is the numerator of the reversion rate that entry (i) could not measure.
+- The reason code is passed by the caller, not parsed from the text of `why`.
+- Rollback: `carry_sim_log=False` on the profile, or `git revert` the commit; the file can be deleted at any time.

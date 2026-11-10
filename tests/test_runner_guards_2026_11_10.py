@@ -322,3 +322,96 @@ async def test_the_demo_loop_waits_one_funding_hour_on_a_flip():
     r = SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
     await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
     assert r.carry_sim.flip_persist_s == 3600.0 and r.carry_sim_state['rule']['flip_persist_s'] == 3600.0
+
+
+# ============================================================================= 11-10 (j): the book's rows reach a file
+def kinds(sim):
+    return [r['kind'] for r in sim.records]
+
+
+async def test_each_step_leaves_its_rows_and_the_snapshot_does_not_carry_them():
+    t = [T0]
+    sim = patient(t)
+    v = await sim.step([LINK])
+    assert kinds(sim) == ['START', 'OPEN', 'BOOK'] and 'records' not in v           # the cockpit frame stays small
+    start, opened, book = sim.records
+    assert start['capital'] == 1000.0 and start['rule']['flip_persist_s'] == 3600.0 and start['rule']['hold_breakeven'] is True
+    assert (opened['coin'], opened['short'], opened['long'], opened['spread_8h'], opened['min_hold_h']) == ('LINK', 'HL', 'BN', 3.0, 40.0)
+    assert opened['bn_mark'] == 20.0 and opened['hl_rate_1h'] == 0.00005 and opened['t'] == T0
+    assert book['pnl'] == v['pnl'] and book['fees_total_usdt'] == v['fees_total_usdt'] and [x['coin'] for x in book['open']] == ['LINK']
+    t[0] = T0 + 300.0
+    await sim.step([LINK])
+    assert kinds(sim) == ['BOOK']                                      # one mark per refresh, START only once
+
+
+async def test_flips_their_reversions_and_every_close_reason_are_rows():
+    t = [T0]
+    sim = patient(t)
+    await sim.step([LINK])
+    t[0] = T0 + 300.0
+    await sim.step([LINK_FLIP])
+    flip = next(r for r in sim.records if r['kind'] == 'FLIP')
+    assert flip['coin'] == 'LINK' and flip['spread_8h'] < 0 and flip['held_s'] == 300.0
+    t[0] = T0 + 900.0
+    await sim.step([LINK])                                             # reverted after two refreshes
+    clear = next(r for r in sim.records if r['kind'] == 'FLIP_CLEAR')
+    assert clear['lasted_s'] == 600.0 and clear['spread_8h'] == 3.0
+    t[0] = T0 + 1200.0
+    await sim.step([LINK_FLIP])
+    t[0] = T0 + 4800.0
+    await sim.step([LINK_FLIP])                                        # lasted the hour: closed
+    close = next(r for r in sim.records if r['kind'] == 'CLOSE')
+    assert (close['code'], close['coin'], close['flip_s'], close['hold_s']) == ('FLIP', 'LINK', 3600.0, 4800.0)
+    assert close['net_usdt'] == sim.closed[-1]['net_usdt'] and close['fees_usdt'] > 0 and close['min_hold_h'] == 40.0
+    assert close['settlements']['hl'] >= 1 and 'flipped or gone' in close['why']
+
+    t2 = [T0]
+    rot = cl.CarrySim(1000.0, slots=1, clock=lambda: t2[0], settlement='discrete')          # hourly rotation, as the library default
+    await rot.step([LINK])
+    t2[0] = T0 + 3600.0
+    await rot.step([LINK, HOT])
+    assert [(r['code'], r['flip_s']) for r in rot.records if r['kind'] == 'CLOSE'] == [('ROTATE', None)]
+    assert [r['coin'] for r in rot.records if r['kind'] == 'OPEN'] == ['AAVE']
+
+    t3 = [T0]
+    jump = discrete(t3)
+    await jump.step([LINK])
+    t3[0] = T0 + 300.0
+    await jump.step([fx.FundingQuote('LINK', 0.0001, 0.00005, 20.0, 20.05)])
+    assert kinds(jump) == ['BASIS_FREEZE', 'CLOSE', 'BOOK']
+    assert jump.records[1]['code'] == 'BASIS' and jump.records[0]['drag_bps'] == pytest.approx(-19.99, abs=0.02)
+
+
+async def test_the_demo_loop_appends_the_rows_beside_the_ledger_and_never_depends_on_the_file(tmp_path):
+    import json
+    from dataclasses import replace
+    from types import SimpleNamespace
+    assert eng.PROFILES['demo'].carry_sim_log is True
+
+    def runner(ledger, **prof):
+        e0 = SimpleNamespace(account={'wallet': 1000.0}, p=replace(eng.PROFILES['demo'], **prof), event=lambda m: None)
+        if ledger is not None:
+            e0.ledger = ledger
+        return SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
+
+    r = runner(tmp_path / 'engine_trades.jsonl')
+    await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
+    await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
+    rows = [json.loads(x) for x in (tmp_path / 'carry_sim.jsonl').read_text(encoding='utf-8').splitlines()]
+    assert [x['kind'] for x in rows] == ['START', 'OPEN', 'BOOK', 'BOOK']
+    assert all(x['schema'] == 1 and 'code' in x and x['t'] > 0 for x in rows) and rows[1]['coin'] == 'LINK'
+
+    off = runner(tmp_path / 'off' / 'engine_trades.jsonl', carry_sim_log=False)
+    (tmp_path / 'off').mkdir()
+    await eng.Runner.funding_loop(off, once=True, fetch=lambda: [LINK])
+    assert not (tmp_path / 'off' / 'carry_sim.jsonl').exists() and off.carry_sim_state['positions']
+
+    bare = runner(None)                                                # an engine without a ledger path: nothing is written
+    await eng.Runner.funding_loop(bare, once=True, fetch=lambda: [LINK])
+    assert bare.carry_sim_state['positions'] and eng.write_carry_rows(None, [{'kind': 'BOOK'}]) == 0
+
+    gone = runner(tmp_path / 'missing_dir' / 'engine_trades.jsonl')    # the folder does not exist: the write fails quietly
+    state = await eng.Runner.funding_loop(gone, once=True, fetch=lambda: [LINK])
+    assert gone.carry_sim_state['positions'] and 'error' not in (state or {})
+    assert eng.write_carry_rows(tmp_path / 'engine_trades.jsonl', [{'kind': 'BOOK', 'bad': object()}]) == 0      # not JSON: swallowed
+    assert eng.write_carry_rows(tmp_path / 'engine_trades.jsonl', []) == 0

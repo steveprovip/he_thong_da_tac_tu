@@ -65,6 +65,24 @@ def code_version(root: Path = ROOT) -> Optional[str]:
     return None
 
 
+CARRY_LOG_SCHEMA = 1
+
+
+def write_carry_rows(ledger, rows) -> int:
+    """11-10 (j): append the simulated carry book's rows (research.carry_lane.CarrySim.records) to carry_sim.jsonl beside
+    the trade ledger -> rows written. Bookkeeping only: an engine without a ledger path writes nothing and a failed
+    write is swallowed, so the funding loop never depends on it."""
+    if not ledger or not rows:
+        return 0
+    try:
+        lines = [json.dumps({**r, 'schema': CARRY_LOG_SCHEMA, 'code': CODE_VERSION}, ensure_ascii=False) for r in rows]
+        with open(Path(ledger).parent / 'carry_sim.jsonl', 'a', encoding='utf-8') as fh:
+            fh.write('\n'.join(lines) + '\n')
+    except (OSError, TypeError, ValueError):
+        return 0
+    return len(lines)
+
+
 def jev_lift(path: str, raw_consensus: Optional[float]) -> Optional[bool]:
     """Label JEV authorizations whose raw swarm score was below the fixed 76.8% quorum."""
     if raw_consensus is None:
@@ -720,6 +738,8 @@ class Profile:
                                             # to repay the 15 bps round trip (40 h at 3 bps/8 h); guard / basis / flip exits still act
     carry_flip_persist_s: float = 3600.0    # 11-10 (i) CarrySim: a spread <= 0 closes a pair only after it has lasted one Hyperliquid
                                             # funding hour (it closed WLD on a single -0.36 bps/8 h print after 55 min). 0 = at once
+    carry_sim_log: bool = True              # 11-10 (j) CarrySim rows (opens, closes with a reason code, flips, a book mark per refresh)
+                                            # -> data/carry_sim.jsonl. Bookkeeping only: the book's state lives in memory and was lost
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -5286,6 +5306,8 @@ class Runner:
                                                         settlement='discrete', hold_breakeven=e0.p.carry_hold_breakeven,
                                                         flip_persist_s=e0.p.carry_flip_persist_s)
                     self.carry_sim_state = await sim.step(quotes)
+                    if getattr(e0.p, 'carry_sim_log', False):            # 11-10 (j): rows a restart does not erase
+                        write_carry_rows(getattr(e0, 'ledger', None), sim.records)
                     for message in self.carry_sim_state.get('new_events', ()):
                         e0.event(message)
                 else:

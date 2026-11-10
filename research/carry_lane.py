@@ -512,7 +512,11 @@ class CarrySim:
     With the value set, a spread <= 0 closes the pair only once it has stayed <= 0 for that long (first seen -> now, no
     known positive print in between; an UNKNOWN refresh neither resets nor closes). 3600 s is one Hyperliquid funding
     period, the shortest on either venue. Waiting costs the flipped spread for that time (a -2 bps / 8 h flip is 0.25 bps
-    for the hour) against a 15 bps round trip. 0 = at once."""
+    for the hour) against a 15 bps round trip. 0 = at once.
+
+    11-10 (j) self.records: the structured rows of the last step (START once, OPEN / OPEN_FAIL, CLOSE with a reason code
+    GUARD / BASIS / FLIP / ROTATE, CLOSE_FAIL, FLIP and FLIP_CLEAR, BASIS_FREEZE, one BOOK mark per refresh). The sim
+    writes no file; core.engine.Runner.funding_loop appends them to carry_sim.jsonl beside the trade ledger."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
@@ -544,6 +548,7 @@ class CarrySim:
         self.pairs: dict = {}
         self.closed: list = []
         self.events: list = []
+        self.records: list = []                              # 11-10 (j): structured rows of the last step (_rec)
         self.last_t: Optional[float] = None
         self.last_rotation_t: Optional[float] = None
         self.rotation_targets: list = []
@@ -582,6 +587,7 @@ class CarrySim:
         if res.state != 'HEDGED':
             self.cash += bn.equity() + hl.equity()
             self.events.append(f'CARRY SIM {coin}: entry {res.state} ({res.reason}) - no pair')
+            self._rec('OPEN_FAIL', coin=coin, state=res.state, why=res.reason)
             return
         self.pairs[coin] = {'bn': bn, 'hl': hl, 'bs': bs, 'hs': hs, 'ex': ex, 'short': v['short'], 'long': v['long'],
                             'qty': res.maker_filled, 'maker_side': maker_side, 'opened': self.clock(),
@@ -591,15 +597,25 @@ class CarrySim:
                             'rates': (q.bn_rate_8h, q.hl_rate_1h), 'settle_t': self.clock(), 'settled': {'bn': 0, 'hl': 0},
                             'min_hold_h': (breakeven_h(v['spread_bps_8h']) or 0.0) if self.hold_breakeven else 0.0}
         self.pairs[coin]['hold_until'] = self.pairs[coin]['opened'] + self.pairs[coin]['min_hold_h'] * 3600.0
+        self._rec('OPEN', coin=coin, short=v['short'], long=v['long'], spread_8h=round(v['spread_bps_8h'], 4),
+                  gross_apr_pct=round(v['gross_apr_pct'], 3), net_apr_pct=round(v['net_apr_pct'], 3),
+                  basis_bps=round(v['basis_bps'], 3), notional_per_leg=round(n, 4), min_hold_h=self.pairs[coin]['min_hold_h'],
+                  bn_mark=q.bn_mark, hl_mark=q.hl_mark, bn_rate_8h=q.bn_rate_8h, hl_rate_1h=q.hl_rate_1h)
         self.events.append(f'CARRY SIM OPEN {coin}: short {v["short"]} / long {v["long"]} {v["spread_bps_8h"]:+.2f} '
                            f'bps/8h (net APR {v["net_apr_pct"]:.1f} %) · {n:,.0f} USDT per leg · BN post-only + HL IOC '
                            f'(simulated)')
 
-    async def _close(self, coin: str, why: str) -> None:
+    def _rec(self, kind: str, **fields) -> None:
+        """11-10 (j): one structured row of this step (START / OPEN / OPEN_FAIL / CLOSE / CLOSE_FAIL / FLIP / FLIP_CLEAR /
+        BASIS_FREEZE / BOOK). The sim writes no file: self.records is the last step's rows, for the caller to keep."""
+        self.records.append({'kind': kind, 't': self.clock(), **fields})
+
+    async def _close(self, coin: str, why: str, code: str = 'OTHER') -> None:
         p = self.pairs[coin]
         res = await p['ex'].run(p['bs'], p['hs'], _opposite(p['maker_side']), p['qty'], reduce_only=True)
         if res.state != 'HEDGED':
             self.events.append(f'CARRY SIM {coin}: close {res.state} ({res.reason}) - pair kept')
+            self._rec('CLOSE_FAIL', coin=coin, code=code, state=res.state, why=res.reason)
             return
         n = self.notional_per_leg
         got = p['bn'].equity() + p['hl'].equity()
@@ -611,6 +627,13 @@ class CarrySim:
         self.closed.append({'coin': coin, 'why': why, 'net_usdt': round(got - 2 * n, 4), 'funding_usdt': round(fund, 4),
                             'days': round((self.clock() - p['opened']) / 86400, 3)})
         self.events.append(f'CARRY SIM CLOSE {coin}: {why} · net {got - 2 * n:+.4f} USDT (simulated)')
+        now, flip = self.clock(), p.get('flip_since')
+        self._rec('CLOSE', coin=coin, code=code, why=why, opened=p['opened'], hold_s=round(now - p['opened'], 1),
+                  net_usdt=round(got - 2 * n, 4), funding_usdt=round(fund, 4),
+                  fees_usdt=round(p['bn'].fees + p['hl'].fees, 4), notional_per_leg=round(n, 4),
+                  spread_8h_entry=round(p['spread_8h_entry'], 4), spread_8h=round(p['spread_8h'], 4),
+                  basis_drag_bps=round(p['basis_drag_bps'], 3), min_hold_h=p['min_hold_h'],
+                  flip_s=None if flip is None else round(now - flip, 1), settlements=dict(p['settled']))
 
     def _accrue(self, coin: str, q, dt_h: float) -> None:
         p = self.pairs[coin]
@@ -645,8 +668,17 @@ class CarrySim:
         """One refresh: accrue, mark, guard and exit the held pairs, then open new ones. -> telemetry view."""
         now = self.clock()
         dt_h = 0.0 if self.last_t is None else max(now - self.last_t, 0.0) / 3600.0
-        self.first_t = now if self.first_t is None else self.first_t
-        self.last_t, self.events = now, []
+        started = self.first_t is None
+        self.first_t = now if started else self.first_t
+        self.last_t, self.events, self.records = now, [], []
+        if started:
+            self._rec('START', capital=self.start, slots=self.slots, notional_per_leg=round(self.notional_per_leg, 4),
+                      settlement=self.settlement, rule={
+                          'min_spread_8h': self.min_spread, 'min_apr_pct': self.min_apr, 'min_net_apr_pct': self.min_net_apr,
+                          'min_basis_bps': self.min_basis, 'basis_stop_bps': self.basis_stop_bps,
+                          'basis_freeze_bps': self.basis_freeze_bps, 'rotation_interval_s': self.rotation_interval_s,
+                          'hold_breakeven': self.hold_breakeven, 'flip_persist_s': self.flip_persist_s,
+                          'round_trip_bps': HEDGE_ROUND_TRIP_BPS})
         rotation_due = (self.last_rotation_t is None or
                         now - self.last_rotation_t >= self.rotation_interval_s - EPS)
         views = {}
@@ -674,25 +706,31 @@ class CarrySim:
                 self.events.append(f'CARRY SIM BASIS DIVERGENCE {coin}: {p["basis_drag_bps"]:+.2f} bps against the pair since '
                                    f'entry (limit -{self.basis_freeze_bps:g}) -> no new pair for '
                                    f'{self.rotation_interval_s / 60:.0f} min')
+                self._rec('BASIS_FREEZE', coin=coin, drag_bps=round(p['basis_drag_bps'], 3), until=self.basis_freeze['until'])
             flipped = p['spread_8h'] <= 0                    # 11-10 (i): when the flip was first seen; a positive print resets it
             if flipped and p.get('flip_since') is None and self.flip_persist_s > 0:
                 self.events.append(f'CARRY SIM FLIP {coin}: spread {p["spread_8h"]:+.2f} bps/8h -> closes if it is still '
                                    f'<= 0 in {self.flip_persist_s / 60:.0f} min')
+            if flipped and p.get('flip_since') is None:      # (j) rows for the reversion rate: FLIP_CLEAR / FLIP
+                self._rec('FLIP', coin=coin, spread_8h=round(p['spread_8h'], 4), held_s=round(now - p['opened'], 1))
+            elif not flipped and p.get('flip_since') is not None:
+                self._rec('FLIP_CLEAR', coin=coin, spread_8h=round(p['spread_8h'], 4),
+                          lasted_s=round(now - p['flip_since'], 1))
             p['flip_since'] = (now if p.get('flip_since') is None else p['flip_since']) if flipped else None
             legs = {'BN': (await p['bn'].margin_view(), await p['bn'].position_view(p['bs'])),
                     'HL': (await p['hl'].margin_view(), await p['hl'].position_view(p['hs']))}
             action, why = self.guard.assess(legs, True, 1.0)
             if action in (CLOSE, DERISK):
-                await self._close(coin, f'guard {action}: {"; ".join(why)}')
+                await self._close(coin, f'guard {action}: {"; ".join(why)}', 'GUARD')
             elif p['basis_drag_bps'] <= self.basis_stop_bps + EPS:
                 next_scan = now + self.rotation_interval_s if rotation_due else \
                     (self.last_rotation_t or now) + self.rotation_interval_s
                 self.basis_eject_until[coin] = next_scan
                 await self._close(coin, f'EJECT-BASIS drag {p["basis_drag_bps"]:+.2f} bps <= '
-                                       f'{self.basis_stop_bps:+.2f} bps')
+                                       f'{self.basis_stop_bps:+.2f} bps', 'BASIS')
             elif flipped and now - p['flip_since'] >= self.flip_persist_s - EPS:
                 await self._close(coin, f'spread {p["spread_8h"]:+.2f} bps/8h (flipped or gone' +
-                                  (f' for {(now - p["flip_since"]) / 60:.0f} min)' if self.flip_persist_s > 0 else ')'))
+                                  (f' for {(now - p["flip_since"]) / 60:.0f} min)' if self.flip_persist_s > 0 else ')'), 'FLIP')
         ok, kill_why = self.kill.check(self.equity())
         self.basis_eject_until = {c: until for c, until in self.basis_eject_until.items() if until > now}
         ranked = sorted((x for x in views.values() if x[1] is not None and self._entry_ok(x[1])
@@ -714,7 +752,7 @@ class CarrySim:
             for coin in list(self.pairs):
                 q, v, _ = views.get(coin, (None, None, 'UNKNOWN'))
                 if coin not in target and v is not None:
-                    await self._close(coin, f'ROTATE net APR rank outside top {self.slots}')
+                    await self._close(coin, f'ROTATE net APR rank outside top {self.slots}', 'ROTATE')
         if self.basis_freeze and self.basis_freeze['until'] <= now:
             self.basis_freeze = None
         for q, v, _ in ranked:
@@ -726,7 +764,13 @@ class CarrySim:
             held = list(self.pairs)
             self.rotation_targets = [c for c in self.rotation_targets if c in self.pairs]
             self.rotation_targets.extend(c for c in held if c not in self.rotation_targets)
-        return self.view(views, ok, kill_why)
+        out = self.view(views, ok, kill_why)
+        # (j) one compact mark per refresh: a pair still open when the process stops has no CLOSE row, this is its last state
+        self._rec('BOOK', equity=out['equity'], pnl=out['pnl'], funding_total_usdt=out['funding_total_usdt'],
+                  fees_total_usdt=out['fees_total_usdt'], kill=out['kill'],
+                  open=[{k: x[k] for k in ('coin', 'net_usdt', 'funding_usdt', 'fees_usdt', 'spread_8h', 'basis_drag_bps',
+                                           'flip_since')} for x in out['positions']])
+        return out
 
     def view(self, views: dict, ok: bool = True, kill_why: str = '') -> dict:
         eq, n = self.equity(), self.notional_per_leg
