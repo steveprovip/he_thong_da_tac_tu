@@ -56,6 +56,9 @@ set "MICRO_IOC=on"
 rem 11-09e: MICRO_HARVESTER=on = chop-lane maker harvester (KER < 0.28, TP 0.15 / SL 0.15 %) rehearsal; Demo only (a live
 rem profile with it on is an invariant error). Replay of the sister scalper is negative: delete this line to go back to shadow.
 set "MICRO_HARVESTER=on"
+rem 11-10: MICRO_EXIT_POLICY=patient = harvest positions keep their TP (BE timer 180 s, scratch only after MFE >= 0.09 %, a negative
+rem touch only on toxic flow); unvalidated (docs/harness/plan_micro_asymmetry_cure.md). Delete this line to go back to the 45 s scratch.
+set "MICRO_EXIT_POLICY=patient"
 call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
 start "" "http://127.0.0.1:8765"
 "%PY%" -m core.engine --mode demo

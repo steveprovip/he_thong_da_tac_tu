@@ -248,7 +248,7 @@ LOCK = {'scalp_macro_lock': True}        # tests/conftest.py switches the shippe
 
 
 def test_a_chop_maker_with_strong_ofi_gets_through_a_5m_macro_that_forbids_its_side(tmp_path):
-    e = burst_engine(tmp_path, **LOCK)
+    e = burst_engine(tmp_path, micro_harvest_macro_ofi=0.55, **LOCK)           # the 11-09f threshold; the shipped default is 0.30 since 11-10
     e.macro = LONG_ONLY
     side, why = e.scalp_candidate({**CHOP, 'ofi_10s': -0.60})
     assert side == 'SELL' and 'macro LONG ONLY softened (OFI -0.60)' in why

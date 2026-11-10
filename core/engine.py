@@ -384,7 +384,10 @@ class Profile:
     micro_patient_be_mfe_pct: float = 0.09  # 60 % of the 0.15 % TP
     micro_patient_vpin: float = 0.80        # toxic escalation: VPIN >= this OR adverse flow >= flow_limit OR regime flipped
     micro_harvest_macro_soft: bool = True   # 11-09f chop harvester: a 5 m macro that forbids the side no longer blocks when ...
-    micro_harvest_macro_ofi: float = 0.55   # ... OFI L10 is WITH the trade by >= 0.55 (resting post-only maker only)
+    micro_harvest_macro_ofi: float = 0.30   # ... OFI L10 is WITH the trade by >= 0.30 (11-10: was 0.55; = the harvest OFI floor, so the
+                                            # 5 m macro no longer gates the chop lane at all). The CVD flow regime stays a block.
+    micro_harvest_ofi_min: float = 0.30     # 11-10: OFI L10 floor of a chop-lane (KER < micro_ker_min) candidate; the micro ALIGN floor
+                                            # micro_ofi_min 0.65 never applied there - it is the TREND-lane floor (KER >= 0.28)
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
     micro_jumpy_spread_bps: float = 2.0  # ... the spread is under 2 bps and ...
     micro_jumpy_vpin: float = 0.70      # ... VPIN is KNOWN and under 0.70 (the 0.3x size policy cannot go under the venue lot)
@@ -1500,6 +1503,13 @@ class Engine:
             return None
         return 'CHOP' if k < self.p.micro_ker_min - 1e-12 else 'TREND'
 
+    def drift_exempt(self, f: Optional[dict] = None) -> bool:
+        """11-10: the DRIFT lock (60 s / 3 m flows disagree: no TREND entry) is a trend-lane guard; in chop the two windows disagree most of
+        the time, so the chop harvester lane is not judged by it.  Needs micro_align: the MICRO_KER gate still refuses every non-harvest
+        AUTO entry below KER micro_ker_min, so no trend-lane entry gains a path."""
+        f = self.features if f is None else f
+        return bool(self.p.micro_align and self.harvest_lane(f or {}))
+
     def harvest_lane(self, f: dict) -> bool:
         """The chop harvester applies: micro account, harvester not 'off', KER known and under micro_ker_min."""
         return (self.p.micro_harvester in ('shadow', 'on') and self.micro_active() and self.micro_lane(f) == 'CHOP')
@@ -1696,8 +1706,9 @@ class Engine:
         smax = max(self.p.scalp_spread_max_bps, self.p.micro_max_spread_bps) if self.harvest_lane(f) else self.p.scalp_spread_max_bps
         if spread is None or spread > smax:        # 11-09e harvester: the 3 bps micro cap (1 tick of ADA is ~2.5 bps)
             return None, f'spread {spread} > {smax} bps'
-        if ofi is None or abs(ofi) < self.p.scalp_ofi_min:
-            return None, f'OFI {ofi} below {self.p.scalp_ofi_min}'
+        ofi_floor = self.p.micro_harvest_ofi_min if self.harvest_lane(f) else self.p.scalp_ofi_min
+        if ofi is None or abs(ofi) < ofi_floor:
+            return None, f'OFI {ofi} below {ofi_floor}'
         side = 'BUY' if ofi > 0 else 'SELL'
         if self.toxic_blocks(side):
             return None, 'VPIN toxic against the side'
@@ -1742,6 +1753,9 @@ class Engine:
         # 'on' harvest still needs the swarm to back the OFI side (d.score >= scalp_min_score).
         if mode == 'on' and (d is None or d.veto or d.side != side
                              or d.score < self.p.scalp_min_score - 1e-9):
+            if harvest:        # 11-10: this return used to be silent. Samples (ticks), not opportunities.
+                self.funnel.outcome('SWARM_NO_SIDE' if d is None or d.veto or not d.side else
+                                    'SWARM_OPPOSITE' if d.side != side else 'SWARM_WEAK')
             return
         if mode == 'on' and self.p.scalp_align3:
             al = self.align3_last = self.align3_check(side, force=True, f=f)   # ledger: the scalp's own check
@@ -2699,6 +2713,8 @@ class Engine:
             label = 'SCALP ONLY (router CHOP)'
         elif self.p.vfr_gate and vv['frozen'] and vv['vfr'] is not None:
             label = f'FROZEN VFR {vv["vfr"]:.1f}'
+        elif self.drift_exempt(f):
+            label = 'CHOP HARVEST'        # 11-10: the cockpit used to print DRIFT LOCK here, a label the chop lane never obeyed
         elif self.p.drift_lock and (self.reg or {}).get('name') == 'DRIFT':
             label = 'DRIFT LOCK'
         elif mr:
@@ -2765,7 +2781,7 @@ class Engine:
             vv = self.vfr_view()
             if vv['frozen']:
                 out.append(('VFR', vv['why']))
-        if self.p.drift_lock and reg.get('name') == 'DRIFT':
+        if self.p.drift_lock and reg.get('name') == 'DRIFT' and not self.drift_exempt():
             acc = self.drift_acceleration(d.side)
             if acc:
                 probe = acc
@@ -4634,7 +4650,7 @@ class Engine:
             'fee_model': self.fee_model(),
             'quant': self.quant_view(),
             'portfolio': self.portfolio_view(),
-            'flow': {**self.flow, 'gate': self.p.concordance_gate, 'drift_lock': self.p.drift_lock,
+            'flow': {**self.flow, 'gate': self.p.concordance_gate, 'drift_lock': self.p.drift_lock and not self.drift_exempt(),
                      'drift': (self.reg or {}).get('name') == 'DRIFT'},
             'governor': {'min_score': self.p.min_score, 'min_edge_bps': self.p.min_edge_bps,
                          'max_trades_hour': self.p.max_trades_hour, 'trades_hour': len(self.trade_times),
