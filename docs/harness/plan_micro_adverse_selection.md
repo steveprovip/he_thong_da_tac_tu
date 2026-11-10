@@ -71,3 +71,27 @@ signal (C) is a post-fill damage detector, so it can only shrink the loss, not c
   (git-ignored), log `data/recordings/recorder.log`, PID in `recorder.pid`. ADA is not recorded (it never trades: ZEPHR veto). Measured 4.9 KB/s compressed for 3 coins (~0.43 GB/day, 3.0 GB for the 7 days); F: had 15 GB free (92 % full),
   the run stops itself below 8 GB free. Stop it: `Stop-Process -Id (Get-Content dataecordingsecorder.pid)`.
 - **Next**: let >= 7 days of recorder + >= 400 logged harvest orders accumulate; Phase 2 (download of aggTrades, ~60-600 MB, approved) can start on the aggTrades-only features now and add the depth features when the recording has its week.
+
+## 9. Phase 2 result (11-10): a mainnet-tape simulation of the lane, 27 days x 3 coins - no filter, no bracket
+Data: Binance USD-M public aggTrades 2026-10-12..11-08 (81 of 84 daily archives published; 10-28 missing), DOGE / XRP / 1000PEPE, 408 MB zipped, 27.5 M prints, SHA-256 verified
+(`tools/fetch_aggtrades.py`, files in `data/aggtrades_20261110/`, untracked). Simulator and search: `tools/phase2_harvest_study.py` (build / analyze), 11 tests in tests/test_phase2_harvest_study.py.
+Lane (aggTrades only): KER < 0.28, |flow10| >= 0.30 (a TRADES proxy for the engine's order-book OFI), touch from the last bid / ask prints, fill on a print through the quote within 45 s (cons = strictly through,
+opt = at or through; no queue), one position per symbol, exits priced for 40 TP x SL pairs from first passage (maker TP 2 bps, stop 5 + 1 bps), 20 min horizon. Train = first 19 days, holdout = last 8, touched once per rule.
+- **Fills**: 25,764 (cons) / 26,425 (opt); holdout 7,441 / 7,627. About 320 fills per coin per day (PEPE ~510, DOGE ~225, XRP ~215), far more than the engine takes (the swarm quorum is not modelled).
+- **0.15 % / 0.15 %**: **-7.38 / -6.61 bps per fill** (-0.0037 / -0.0033 U at 5.05 U); TP before stop in **45.2 % / 47.5 %** of the resolved train fills against a 67.6 % break-even. Per coin (cons): PEPE -7.49, DOGE -7.38, XRP -7.13.
+- **The signal is irrelevant**: follow the flow -7.38, FADE it -7.46, RANDOM side -7.39 bps (cons); opt -6.61 / -6.65 / -6.59. The three are the same lane to within noise, so the flow10 proxy carries no directional information at this scale.
+- **Payoff grid**: **0 of 40 brackets positive**, on train and on holdout, in all six tables (follow / fade / random x cons / opt). The redesign the owner pre-approved (TP 0.35-0.50 % / SL 0.20 %): -7.1..-7.5 bps (cons), -6.0..-6.9 (opt) - no better.
+  The reason is arithmetic, not tuning: on a driftless price the barrier bracket's expected value is **-(4 x SL + 8 x TP) / (TP + SL) bps** (maker 2 + 2, the stop costs 8): -6.0 for 0.15 / 0.15, -6.7 for 0.46 / 0.22,
+  -6.6 for 0.35 / 0.20, -6.9 for 0.50 / 0.20, -5.0 at best in the grid. Widening the TP does not help; only a predictor with a gross edge above ~6-8 bps per trade does. The measured -7.4 is that floor plus ~0.6-1.4 bps of ordinary maker adverse selection.
+- **Entry / fill-time filters**: 16 features (flow 3 / 10 / 30 / 60 s, return 15 / 60 s, range, KER, trade rates, volume, touch gap, hour, fill wait, burst, fill print): AUC 0.490-0.509 (follow lane, both fill models), max |z| 2.3 (Bonferroni bar 2.9).
+  Logistic filter on the top 5, threshold chosen on train: holdout AUC 0.506 / 0.510, net -6.62 / -5.45 bps per fill (95 % block-bootstrap interval -7.35..-5.89 / -6.21..-4.59). Nothing.
+- **Post-fill cut** (leave at the touch when the with-trade move at +15 s <= -2 bps; chosen on train): holdout -6.30 vs -7.04 (cons), -5.60 vs -6.18 (opt): +0.6-0.7 bps, significant, still negative - and the same +0.75 appears on the RANDOM-side
+  baseline, so it is the generic gain of cutting any loser early, not information.
+- **Pre-registered acceptance (plan section 6)**: n >= 400 passes; **lower 95 % bound > 0 fails for every rule; no rule or bracket is accepted.**
+
+Conclusion for the owner's decision (c): on mainnet tape the 0.15 % harvester has no edge, no filter built from trades, rates, volatility or timing creates one, and widening the payoff cannot (a no-edge entry loses the fee floor in every bracket).
+Limits: aggTrades-only proxy (no book OFI, no queue, no swarm gating); mainnet prints, not the Demo book; 3 coins, 27 days, one regime; maker-fill model without queue. The one untested family is DEPTH features (OFI, queue size, book imbalance) -
+Phase 2b, when the recorder has its week (>= 2026-11-17). Given follow = fade = random on the trade-flow proxy, the prior that a depth signal clears 6-8 bps at a 15 bps target is low. What would change the picture:
+a directional predictor with that gross edge, a lower fee tier / maker rebate (the floor is the fee), or a lane whose targets dwarf the fees (the 4 h trend lane).
+Reproduce: `python -I tools/fetch_aggtrades.py --symbols DOGEUSDT,XRPUSDT,1000PEPEUSDT --start 2026-10-12 --end 2026-11-08 --out data/aggtrades_NEW` then
+`python -I tools/phase2_harvest_study.py build --data data/aggtrades_NEW --symbols DOGEUSDT,XRPUSDT,1000PEPEUSDT --model cons [--side follow|fade|random] --out data/t.csv.gz` and `analyze --table data/t.csv.gz`.

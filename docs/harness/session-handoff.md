@@ -247,6 +247,544 @@ Nhánh `docs/h2-regime-sandbox-arch` @ 91ad6ff, chưa commit.
 - Test JEV FAST mô tả hành vi **hiện tại** (consensus thô 0.60 vẫn được cấp token), không phải hành vi mong muốn. Đổi hành vi đó là quyết định D4, test phải đổi theo một cách có chủ ý.
 - Lỗi đã gặp: so sánh nối chuỗi `approx(0.60) < VETO` gây TypeError trong pytest; đã tách thành hai vế.
 
+## Handoff 6C — 2026-10-24 (P0b: wiring + D1/D4/D5/D7)
+
+### 1. Mục tiêu (Goal)
+Commit tách hai lượt (docs, rồi core); nối bộ khóa bất biến vào `Engine.__init__` và parser của `core.runtime`; thực thi các quyết định D1 (chặn cứng ở mainnet), D4 (giữ JEV FAST, gắn nhãn mọi lệnh để so P&L), D5 (sẵn sàng ghi băng L2), D7 (sandbox dùng template). DoD: pytest ≥ 1627 passed, 0 failed, không hồi quy; chỉ hướng dẫn chạy DEMO/PAPER.
+
+### 2. Ràng buộc (Constraints)
+- Không mở kết nối tiền thật, không khởi động hay restart engine, không chạy recorder thay người dùng.
+- Không stage `third_party/` hay file nháp. Giữ 76.8 % / 70 % / Post-Only GTX và hành vi JEV FAST hiện tại (D4).
+- Commit P0b chờ người dùng duyệt.
+
+### 3. Trạng thái thực tế (Real State)
+Nhánh `docs/h2-regime-sandbox-arch` @ 2398e92 (commit `7aea842` docs(arch), `2398e92` feat(core)). P0b chưa commit:
+- Sửa: `core/engine.py`, `core/runtime.py`, `core/invariants.py` (docstring), `tools/ledger_audit.py`, `tests/test_invariants_lock.py` (+13 test).
+- Sửa docs: `docs/architecture/{README.md, 03_..., 04_..., sandbox_suite_v0.yaml}`, `docs/harness/{progress.md, feature_list.json}`, file này.
+- Mới: `scripts/GHI_BANG_L2.bat`.
+- Giữ nguyên, không thuộc phiên này: `AGENTS.md`, `CLAUDE.md`, `tests/test_upgrade_2026_10.py`, `.mcp.json`, `.engram/`, `prompts/*`, `third_party/*`.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/test_invariants_lock.py` trước khi nối: 13 failed, 19 passed; sau khi nối: 32 passed.
+- `python -m pytest -q` (toàn bộ, `--junitxml`) → 1640 passed, 0 failed, 0 errors, 125.2 s.
+- Chạy lại `tests/test_upgrade_2026_10.py`, `tests/test_invariants_lock.py`, `tests/test_research_instrumentation.py` sau khi có `.bat` mới → 69 passed.
+- `python tools/engine_replay.py --source agg ... SOLUSDT 2026-09-08T00:00..06:00 --warmup-min 60` → 93,003 msgs, 0 vị thế; `summary`, `positions`, `hourly_pnl_u` giống hệt lần chạy trên 91ad6ff.
+- `python tools/record_market.py --help` và `python -m core.engine --help` chạy được (không mở mạng). `python docs/architecture/tools/check_arch_docs.py` → OK: 0 errors.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Người dùng tự khởi động lại bằng `run.bat demo` (DEMO Binance testnet; không có key thì MOCK trên giá live) để engine nạp P0b, rồi theo dõi Web UI tại http://127.0.0.1:8765.
+2. Người dùng chạy `scripts\GHI_BANG_L2.bat` ở cửa sổ riêng để tích lũy ≥ 14 ngày băng L2.
+3. So P&L theo đường đi: `python tools/ledger_audit.py --json data/ledger_audit.json`, xem `by_path` và `by_jev_lift`. Dòng trước P0b hiện là UNKNOWN.
+4. Commit P0b sau khi duyệt (commit thứ ba: core + tests + tools + scripts + docs).
+5. P1 (RegimeEpisode) và P2 (surface + `--sig-set`) theo doc 04.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Profile sai chỉ bị **từ chối khi live đã arm** (`mode == 'live'` và `allow_live`); demo/replay chỉ phát `INVARIANT WARN`. Lý do: test và nghiên cứu dùng `super_cross='on'`/`super_edge` ở demo, và `test_executor_refuses_live_profile_and_mainnet_venue` dựng Engine live chưa arm từ profile demo. Quorum/token sai thì từ chối ở mọi mode.
+- `LEDGER_SCHEMA` giữ 2: trường mới là additive và có test ghim `schema == 2`. `jev_lift = None` khi không biết consensus (UNKNOWN, không âm thầm là False).
+- Launcher `.bat` ghi với CRLF như các file `.bat` khác; luật layout đòi `%~dp0..`.
+- Bằng chứng replay yếu cho đường giao dịch (cửa sổ đó 0 vị thế). Hành vi lệnh được bảo vệ bởi 1640 test.
+
+## Handoff 6C — 2026-10-24 (d) DEMO ACTIVE
+
+### 1. Mục tiêu (Goal)
+Đưa DEMO thoát "ngủ đông": micro lane SOL/DOGE và chop scalper vào lệnh Post-Only GTX liên tục để thu dữ liệu khớp lệnh thật; ngưỡng điểm linh hoạt theo chế độ; Kelly cửa sổ trượt 20 lệnh; chạy pytest và A/B replay; báo cáo trung thực kỳ vọng ròng. DoD: pytest 0 failed, A/B được ghi sổ, hướng dẫn `run.bat demo`.
+
+### 2. Ràng buộc (Constraints)
+- Quyết định chủ sở hữu (AskUserQuestion): giữ khóa I1/I3 (0.768 / 0.70) nên ngưỡng 0.70 / 0.65 được thay bằng sàn 0.768; chỉ bật Micro lane SOL/DOGE + Chop scalper; BTC vẫn observe_only; burst lane vẫn shadow.
+- Không chạm profile live, không khởi động/restart engine, không gửi lệnh, không commit (chưa được yêu cầu). Giữ nguyên P0b chưa commit của phiên trước.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/demo-active-micro-lane` tách từ `docs/h2-regime-sandbox-arch` @ 2398e92, chưa commit (nhánh gốc không đổi).
+- Sửa: `core/engine.py` (Profile scalp_min_score / kelly_window / chop_router_scalp / scalp_only, chop_scalp kiểm phía + điểm, stage SCALP_ONLY, nhãn radar, khối demo 10-24), `core/autonomy.py`, `core/exec_funnel.py`, `tests/conftest.py`, `tests/test_execution_funnel_feasibility.py`, `tests/test_chop_deadlock_resolution.py`, `tests/test_trend_activation_and_timing.py`, `docs/harness/{progress.md, feature_list.json}`, file này, `docs/research_upgrade/{trial_log.jsonl, experiment_register.md}` (AB-44).
+- Mới: `tests/test_demo_active_2026_10_24.py` (8 test), `docs/research_upgrade/snapshot_2026-10-24_demo_active/` (ab_agg.json, rows_B_agg.json, rows_A_l2.json, rows_B_l2.json, ab_driver.py).
+- `core/engine.py` chứa cả diff P0b chưa commit lẫn diff phiên này: commit phải tách hunk.
+
+### 4. Bằng chứng (Evidence)
+- Baseline `python -m pytest -q` (junitxml) trước khi sửa: 1640 passed, 0 failed, 142.6 s.
+- Sau khi sửa: 1646 passed, 2 failed (hai assertion khóa giá trị demo cũ `mr_bracket == 'vwap'`, `micro_standalone is False`, verdict: thay đổi có chủ đích, đã cập nhật); lần cuối 1648 passed, 0 failed, 0 errors, 129.1 s.
+- `inv.check_profile(PROFILES['demo'])` = [] (entry GTX, không IOC); `python -m core.engine --help` chạy được.
+- `python tools/ab_bench.py micro --source agg ... --symbols SOLUSDT` 12 chunk 6 h (2026-09-05/06/08), A = snapshot code trước thay đổi: A 0 vị thế / 72 h; B 325 vị thế (108/ngày), -6.71 bps/lệnh CI95 [-7.87, -5.57], net -7.96 U; paired -0.1105 U/h CI95 [-0.138, -0.083] → `B WORSE (significant after deflation)`. 325/325 là SCALP, gross -1.78 bps trước phí, phí 4.92 bps.
+- L2 thật SOL 09-08 06:00-09:20: A 0; B 17 SCALP, -8.97 bps CI95 [-16.1, -2.8] (mẫu 3 h, chỉ cùng dấu).
+
+### 5. Bước tiếp theo (Next Steps)
+1. Người dùng tự chạy `run.bat demo`, xem Web UI http://127.0.0.1:8765: radar SOL/DOGE hết OBSERVER, sự kiện `CHOP SCALP ...`, khi router CHOP có nhãn `SCALP ONLY (router CHOP)`; daily kill 5 U/ngày vẫn chặn.
+2. Sau 1-3 ngày: `python tools/ledger_audit.py --json data/ledger_audit.json` (by_path, by_reason) và `data/engine_orders.jsonl` (FILLED / UNFILLED theo path SCALP) để đo fill rate và kết quả thật của SCALP trên DEMO.
+3. Hoàn nguyên nếu không muốn equity ảo đi xuống: demo `micro_standalone=False`, bỏ khối 10-24 (xem progress.md 10-24 (d) Rollback).
+4. Chạy `scripts\GHI_BANG_L2.bat` để có ≥ 14 ngày băng L2 trước mọi nghiên cứu vi cấu trúc mới.
+5. Commit sau khi duyệt, tách hunk khỏi P0b.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Ngưỡng 0.70 / 0.65 nằm dưới quorum token VESKA 0.768: hạ sẽ phá I1 và Engine.__init__ từ chối, nên sàn đặt đúng 0.768.
+- chop_scalp cũ thay phía bằng dấu OFI nhưng giữ score của phía kia khi xin token; nay phải trùng phía swarm và score ≥ 0.768.
+- MR 'vwap' bất khả thi về cấu trúc (net RR ≤ 0.875 < 1.30); demo dùng 'fixed' (RR 1.39) để lựa chọn "bỏ OBSERVER cho MR" có hiệu lực.
+- Kelly âm chưa bao giờ chặn lệnh: kelly_qty trả None và size về parity / floor / tối thiểu sàn.
+- Gross âm trước phí (-1.78 bps) nên không chỉnh TP/SL/BE nào làm net dương; kích hoạt chỉ mua dữ liệu, không mua lợi nhuận.
+- Lỗi đã gặp: escape đường dẫn Windows bằng sed trong Git Bash hỏng, arm A âm thầm chạy code mới (A trùng B); dựng JSON bằng `json.dumps` thì đúng.
+
+## Handoff 6C — 2026-11-06 (autoresearch + SMC)
+
+### 1. Mục tiêu (Goal)
+Hiện thực vòng autoresearch kiểu Karpathy/ATLAS (`scripts/autoresearch_agent_swarm.py`: 8 forecaster, 400 futures bootstrap, pinball walk-forward +15 phút, đột biến agent tệ nhất với git commit/rollback) và bộ dò SMC (OB, FVG, sweep, BOS/CHoCH) nối vào pipeline đặc trưng NORO/TIDAL; giữ RUNE veto, AuthToken HMAC của VESKA và I1-I8. DoD: pytest 0 failed, chạy thật trên dữ liệu L2/klines cục bộ, báo cáo trung thực cả holdout.
+
+### 2. Ràng buộc (Constraints)
+- Nghiên cứu offline: không khởi động/restart engine, không gửi lệnh, không ghi `config/live_tunables.json`, không đổi Profile, không commit (chưa được yêu cầu), không push.
+- Không đổi WEIGHTS (khóa SHA), ngưỡng 0.768 / 0.70, RUNE veto, TokenAuthority. Trọng số học được chỉ đi qua `Autonomy.demote` (chỉ veto).
+- Giữ nguyên 45 file chưa commit của chủ sở hữu (từ nhánh `feat/demo-active-micro-lane`).
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc` tách từ `feat/demo-active-micro-lane` @ 2398e92, chưa commit (nhánh gốc không đổi).
+- Mới: `scripts/autoresearch_agent_swarm.py`, `core/smc.py`, `research/smc_backtest.py`, `tests/test_autoresearch_swarm.py` (12 test), `tests/test_smc.py` (6 test).
+- Sửa: `core/real_alpha_engine.py` (+6 trường `Features.smc_*`, `AlphaEngine.smc`, `on_bar` cập nhật SMC), `core/groktopus_swarm.py` (`smc_noro`, `smc_tidal`, mặc định 0.0), `docs/harness/{progress.md, feature_list.json}`, file này.
+- Đầu ra (git-ignored): `data/autoresearch_report_{all4,btc}.json`, `data/autoresearch_ledger_*.json`, `data/autoresearch_tunables_proposal_*.json`, `data/autoresearch_agents_*.json`, `data/smc_backtest_{BTC,ETH,SOL}USDT.json`, cache `data/npz/autoresearch_*.npz`.
+
+### 4. Bằng chứng (Evidence)
+- Baseline `python -m pytest -q` (junitxml) trước khi sửa: 1651 passed, 0 failed, 124.8 s. Sau khi sửa: 1669 passed, 0 failed, 0 errors, 126.9 s (+18 test mới).
+- `python scripts/autoresearch_agent_swarm.py --data "data/l2/*/*.jsonl" --rounds 40` (dry run, không git): 4 symbol x 2.7 h liên tục (2026-09-08), 666 train / 286 holdout điểm; giữ 21/40 đột biến; pinball trung bình train 4.759 -> 4.493 bps nhưng holdout 6.224 -> 6.480 bps (xấu đi); baseline không tín hiệu có holdout 5.925, thắng mọi agent. Riêng BTC: train 2.864 -> 2.664, holdout 4.210 -> 4.416, baseline 4.261. Tổng 7.5 s.
+- `python -m research.smc_backtest --symbol BTCUSDT --last 6`: 263,520 nến 1m (2026-04..09) trong 3.44 s; holdout |gross| <= 0.97 bps ở mọi sự kiện và khung 5/15/60 so với chi phí 8.5 bps. ETH <= 2.56 bps (BOS h60, in-sample cũng -2.33), SOL <= 3.98 bps (sweep h60, in-sample chỉ +0.07, không ổn định).
+- Test khóa: dự báo nhân quả (đổi dữ liệu sau t không đổi quantile), CRN tất định, rollback bit-exact + `git diff --quiet HEAD`, commit đúng 1 file (file staged khác còn nguyên), proposal qua `core.tunables.validate` 0 rejected, `check_consensus(ConsensusEngine(trend_floor=.768)) == []`, RUNE veto và TokenAuthority vẫn từ chối; SMC không lookahead (prefix invariance); swarm bit-identical khi hệ số SMC = 0.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Không publish `data/autoresearch_tunables_proposal_*.json`: holdout cho thấy overfit. Khi muốn chạy với git: `git worktree add ../he_thong_autoresearch -b autoresearch/btcusdt` rồi thêm `--git`.
+2. Cần >= 14 ngày băng L2 (`scripts\GHI_BANG_L2.bat`; recorder đang khóa ngân sách 500 MB) trước khi đọc lại vòng autoresearch, hoặc thêm loader klines 1m (taker-buy imbalance thay OBI) để có hàng tháng dữ liệu.
+3. SMC: giữ `smc_noro = smc_tidal = 0`; chỉ bật khi một biến thể vượt 8.5 bps với LCB95 > 0 trên holdout thời gian.
+4. Agent-Reach (sentiment từ internet): chưa làm. Đường an toàn duy nhất: verdict dạng số qua `phan_tich.slow_brain_contract` -> `core.regime_permit` (chỉ chặn); không đưa text cào được vào prompt.
+5. Commit sau khi chủ sở hữu duyệt, tách khỏi diff demo-active chưa commit.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Không dùng "weights inside the vote" (autonomy.py: bản 10/01-07 làm lệnh to gấp 3); trọng số survivor -> `swarm_weights` (NORO/LUMEN/TIDAL, clip [0, 1.8]) -> `Autonomy.demote` chỉ veto.
+- 8 agent autoresearch là forecaster theo họ (3 NORO, 3 LUMEN, 2 TIDAL), không phải 8 vai Groktopus; gate agents (ZEPHR, RUNE, OKAPI, MARIN, VESKA) không bị re-weight (I4).
+- Không `git reset --hard` (cây làm việc có việc dở của chủ sở hữu); `git restore` với core.autocrlf=true ghi ra CRLF, nên rollback tự ghi lại byte cũ rồi kiểm `git diff --quiet HEAD`.
+- ATLAS dùng Kraken BTC/USD 300 mức; repo chỉ có bookTicker + 10 mức của Binance nên dùng top-of-book. L2 có khoảng hở (0910 còn 3 đoạn < 45 phút), chỉ 0908 đủ warm-up 30 phút + horizon 15 phút.
+- Khẳng định lại review 2026-11-05: mẫu ATLAS overfit khi không có holdout và baseline.
+
+## Handoff 6C — 2026-11-06b (autoresearch net-EV trên klines 1m)
+
+### 1. Mục tiêu (Goal)
+Brief 2026-11-06 thrust 2: kỳ vọng ròng dương đã kiểm chứng (> 0 bps sau chi phí 8.5 bps), Sharpe holdout >= 1.8, vượt baseline không tín hiệu có ý nghĩa thống kê, hết đói lệnh. DoD: đạt cả ba tiêu chí trên holdout thời gian, hoặc ghi lại giới hạn kỹ thuật có bằng chứng.
+
+### 2. Ràng buộc (Constraints)
+- Offline: không khởi động engine, không gửi lệnh, không sửa Profile hay `config/live_tunables.json`, không commit, không push.
+- Giữ I1-I8: 0.768 / 0.70, RUNE veto, AuthToken của VESKA, entry GTX (I5). Smart IOC chỉ đánh giá trong replay, không đưa vào đường lệnh.
+- Holdout chỉ được chấm MỘT lần, sau vòng lặp. Lặp "đến khi holdout đạt" sẽ biến holdout thành train.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc` @ 2398e92, chưa commit (tiếp nối entry 2026-11-06).
+- Sửa: `scripts/autoresearch_agent_swarm.py` (+ `--source klines`: `TradeAgent`, `TRADE_BOUNDS`, `make_bars`/`load_klines`, `trade_eval` với 4 mô hình khớp maker/ideal/ioc/dynamic, `portfolio`, `perf`, `run_trade`; `mutate` nhận `bounds`), `tests/test_autoresearch_swarm.py` (+5 test, tổng 17).
+- Đầu ra git-ignored: `data/autoresearch_trade_report_{maker,ideal,dynamic,ioc}.json`, `data/autoresearch_trade_run_*.log`, `data/autoresearch_trade_agents_*.json`, `data/autoresearch_trade_proposal_*.json`.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q`: 1674 passed, 0 failed, 123.1 s (trước đó 1669; +5 test).
+- Dữ liệu: klines 1m BTC/SOL/DOGE/BNB 2024-12 -> 2026-09 (22 tháng). Train 2024-12-03 -> 2026-03-15 (467 ngày), embargo 240 phút, holdout -> 2026-10-01 (200 ngày).
+- Chi phí: maker 8.5 bps (COST_ALL_IN_BPS), IOC 13.0 bps (2 x (taker 5 + slippage 1.5)). Lệnh maker chỉ khớp khi nến kế tiếp xuyên qua giá (trade-through).
+- `python scripts/autoresearch_agent_swarm.py --source klines --fill {maker,ideal,dynamic,ioc} --rounds 300`: 4 pivot = 1203 cấu hình, 9-10 s mỗi run. Cả 4 run: `any_meets_criteria = False`. DSR tốt nhất (train, phương sai null 1/T) = 0.061 (ioc NORO-60), so với ngưỡng 0.95.
+- Portfolio holdout theo trọng số survivor: maker Sharpe 0.74 (+0.42 bps/ngày), ideal -1.67, dynamic -6.15, ioc -2.50.
+- Cùng một agent, so sánh mô hình khớp (ideal-run TIDAL-60, 1698 lệnh holdout): ideal -11.47 bps/lệnh, maker -13.13 (adverse selection -1.7), dynamic -14.86, IOC -19.82.
+- Holdout "dương" chỉ có ở agent < 60 lệnh (ví dụ 6 lệnh, Sharpe 2.62) hoặc agent có train âm: không phải bằng chứng.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Không publish proposal nào (`data/autoresearch_trade_proposal_*.json`).
+2. OBI/CVD/top-5 depth dưới 1 phút: dữ liệu hiện có không kiểm được (L2 khoảng 2.7 h liên tục mỗi symbol, aggTrades 2 ngày). Cần >= 14 ngày L2 (recorder cần `--override-budget` kèm giả thuyết) rồi mới chạy lại `--source l2`.
+3. Giả thuyết duy nhất từng dương OOS trong repo: AA3 ENS 1d LS (SR +0.21) và funding carry XV, đều còn xa Sharpe 1.8. Nếu tiếp tục: đăng ký trước một giả thuyết, chạy một lần, giữ holdout.
+4. Không đổi I5 (GTX): IOC và dynamic làm kỳ vọng tệ hơn trên replay.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Không chạy "đến khi holdout đạt": với 1203 lần thử, vài agent ít lệnh sẽ có Sharpe holdout cao do ngẫu nhiên.
+- PSR trên chuỗi ngày thưa bị skew dương thổi phồng (2 lệnh vẫn ra PSR 0.98), nên tiêu chí đòi >= 60 lệnh holdout.
+- DSR dùng phương sai thực nghiệm bị thổi phồng khi các lần thử khác nhau về tần suất giao dịch (phí làm SR trải từ -26 đến +1, E[max SR] nhiễu 13.9-18.3): tiêu chí dùng phương sai null 1/T, báo cả hai.
+- Đói lệnh là hệ quả đúng khi không có edge: optimizer tự đẩy hurdle lên (maker NORO-240 có 0 lệnh holdout). "Zero fills beats negative fills" (core/regime_permit.py).
+
+## Handoff 6C — 2026-11-07 (integration from F:\factory-quant-opt: tick loader, regime classifier, HRP sleeves, nightly audit)
+
+### 1. Goal
+Bring the pieces reported as verified in `F:\factory-quant-opt` into this checkout:
+- the PyArrow tick loader, with its run time re-measured here;
+- a 4-state regime classifier wired into `core/regime_permit.py` and `core/market_risk.py` that can only tighten;
+- HRP between TIDAL-60 maker and XV funding carry, with every claimed figure re-derived;
+- a read-only nightly audit.
+
+Done means code and tests for each piece, zero regressions against a baseline measured first, and the results recorded here and in progress.md.
+
+### 2. Constraints
+- Offline only: no engine start or restart, no order, no live mode, no capital or leverage change, no Profile or `config/live_tunables.json` edit.
+- No commit (not requested), no push, no OS scheduled task (persistent configuration needs the owner).
+- `WEIGHTS`, quorum 0.768, RUNE veto 0.70 and the VESKA HMAC `TokenAuthority` are unchanged. `tests/test_regime_classifier.py` asserts `check_consensus` and `check_token_authority` both return `[]`.
+- The owner's uncommitted work is preserved. The only tracked file edited is `core/regime_permit.py`, which was clean at HEAD.
+- Pytest temp, basetemp and cache stayed on F:\gt_scratch. C: had about 29 GB free and was not written by tests.
+
+### 3. Real state
+Branch `feat/janas-autoresearch-smc` @ 2398e92, uncommitted.
+
+New code:
+- `tools/replay_tick_alpha.py`: byte-identical port.
+- `core/market_risk.py`: port, plus `escalate` and an `assess(regime=)` parameter.
+- `core/portfolio_hrp.py`: port, plus `hrp_allocate`.
+- `core/regime_classifier.py`.
+- `research/hrp_alpha_sleeves.py`.
+- `tools/nightly_audit.py`.
+
+New tests: `tests/test_replay_tick_alpha.py` (port, 9), `tests/test_regime_classifier.py` (21), `tests/test_portfolio_hrp.py` (10), `tests/test_nightly_audit.py` (9).
+
+Edited: `core/regime_permit.py` (opt-in `market_regime` and `style`).
+
+Docs:
+- `docs/research_upgrade/snapshot_2026-11-07_hrp_sleeves/`: README, `factory_maker_agents.json`, `hrp_sleeves.json`.
+- `docs/research_upgrade/nightly_reviews/`: the real report for 2026-11-06, plus backfill examples for 2026-10-09 (slippage) and 2026-09-09 (regime).
+
+Nothing in the engine or runtime calls the classifier, the regime permit path or `escalate` yet. Runtime behaviour after a restart is the same as before this session.
+
+Not ported from the factory worktree (follow-ups):
+- the GARCH RUNE veto inside `core/engine.py` and `core/micro_signals.py`;
+- the HRP multipliers in `core/autonomy.py`;
+- the web UI analytics;
+- `tools/download_public_l2.py` and its `.gitignore` lines (`data/ticks/`, `data/public_depth/`);
+- the factory fixes to `scripts/autoresearch_agent_swarm.py` (`t_hi` exit cap, OOS DSR gates).
+
+### 4. Evidence
+- Baseline (junitxml) before any edit: 1674 passed, 0 failed, 124.6 s. Final run on frozen code: 1723 passed, 0 failed, 0 errors, 0 skipped, 126.6 s. All 1674 baseline tests are present and passing, plus 49 new.
+- Tick replay, data `--data-dir F:\factory-quant-opt\data\ticks`:
+  - 24,835,929 ticks over three runs, 17.91 / 17.87 / 18.00 s in-tool (load 7.18-7.38 s), 18.30-18.45 s wall.
+  - The claimed 17.685 s reproduces within about 2 %, probably with a warm OS cache.
+  - The ledger is identical to the factory JSON: 11 rows, all net-negative.
+- `fast_hands_permit` with `market_regime=None` is identical to HEAD on 378,000 input combinations (NaN/inf/bool included). Carry is unchanged in every regime.
+- The `hrp_proposal` port matches the factory output exactly on 285 random cases. Two-series HRP equals inverse variance to 1e-12.
+- Re-derived claims. All three reproduce as arithmetic on this checkout's code and data; none is evidence of edge.
+  - TIDAL-60 maker, holdout 2026-03-15..09-30: 316 trades, +8.3347 bps, Sharpe 1.728, 1.58/day.
+    - Train: 3,849 trades at -6.31 bps.
+    - Selected after 1,406 trials, OOS DSR 0.0027.
+    - The config is coef -0.15 with a 44-bar horizon, so it is contrarian.
+    - In 2025-01-01..2026-03-14 it lost 16.38 bps/day (max DD 7,287 bps).
+  - XV HEDGE|H28|k2: 153 rounds, +14.59 bps per 28-day round, CI95 by day +9.17..+19.92, 1.90 %/yr on notional. This uses exits up to 2026-10-09, the original data end. The refreshed cache gives 165 / +16.01, and HO2 has 1 round. The unit is per 28-day round and cannot be compared with TIDAL's per-trade bps.
+  - -1.51 bps/day: -1.5148, Sharpe -1.555. This is the 8-agent survivor-weighted portfolio. Contributions: LUMEN-240 -1.897, TIDAL-240 -0.583, NORO-60 +0.601, NORO-15 +0.310 (2 trades), TIDAL-60 +0.096.
+- HRP between the sleeves:
+  - Covariance from 2025-01-01..2026-03-14 only (438 days, correlation -0.08).
+  - Weights: TIDAL-60 0.05 %, XV 99.95 %. The monthly walk-forward gives the same.
+  - 200-day evaluation: HRP +0.611 bps/day, Sharpe 5.07, max DD 8.6 bps, about the same as XV alone (+0.609). TIDAL alone +3.29 (max DD 194); 50/50 +1.95; meta-portfolio -1.515.
+  - XV daily marks: lag-1 autocorrelation -0.12; mark-to-market telescoping error 1e-13 bps. The study is deterministic on rerun.
+- Nightly audit:
+  - Window 2026-11-06 is UNKNOWN for both sections: the ledger has nothing after 2026-10-24 12:41, and `data/recordings/` does not exist.
+  - Backfill 2026-10-09: 15 DEMO round trips. All-in +8.20 bps (n 14, CI95 +5.94..+11.57) vs 8.5. Fees +4.14 vs 7.0; slippage +4.20 vs 1.5 (exit +3.19). n < 30, so no inference; DEMO is the testnet book.
+- Regime classifier v0 backfill, public aggTrades 2026-09-01..09-14, BTC/SOL/DOGE/BNB, 14 days, 80,537 points every 60 s: accuracy 0.535 vs majority baseline 0.878 (beats it on 0/14 days). Labels are 87.8% SIDEWAYS and 5.4% JUMPY, but JUMPY is predicted 38.8% of the time (precision 0.068, recall 0.485); the cause is the 4.5-sigma tail memory. As a guard: protection recall 0.559 on 4,443 JUMPY/CRASH points vs false restriction 0.385 on 76,141 calm points. CRASH: 29/29 realized 150 bps / 5-min moves caught (max latency 0 s), 0 false episodes. Code SHA-256 nightly_audit 0d79b014c207, regime_classifier c7ce421e0fc5. Note: these dates were also used to develop v0, so this is not a time-separated test.
+
+### 5. Next steps
+1. Owner decision: register the nightly job. Nothing was created in this entry (registered later on 2026-11-07, see the (b) entry). The machine is UTC+7, so 00:00 UTC is 07:00 local; a 07:05 local run allows recorder flushes: `schtasks /Create /TN "Groktopus nightly audit" /SC DAILY /ST 07:05 /TR "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe F:\he_thong_da_tac_tu_2\tools\nightly_audit.py"`.
+2. Run `scripts\GHI_BANG_L2.bat`. Without recordings, the regime section of every nightly report stays UNKNOWN.
+3. Keep the classifier out of order flow. A v1 (for example a tail rule needing repeated tails, or a shorter tail memory) must be pre-registered and scored on dates not used here.
+4. Record the stop/TP trigger as `exit_ref` on exchange-side exits. Today their exit slippage is UNKNOWN by construction.
+5. Do not allocate capital from the HRP result. TIDAL-60 is a selection artefact, and the XV carry's +2.2 %/yr at L = 2 sits below the risk-free yield with unmodelled leg risk.
+6. Commit only after owner review, split from the owner's uncommitted diff, with no AI trailer.
+
+### 6. Decisions & Lessons
+- The regime check sits after CARRY, so carry keeps G > 3C in every regime (CRASH means carry only). Once a regime is given, `style` must be stated; None fails closed.
+- `policy_for` reads only the state name. A custom policy object cannot loosen a state, and an unknown name maps to UNKNOWN.
+- The GARCH long-run anchor is its 30-sample warmup floored at 4 bps², which binds for per-second BTC and DOGE returns. The classifier therefore takes its vol ratio against a 6-hour EWMA.
+- JUMPY over-prediction comes from the 4.5-sigma tail memory, not from the ratio, and warmup length does not change it. It was not retuned on the days that revealed it.
+- I changed audit code twice while a backfill was running and restarted the batch both times. Lesson: freeze code and record its SHA-256 before batch measurements.
+- The first CRASH latency metric timed detection from the start of the 5-minute move, which inflated it to about 300 s. It is now measured from the first second the move is visible to a causal rule.
+- With two sleeves, "HRP" is just inverse variance. The question to answer is the economic purpose of each sleeve, not the allocator.
+
+## Handoff 6C — 2026-11-07 (b) (Pillar 1: funding-carry lane BN <-> HL, shadow/paper)
+
+### 1. Goal
+The owner's 4-pillar request (relayed by the parent session), first steps only: inspect `core/engine.py`, `core/funding_carry.py` and `tools/nightly_audit.py`, verify the test baseline, and start Pillar 1. Pillar 1 is a delta-neutral carry lane with normalized funding, real-time net APR, a maker GTX leg plus an IOC hedge, liquidation-buffer guards and funding tracking. Resolve the 18-35 % APR claim before anything sizes on it.
+
+### 2. Constraints
+- Built offline: paper venues and shadow intents only. No real order, no live mode, no capital or leverage change, no keys. Hyperliquid account, wallet and key setup is the owner's job.
+- Quorum 0.768, RUNE veto 0.70 and the VESKA HMAC token are untouched; the lane has its own kill switch before every order.
+- Hurdle 8.5 bps: an edge at or below it is OBSERVER.
+- Not touched: `core/web_ui_server.py` and `web_ui/*`, which another writer edited on 2026-11-07 (11:57 and 16:24 local).
+- No commit. No scheduled task: the parent relayed the owner's words approving it, but a relayed approval does not count; the owner must confirm in this session.
+
+### 3. Real state
+New: `research/carry_lane.py`, `core/venues/paper.py`, `tests/test_carry_lane.py` (17). Edited: `core/funding_executor.py` (the `quotes_from` / `fetch_quotes` 4 h interval fix). Nothing in the engine calls the lane; `Engine.funding_loop` still runs `ShadowCarryBook` with the RFC thresholds, which were never replayed.
+
+### 4. Evidence
+- Baseline before edits: 1723 passed, 0 failed, 124.1 s. Full `python -m pytest -q` 1740 passed, 0 failed, 0 errors, 0 skipped, 126.1 s (1723 baseline + 17 new).
+- APR on 2026-01..09 funding:
+  - The median instantaneous |BN - HL| spread was 5.5 % APR (p75 10.5, p90 16.5); 8.3 % of coin-8 h windows reached 18 %.
+  - The RFC threshold of 2.5 bps/8 h equals 27.4 % APR.
+  - XV H28|k2 holdout entries: signal median 5.4 % APR, realized gross funding 4.2 %, realized net 1.90 %/yr.
+  - Verdict: 18-35 % is a transient spread annualized as if it lasts a year. Use 1.9 %/yr on notional.
+- 4 h bug: for ENA, HYPE and TAO, the old reading flipped the short venue on 37.0 / 43.9 / 37.2 % of 1,637 prints and erred by a median 5.4 APR points. The replay summed actual prints and was not affected.
+- Replay parity: `entry_signal`, in the replay's loop, reproduces `tools/funding_spread_replay.simulate` exactly (entry times and short venue) for BTC, TAO and WLD.
+- Executor on paper venues:
+  - a full fill is hedged and the pair is delta-neutral;
+  - partial fills are hedged per increment, then the rest is cancelled at the timeout;
+  - a starved hedge escalates 3 -> 6 -> 12 -> 12 bps, then is unwound flat;
+  - unhedgeable plus unwindable gives BROKEN, which halts, and the next run is REFUSED;
+  - the kill switch refuses before any order, and a trip after the maker fill refuses the hedge but allows the unwind.
+
+### 5. Next steps (gates)
+1. Done: Scheduled task registered 2026-11-07 on the owner's direct approval in this session: `Groktopus nightly audit`, daily 07:05 local (UTC+7 = 00:05 UTC), runs `python.exe F:\he_thong_da_tac_tu_2\tools\nightly_audit.py` as Admin, logon mode Interactive only (no run while logged off). Test run: last result 0, nightly_2026-11-06 rewritten at 11:04:02 UTC. Remove with `schtasks /Delete /TN "Groktopus nightly audit" /F`.
+2. Pillar 1 to shadow: replace the RFC thresholds in `Engine.funding_loop` with `carry_lane.entry_signal`, fed by 72 h of public print history. This changes shadow telemetry only; owner review.
+3. Pillar 1 to paper on testnet: needs a Binance testnet key (exists) and a Hyperliquid testnet account and agent wallet (owner); keys only from `.env.local`.
+4. Pillar 2: wire the classifier into the engine only after v1 is pre-registered and passes on unseen tick days. Downloading those days needs the owner's OK. JUMPY -70 % sizing and the CRASH flatten are order-path changes.
+5. Pillar 3: markouts at 1 s / 5 s / 30 s already land in ledger rows (`markout_bps`); the toxicity guard is next. Pillar 4: the analytics panel looks in progress elsewhere (`web_ui/*` edited by another writer).
+
+### 6. Decisions & Lessons
+- The lane's entry rule is the replay's rule, so it trades only what was tested; the 8.5 bps hurdle never binds because 2 x 15 > 15 + 8.5.
+- The lane sits in `research/`: `tests/test_venues.py` forbids `core.venues` in `core/*.py` and `live/*.py`. Moving it into trading code means changing that guard on purpose (owner decision).
+- "No leg risk" cannot be promised. The executor bounds it (per-increment hedge, unwind, BROKEN halt) and measures the naked window.
+- A Binance `lastFundingRate` is per that symbol's own interval. Any consumer must read `fundingInfo`; silence means 8 h, and an error means UNKNOWN.
+
+## Handoff 6C — 2026-11-07 (c) (Pillar 3 toxicity guard, Pillar 2 regime gate wired into the engine)
+
+### 1. Goal
+The owner's request:
+- Pillar 3: a VPIN toxicity guard plus 1 s / 5 s / 30 s markouts that skew or pull quotes when the 5 s markout is negative or VPIN > 0.65.
+- Pillar 2: download unseen tick days (approved), tune the 4.5-sigma rule so JUMPY false alarms fall from 38.8 % to < 10 %, then wire the gate into `core/engine.py`.
+- Keep `pytest -q` at 100 % and report briefly.
+
+### 2. Constraints
+- No engine start or restart, no live change (live keeps `tox_guard` and `regime_gate` 'off').
+- Quorum 0.768, RUNE veto 0.70 and VESKA untouched; both gates run before any token is issued and can only refuse, deepen a quote or shrink size.
+- Data stays on F:. No commit.
+
+### 3. Real state
+- New: `core/toxicity_guard.py`, `research/regime_v1_eval.py`, `tools/download_public_l2.py`, three test files, and `docs/research_upgrade/snapshot_2026-11-07_regime_v1/`.
+- Edited: `core/engine.py`, `core/exec_funnel.py`, `core/micro_signals.py`, `core/trend_executor.py`, `core/regime_classifier.py`, `tools/nightly_audit.py`, `tests/conftest.py`, `tests/test_regime_classifier.py`, `.gitignore` and the experiment register (row RC-1).
+- Data (git-ignored): `data/ticks/` for 2026-10-01..14.
+
+### 4. Evidence
+- RC-1, pre-registered before its single test: Oct 1-14 PASS.
+  - JUMPY false alarm: v1 1.0 % vs v0 17.2 %.
+  - CRASH: 18/18, 0 false.
+  - Protection recall 0.085 > false restriction 0.013.
+  - JUMPY recall is 4.9 % and accuracy 0.814 < majority 0.858, both recorded as limits.
+- Dev finding: a stricter shared tail rule cost 5-8 of 29 crashes, so CRASH now has its own tail rule (test pinned).
+- Expected quote-halt time from the VPIN rule: SOL 19.7 %, BNB 18.0 %, BTC 10.6 %, DOGE 4.4 % (Oct 1-14).
+- Markout skew and pull triggers were rare on the tape (<= 2 % and <= 0.1 %, mid proxy).
+- Full `python -m pytest -q`: 1780 passed, 0 failed, 0 errors, 0 skipped, 131.2 s (1740 before this request + 40 new; the only previous name not present is the JUMPY policy test renamed from 'halves' to 'cuts').
+
+### 5. Next steps
+1. The owner restarts demo (`run.bat demo`) to load both gates.
+2. Then watch TOX HOLD / TOX SKEW / TOX PULL and REGIME GATE events, the outcomes TOX_HOLD / TOX_PULL / REGIME_REFUSED in `data/engine_orders.jsonl`, and the nightly report.
+3. If SOL/BNB quoting pauses too often for data collection, the documented rollback is `tox_guard='shadow'`.
+4. Re-score v1 on later unseen days. The regime half of the nightly audit needs `scripts\GHI_BANG_L2.bat` recordings, or tick downloads.
+5. The JUMPY state is now rare; any further change needs its own pre-registration.
+
+### 6. Decisions & Lessons
+- VPIN's 0.65 halt is symmetric (owner rule) and sits beside the existing asymmetric 0.80 pause; nothing was loosened.
+- Markout thresholds come from the cost model (the 3 bps adverse-selection allowance and half of it), not from fitting.
+- Only AUTO entries are gated, so the operator TEST button still works. A JUMPY size below the venue minimum refuses the entry rather than rounding up.
+- A float probe into an int64 `searchsorted` copies the array on every call. Precompute the cast once.
+
+## Handoff 6C — 2026-11-07 (d) (Cockpit UI, 18 bps scalp edge floor, simulated carry book)
+
+### 1. Goal
+The owner's cockpit prompt:
+- One 100vh, no-scroll, 3-column cockpit (24 / 46 / 30 %) in `web_ui/index.html` / `style.css`, with `app.js` updated.
+- Directional scalps need >= 18 bps modeled edge (`EDGE TOO LOW FOR FEES`); the LUMEN/TIDAL scalping weights stay at 0.
+- `research/carry_lane.py` in the demo engine loop: simulated dual-leg orders (BN post-only, HL IOC) when the spread is >= 2.5 bps/8 h and APR >= 20 %, with carry positions on the cockpit.
+- Keep quorum 0.768, RUNE veto 0.70, the VESKA AuthToken and the kill switch; `pytest -q` at 100 %; check HTML/CSS/JS.
+
+### 2. Constraints
+- No engine start or restart, no live change (live: `carry_sim` False, scalper 'off').
+- Carry orders are simulated on paper venues only; nothing reaches Binance or Hyperliquid. Hyperliquid account setup stays with the owner.
+- No commit.
+
+### 3. Real state
+- Rewritten: `web_ui/index.html`, `web_ui/style.css`, `web_ui/app.js`. Pre-cockpit copies (they carried another writer's uncommitted 09 analytics panel, now ported): `F:/gt_scratch/web_ui_pre_cockpit_2026-11-07/`.
+- Edited: `web_ui/terminal.js` (gauge radius clamp, resilient frame loop), `core/engine.py` (`scalp_min_edge_bps`, `carry_sim`, CarrySim in funding_loop, snapshot `carry_lane`), `research/carry_lane.py` (`CarrySim`), `core/venues/paper.py` (`auto_fill`), `tests/conftest.py`.
+- New: `tests/test_cockpit_carry.py`, `.claude/launch.json` (preview config `cockpit-ui`).
+
+### 4. Evidence
+- Browser at 1920 x 1080: no page scroll, 0 cards overflowing, no JS exception. Contrast and other resolutions were not measured.
+- The 18 bps floor would have blocked 3 of the 6 demo SCALP trades; the 3 at >= 18 bps also lost, so the edge is not calibrated.
+- CarrySim uses the unvalidated RFC rule; the replay reference is 1.90 %/yr net.
+- Full `python -m pytest -q`: 1790 passed, 0 failed, 0 errors, 0 skipped, 130.7 s (1780 before + 10 new; no previous test name missing). A one-line terminal.js fix made after that run (an inline comment had swallowed the OBI arc colour) was re-checked with the 87 UI-related tests (pass) and in the browser (emerald arc at 0.55 alpha).
+
+### 5. Next steps
+1. The owner restarts demo to load the floor and the simulated carry book.
+2. Watch the `EDGE TOO LOW FOR FEES` events and EDGE_LOW in the funnel, plus the `CARRY SIM OPEN/CLOSE` events and the `carry_lane` telemetry.
+3. The scalp bleed needs a structural fix before more scalps: the TP (~6.7 bps) sits below the 10 bps stop, and SCALP skips the ZEPHR net-RR gate. Pre-register any change.
+4. Carry: replace the RFC entry rule with the replay-validated one before any capital decision.
+
+### 6. Decisions & Lessons
+- The floor reads the swarm's modeled edge, and UNKNOWN refuses (never read as 0). A floor of 0 disables it (micro-lane tests).
+- The LUMEN/TIDAL weights were not touched: `WEIGHTS` is SHA-locked (I4), and the learner already holds them at 0.
+- A rewrite of tracked UI files must keep what the old page showed: three characterization tests caught the dropped scanner counters, PnL strip and quant chips. Back up files that carry someone else's uncommitted edits before replacing them.
+- A canvas measured before layout can be 1 px wide. Clamp every derived radius, and schedule the next frame before drawing.
+
+## Handoff 6C — 2026-11-07 (e) (SCALP entries gated on net RR)
+
+### 1. Goal
+The owner's go-ahead ("Yes, gate SCALP"): route chop SCALP entries through the ZEPHR net-RR gate instead of exempting them.
+
+### 2. Constraints
+- Refusal-only. No engine restart, and no live change beyond the flag (live's scalper is 'off').
+- Quorum 0.768, RUNE veto 0.70, VESKA and the kill switch untouched. No commit.
+
+### 3. Real state
+- Edited: `core/engine.py` (Profile `scalp_net_rr`, the `chop_scalp` RR_LOW refusal, the order-path ZEPHR check, `lane_feasibility`), `tests/conftest.py`, `tests/test_execution_funnel_feasibility.py`, and the experiment register (SCALP-RR-1).
+- New: `tests/test_scalp_net_rr_gate.py`.
+
+### 4. Evidence
+- The shipped SCALP bracket (TP 0.08 % / SL 0.12 %) nets RR 0.20 (break-even win rate 83 %) < 1.30, so every 'on' scalp is refused.
+- Prior: AB-44 DEMO ACTIVE worse (delta -0.111 U/h, CI95 [-0.138, -0.083]); lane replay holdout < 0 bps; 6 demo scalps net -0.055 U.
+- Full `python -m pytest -q`: 1796 passed, 0 failed, 0 errors, 0 skipped, 132.6 s (1790 before + 6 new; no previous test name missing). The 10-minute event rate limit landed while that run was starting; the 6 gate tests were re-run after it (pass).
+
+### 5. Next steps
+1. The owner restarts demo to load the gate. Expect RR_LOW in the funnel and no SCALP fills.
+2. While the router reads CHOP, SOL/DOGE place no micro entries (SCALP-only). Decide whether CHOP should keep muting SWARM entries.
+3. Any new scalp bracket needs net RR >= 1.30 (TP >= 0.30 % at a 0.12 % stop), a pre-registration and a replay before demo.
+
+### 6. Decisions & Lessons
+- The gate reuses `bracket_plan`, the same fee model as TREND/MR, instead of a SCALP-only formula.
+- Shadow rows stay ungated: they record would-be scalps, not orders.
+- The refusal event comes from a static bracket, so it is rate-limited to once per 10 minutes per symbol; the funnel counts every refusal.
+
+## Handoff 6C — 2026-11-08 (f)
+
+### 1. Mục tiêu (Goal)
+Resolve the demo CHOP execution deadlock with a high-consensus SWARM_OVERRIDE, make the scalp bracket clear net RR >= 1.30, rotate the three simulated carry slots hourly by net APR with a -3 bps adverse-basis eject, and show those states in the cockpit. Complete when tests pass and the 100vh view is checked.
+
+### 2. Ràng buộc (Constraints)
+- Worktree: `F:\he_thong_da_tac_tu_2`, branch `feat/janas-autoresearch-smc`, HEAD `2398e92`.
+- Preserve all pre-existing local edits; no commit, engine restart, live change or actual order. Pytest temp files stay on `F:/gt_scratch/`; C: remained above the 20 GB floor.
+- New override is demo-only. Keep 0.768 quorum, RUNE veto policy, VESKA AuthToken, drawdown switch and other entry gates intact. Carry stays on paper venues.
+
+### 3. Trạng thái thực tế (Real State)
+- Implemented in `core/engine.py`, `core/exec_funnel.py`, `research/carry_lane.py`, `core/carry_runtime.py`, and cockpit files `web_ui/index.html`, `web_ui/app.js`, `web_ui/desk.js`, `web_ui/style.css`.
+- Added/updated coverage in `tests/test_swarm_override.py`, `tests/test_carry_lane.py`, `tests/test_cockpit_carry.py`, `tests/test_scalp_net_rr_gate.py`, `tests/test_continuous_active_trading.py`, `tests/test_execution_funnel_feasibility.py`, and `tests/conftest.py`.
+- Appended this handoff and progress record; updated `docs/harness/feature_list.json`. Worktree still contains many unrelated/pre-existing modified and untracked files; none were cleaned or reverted.
+
+### 4. Bằng chứng (Evidence)
+- Baseline: 1795 passed, 1 failed. The existing failure was `test_runtime_profit_target_requires_wallet_reconciliation`: a daily brief tried to read absent leg fields from an open, unreconciled pair. The reporter now includes only closed, fully reconciled pairs.
+- Focused suite: 104 passed. Full project suite, first command in Git Bash `./init.sh`: 1804 passed in 127.67 s. After documentation updates, `git diff --check` is clean, `feature_list.json` parses, and the strict six-section handoff validator passes.
+- `init.sh` exited 1 only on its second, external toolkit command: the configured toolkit Python has no `pytest`. Running the same `tools` target with the project Python collected no tests; the directory contains only `local_docs.py` and `projects.json`.
+- Browser preview used sample SSE telemetry, not a live engine: 1920x1080 viewport and document; no page scroll. Visible radar `SWARM_OVERRIDE SELL (92.7%)`, carry targets `1000PEPE/WLD/ETH`, 60-minute rotation and -3.0 bps basis stop. Temporary preview server and script were stopped/removed.
+- No replay was run for the new override, scalp bracket or rotation. These are behavior checks, not evidence of positive expectancy. Existing carry replay reference is 1.90 %/yr net; the active carry entry thresholds remain unvalidated.
+
+### 5. Bước tiếp theo (Next Steps)
+1. The changes take effect after the owner's next demo restart; this session did not restart the engine.
+2. Restore pytest or repair test collection in `F:/AI_Agent_Toolkit` before expecting the second `init.sh` step to pass.
+3. Pre-register and run a time-separated replay before claiming the override, 0.32 % scalp TP or carry rotation improves net returns.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The override skips only the KER lock. It requires raw consensus >= 0.85, eight unique weighted votes, directional agreement from ZEPHR/RUNE/OKAPI/MARIN/VESKA, the normal quorum, and then the existing tokenized execution. It uses GTX TP 0.50 % and SL 0.18 % (capped at 0.25 %); live stays disabled.
+- `bracket_plan` uses the repository's route-specific fees (maker TP versus taker stop), yielding RR 1.40 at TP 0.32 % / SL 0.12 %. Keep the legacy 0.08 % test explicit instead of treating it as the shipped default.
+- Carry selection is hourly and ranks net APR, with 1000PEPE then WLD as tie-breakers. The -3 bps stop measures relative mark return drag and prevents re-entry until the next scan. Paper only; no profitability inference.
+- The briefing failure showed that status plus close time does not guarantee a complete settlement report; require the closed flag and all four reconciled cash-flow fields before publishing.
+
+## Handoff 6C — 2026-11-08 (g)
+
+### 1. Mục tiêu (Goal)
+Resolve four demo entry blockers: let qualified `SWARM_OVERRIDE` pass known non-crash regime style checks, preserve SIDEWAYS SCALP net RR >= 1.30 after scaling, shorten demo regime warmup, and set the override raw-consensus floor to 0.80 while retaining the 0.768 quorum.
+
+### 2. Ràng buộc (Constraints)
+- Worktree: `F:\he_thong_da_tac_tu_2`, branch `feat/janas-autoresearch-smc`, HEAD `2398e92`.
+- Preserve all existing local changes. No commit, engine restart, live change or actual order. Pytest temp data stays on `F:/gt_scratch/`.
+- Keep the 0.768 quorum, RUNE veto <= 0.70, VESKA HMAC token, 15% drawdown kill switch and all unrelated risk gates active.
+
+### 3. Trạng thái thực tế (Real State)
+- Updated `core/engine.py`: `SWARM_OVERRIDE` rejects only `CRASH` / `UNKNOWN` at the regime gate; demo override floor 0.80; 300 s trend window / 240 s ER span; requested SIDEWAYS SCALP TP floor; demo profile wiring for router scalp-only, rolling Kelly, scalp eject, paper CarrySim and toxicity guard.
+- Updated `docs/harness/feature_list.json` and appended progress/handoff entries. Existing task regression files remain in the dirty workspace and were included in validation; no cleanup or reset was performed.
+
+### 4. Bằng chứng (Evidence)
+- Full project suite through Git Bash `./init.sh`: 1813 passed, 0 failed in 132.07 s; pytest temp path was under `F:/gt_scratch/`.
+- `./init.sh` then failed at its auxiliary toolkit step because `F:/AI_Agent_Toolkit/env/Scripts/python.exe` has no pytest. Running that tools path with the project Python collected no tests (exit 5); the repository suite above passed.
+- `git diff --check` is clean; `feature_list.json` parses; strict six-section handoff validator passes. No live engine or order was used.
+
+### 5. Bước tiếp theo (Next Steps)
+1. The shipped demo profile changes take effect after the owner's next demo restart; this session did not restart it.
+2. Repair the separate toolkit pytest environment only if its auxiliary `tools` check is expected to contain tests.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Regime compatibility is bypassed only for an explicit eligible override in known regimes; `CRASH` and `UNKNOWN` remain fail-closed.
+- The post-scaling scalp floor uses `(new_sl + 0.08) * net_rr_min + 0.04`; at a 0.09% stop it produces 0.261% TP and net RR 1.30. The general demo edge floor remains 30 bps; only the scalp-specific floor is 18 bps.
+- Lowering the raw-score floor to 0.80 still cannot relax the hard 0.768 quorum, RUNE veto, other risk gates or token authorization. The CarrySim and toxicity paths stay simulated / quote-protective.
+
+## Handoff 6C — 2026-11-08 (h)
+
+### 1. Mục tiêu (Goal)
+Resolve the remaining demo execution blockers: permit only a qualified `SWARM_OVERRIDE` through clean cold-start WARMUP, shorten demo regime initialization to a 45-second ER span, lower the demo-only scalp modeled edge floor to 10 bps, and expose elapsed warmup in the cockpit.
+
+### 2. Ràng buộc (Constraints)
+- Worktree: `F:\he_thong_da_tac_tu_2`, branch `feat/janas-autoresearch-smc`, HEAD `2398e92addd3e7d440b30cc3627fb6c2f05dc01d`.
+- Existing dirty files were preserved. No main-branch edit, commit, engine restart, live change, or actual order. Pytest temporary data stays on `F:/gt_scratch/`.
+- Preserve the 0.768 execution quorum, 0.80 demo override raw-consensus floor, RUNE agreement/veto, normal VESKA AuthToken path, 15% drawdown kill switch and all other entry/risk gates.
+
+### 3. Trạng thái thực tế (Real State)
+- `core/engine.py`: demo profile uses `scalp_min_edge_bps=10.0` (live remains 18.0), `regime_trend_window_s=60.0`, `regime_er_bucket_s=5.0`, and `regime_er_min_span_s=45.0`. Regime checks allow `SWARM_OVERRIDE` past style compatibility in known non-crash states; during UNKNOWN they allow only demo `WARMUP` with the full eligibility checks. Crash, data-gap and invalid-input states refuse. Order execution continues through the usual VESKA authorization path.
+- `core/regime_classifier.py`: tracks clean warmup elapsed time; clean startup activates its first known regime when windows are filled, while fault-recovery confirmation remains in place.
+- `web_ui/app.js`: bottom regime strip displays elapsed/required values such as `WARMUP 35s/45s`, and retains the fault cause during warmup after a gap.
+- Updated focused regression coverage and `docs/harness/feature_list.json`, progress and this handoff. No workspace reset or unrelated file cleanup.
+
+### 4. Bằng chứng (Evidence)
+- Focused command covered `tests/test_swarm_override.py`, `tests/test_scalp_net_rr_gate.py`, `tests/test_regime_gate.py`, `tests/test_cockpit_carry.py` and `tests/test_regime_classifier.py`: 82 passed in 3.34 s.
+- Full repository command used Python 3.10 with `--basetemp F:/gt_scratch/pytest-demo-warmup-20261108-h`: 1819 passed, 0 failed in 133.20 s.
+- Browser sample telemetry rendered `WARMUP 35s/45s`. At 1920x1080, viewport/document dimensions were 1920x1080 and page scroll was false. The preview was local only; its temporary fixture and server were removed.
+- Demo 12.2 bps modeled edge clears the 10 bps floor in the focused test. This does not establish positive realized expectancy after fees; no replay or P&L study was run. No live engine/order was used.
+
+### 5. Bước tiếp theo (Next Steps)
+1. The demo profile settings take effect after the owner's next demo restart; this session did not restart the engine.
+2. Calibrate modeled scalp edge and evaluate realized post-fee performance on a pre-registered, time-separated replay before making profitability claims.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The WARMUP exception is limited to the literal clean-start reason `WARMUP` and the full eligible demo override path. Requiring exact equality prevents `WARMUP after DATA_GAP ...` from inheriting the exception.
+- Using 5-second ER buckets is necessary for a 45-second ER span to become observable; the trend window is 60 seconds. The clean first regime may activate immediately once inputs support it, while post-fault recovery remains confirmed.
+- A 10 bps modeled edge floor is a filter, not a guarantee of positive post-fee payoff. Live retains its 18 bps setting.
+
+## Handoff 6C — 2026-11-08 (i)
+
+### 1. Mục tiêu (Goal)
+Stop chop SCALP entries from fighting the macro trend or the 3-minute CVD (owner brief after the 11-08 SOL losses), floor the scalp stop at 0.15 % with fee-true net RR >= 1.35 and a 45 s maker EJECT-BE, and fix the regime warmup timing flake.
+
+### 2. Ràng buộc (Constraints)
+- Worktree `F:\he_thong_da_tac_tu_2`, branch `feat/janas-autoresearch-smc`, HEAD `2398e92`. Other writers' uncommitted work preserved; no main-branch edit, commit, engine restart, live change or order.
+- Pytest temp data on `F:/gt_scratch/` (explicit `--basetemp`; `tests/conftest.py` also roots plain runs there).
+- Quorum 0.768, RUNE veto 0.70, the VESKA AuthToken path and the 15 % kill switch unchanged. The new checks only refuse entries or widen the scalp bracket.
+
+### 3. Trạng thái thực tế (Real State)
+- `core/engine.py` Profile: `scalp_macro_lock`, `scalp_cvd3m_usd` 50000, `scalp_align3`, `scalp_sl_min_pct` 0.15, `scalp_net_rr_min` 1.35 (defaults, so demo and live); `scalp_be_s` 45. Live keeps `chop_scalper='off'`.
+- `scalp_candidate` refuses MACRO / CVD_3M conflicts; `chop_scalp` 'on' refuses ALIGN3 misalignment (forced even with demo `align3='shadow'`) through `scalp_lock()` (funnel MACRO_LOCK / CVD3M_LOCK / ALIGN3_LOCK, rate-limited event). `align3_check(side, force, f)`.
+- `bracket_plan('SCALP')` floors the SL and lifts the TP (`scalp_min_tp`); `execute` re-floors after regime scaling and gates SCALP at `scalp_rr_min()`; `lane_feasibility` shows the effective bracket against 1.35.
+- Shipped demo scalp: TP 0.3505 % / SL 0.15 %, modeled net RR 1.35.
+- Tests: new `tests/test_scalp_trend_lock.py`; legacy opt-outs in `tests/conftest.py`; three 45 s pins; the regime warmup tolerance.
+
+### 4. Bằng chứng (Evidence)
+- Trade ledger 11-08 SOL: two SCALP SELLs against CVD 3 m +245k / +61.9k with macro MIXED and regime DRIFT, stopped at 0.09 % after 14 s / 3 s; the third loss was SWARM_OVERRIDE. Total -0.127 U net.
+- Baseline 1819 passed; focused 73 passed; full `python -m pytest "tests" -q`: 1832 passed, 0 failed (Python 3.10.11, basetemp `F:/gt_scratch/pt_scalp_lock_full2`).
+- Behaviour tests only. No replay, P&L study or engine run; modeled RR is not realized RR (tick rounding, stop slippage).
+
+### 5. Bước tiếp theo (Next Steps)
+1. The owner restarts demo for the profile change to take effect (not done here).
+2. Pre-register and replay the locked scalp (TP 0.3505 / SL 0.15 / EJECT 45 s) on time-separated data before any size or profitability claim, including how often all five ALIGN3 layers agree in chop.
+3. Owner decision: keep scalp size with the wider stop (loss at the stop +67 %) or scale size back to the old per-trade risk.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The brief's macro example was the CVD regime label; at entry the regime read DRIFT and the 5 m macro MIXED. A lock on `self.macro` alone would not have refused these trades, so the lock checks both, and CVD 3 m / ALIGN3 are what catch them.
+- The SL floor has to apply after regime scaling: SIDEWAYS x0.75 is where the 0.09 % came from.
+- Missing CVD 3 m passes the CVD check (as specified) but fails ALIGN3 in 'on'; shadow keeps its research rows.
+- New gates follow the repo pattern: on in the shipped profile, off in the legacy micro-lane pin, covered by their own test file.
+
+## Handoff 6C — 2026-11-08 (j)
+
+### 1. Mục tiêu (Goal)
+Owner decision on (i) ("Có, giảm size"): shrink scalp size whenever the 0.15 % stop floor widens the stop, so a stop-out costs what it did before the floor.
+
+### 2. Ràng buộc (Constraints)
+- Worktree `F:\he_thong_da_tac_tu_2`, branch `feat/janas-autoresearch-smc`, HEAD `2398e92`. No commit, engine restart, live change or order; pytest temp data on `F:/gt_scratch/`.
+- Quorum 0.768, RUNE veto 0.70 and portfolio risk cap, the VESKA AuthToken path and the 15 % kill switch unchanged. The resize only lowers size or refuses.
+
+### 3. Trạng thái thực tế (Real State)
+- `core/engine.py`: Profile `scalp_floor_resize` (default on). In `_execute`, after the regime size step: size x (stop without the floor + plan fees) / (floored stop + plan fees), floored to the step; below the venue minimum -> `SCALP SIZE` refusal before any token. Position and ledger field `scalp_risk_mult`.
+- SIDEWAYS demo scalp: SL 0.15 % at x0.739 size, i.e. the loss at the stop of the old 0.09 % bracket; TP 0.3505 %, net RR 1.35.
+
+### 4. Bằng chứng (Evidence)
+- `tests/test_scalp_trend_lock.py`: 15 passed (loss at the stop within one step of the unfloored bracket, never above; below-minimum refusal; SIDEWAYS x0.739).
+- Focused set 148 passed; full suite 1834 passed, 0 failed (Python 3.10.11, basetemp `F:/gt_scratch/pt_scalp_size_full`).
+- Behaviour tests only. Equal loss holds under the repo's fee model (maker 2, taker 5, slip 1 bps); realized fees and stop slippage differ. No replay or P&L claim.
+
+### 5. Bước tiếp theo (Next Steps)
+1. The owner restarts demo for (i) and (j) to take effect (not done here).
+2. Pre-register and replay the locked, resized scalp before any size or profitability claim.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- "Same loss" is measured as `plan()` measures it (stop distance plus round-trip fees), so the factor is (raw + fees) / (floor + fees), not raw / floor.
+- Below the venue minimum the scalp is refused rather than rounded up, matching the regime size gate; rounding up would break the equal-loss rule.
+- Test sizes must respect RUNE's portfolio cap: the first version of the new tests was refused by RUNE (3.2 U > 1 U), which is the cap working.
+
 ## Handoff — 2026-11-09 (fee-drag fixes, Tasks 1-5; DEMO/replay only, nothing started)
 - Plan and premise check: docs/harness/plan.md. Baseline `python -m pytest -q` 1834 passed -> after 1881 passed, 0 failed (+47 in tests/test_fee_drag_fixes_2026_11_09.py). No trading process, no live flag, no size/leverage change. Economic effect is UNMEASURED: these are behaviour changes proven on a mock venue, not evidence of profit.
 - Premise corrections (the pasted autopsy was wrong on these): (1) `be_price` = `stop_out_pct()` (maker in + taker stop + slip = 0.08 %) + 0.02 % and `soft_be_price` = (entry fee + maker out) + 0.02 % = +0.06 %: the offset sat ABOVE the fees. The real leak is the SOFT path: the target is a maker exit, an escalation to taker costs 5 - 2 + 1 = 0.04 % more, so +0.06 % netted -0.02 %; and `be_locked` was set when the soft target was chosen. (2) `core.runtime` already passes NET pnl to `ConsensusEngine.record_outcome`; `core.engine.Engine` never calls it. The label was only wrong for a caller passing gross.
@@ -290,7 +828,7 @@ Nhánh `docs/h2-regime-sandbox-arch` @ 91ad6ff, chưa commit.
 - T1/T2: `micro_bracket`: SL >= max(0.22 %, 1.2 x ATR 1 m); TP raised to the fee-true net RR 1.40 (0.46 % at SL 0.22), >= 1.8 x ATR 1 m; applied in `bracket_plan` and again after the regime multipliers; scalp lane gets the SL floor and TP to RR 1.10; live (loss-budget SL) untouched. The directive's TP 0.38 % is RR 1.13, not 1.40, so TP follows the RR and the commit subject says 0.46 %. A driftless tape hits TP first 32 % of the time (SL / (SL + TP)) vs 41.7 % needed: the bracket cannot create edge; each stop-out costs ~0.0153 U (2x before). EJECT time-decay (180 s) unchanged: expect many near-break-even timer exits with a 0.46 % TP.
 - T3: `micro_entry_block`: KER >= 0.30, 5 m macro not opposing, CVD 3 m not opposing, OFI L10 with the trade >= 0.65 (`ofi_10s`; the engine has no 1-second OFI); unknown = blocked; funnel blockers `MICRO_KER` / `MICRO_ALIGN` (exec_funnel GATE_CLASS) + enforced in `_execute` for every AUTO path. Both logged trades fail it. It effectively closes the MR (fade) lane in micro mode (a strategy decision) and leaves the 0.30-0.40 KER band to MR/scalp. No separate spread-volatility rule (no such feature). Opposite direction from 11-09b: expect far fewer entries; read the funnel counts.
 - T4: the halt did not fire on 2 losses: it counted the 11-08 14:36 BUY SCALP loss (31 h old, old code, no micro rules) + PEPE + XRP = 3. Threshold already 3. Fix: ledger rows / positions carry `micro`; `micro_halt_until` counts only those and `halt_until(lookback_s=24 h)` ignores older losses. The two logged losses predate the flag, so the active halt clears on restart and the micro streak restarts at 0.
-- Decisions for the user: (a) keep the MR lane effectively closed in micro mode, or give it its own (non-aligned) rules; (b) SL 0.22 vs 0.20 (TP 0.46 vs 0.432); (c) compare after a Demo run: stop-outs/timer exits/TP hits by `bracket`, refusals by `MICRO_KER` / `MICRO_ALIGN`.
+- Decisions for the user: (a) RESOLVED 2026-11-09 by the owner: keep the MR (fade) lane effectively closed in micro mode (no separate non-aligned MR rules); (b) SL 0.22 vs 0.20 (TP 0.46 vs 0.432); (c) compare after a Demo run: stop-outs/timer exits/TP hits by `bracket`, refusals by `MICRO_KER` / `MICRO_ALIGN`.
 - Rollback: `micro_bracket=False`, `micro_align=False`; halt filter: remove the `micro` filter in `Engine.micro_halt_until`; code: `git revert` the commit.
 
 ## Handoff — 2026-11-09 (e) (zero-turnover directive: dual mode CHOP harvester / TREND sniper; DEMO/replay only, nothing started)
@@ -341,3 +879,10 @@ Nhánh `docs/h2-regime-sandbox-arch` @ 91ad6ff, chưa commit.
 - Recorder: `tools/record_market.py --light` did not exist (docs only); added `--light` and `--min-free-gb`. Started 09:07, PID in data/recordings/recorder.pid, 7 days, ~3 GB, stops itself under 8 GB free (F: had 15 GB, 92 % full). Windows shows 0-byte sizes for the open gz files; read them with gzip to check.
 - Next: Phase 2 on the aggTrades-only features now (download), depth features after the recorder has its week; acceptance criteria are fixed in the plan (out-of-sample n >= 400, lower bound > 0, kept fills >= 25 %).
 - Rollback: `micro_harvest_log=False`; stop the recorder with `Stop-Process -Id (Get-Content dataecordingsecorder.pid)`.
+
+## Handoff — 2026-11-10 (e) (adverse-selection Phase 2 run: no filter, no bracket; DEMO untouched)
+- Done: downloaded 81 daily aggTrades archives (408 MB, SHA-256 verified, `data/aggtrades_20261110/`, untracked) with `tools/fetch_aggtrades.py`; built `tools/phase2_harvest_study.py`; ran follow / fade / random x cons / opt (tables `data/phase2_*.csv.gz` and `*.results.json`, untracked). Results and the arithmetic: plan_micro_adverse_selection.md section 9.
+- Result: 0.15/0.15 = -7.4 / -6.6 bps per fill; follow = fade = random; 0 of 40 brackets positive (TP 0.35-0.50 / SL 0.20 included: -6.0..-7.5); no feature (AUC 0.49-0.51); logistic filter holdout AUC 0.51; acceptance failed everywhere. A driftless price gives every bracket EV -(4 SL + 8 TP)/(TP + SL) bps, so a payoff redesign cannot rescue a no-edge entry.
+- NOT done / not changed: no engine change; the Demo bot still has the harvester `on` and `patient` exits (run.bat); no payoff redesign was implemented because the study shows it cannot work. Open: Phase 2b with depth features when the recorder has >= 7 days (>= 2026-11-17).
+- Decisions for the user: (a) switch `MICRO_HARVESTER` back to shadow in run.bat (the lane loses ~6-7 bps = 0.003-0.004 U per fill; 1.5 fills/h); (b) wait for Phase 2b before retiring it; (c) look at lanes whose targets dwarf the fee floor (the 4 h trend lane) or a lower fee tier.
+- Rollback: delete data/aggtrades_20261110 and data/phase2_*; nothing else depends on them.
