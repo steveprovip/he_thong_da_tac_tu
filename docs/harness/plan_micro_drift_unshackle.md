@@ -34,25 +34,28 @@ Scope: code + unit tests + one read-only replay tool. Nothing started or restart
 `SWARM_NO_SIDE` / `SWARM_OPPOSITE` / `SWARM_WEAK` funnel outcomes for the silent swarm-agreement return of an `on` harvest (samples, not opportunities). Read them next run: they say whether the harvester
 starves on the swarm (expected: yes) rather than on any lock.
 
-## Pillar 4 - replay of the 13 logged harvest entries (tools/replay_overnight_exits.py)
-Data: Binance USD-M public `fapi/v1/aggTrades`, only the 13 windows [entry - 2 s, entry + 1 200 s] (2.3 MB in `data/replay_overnight_20261110/`, untracked), fetched with ~1 request/s so the Demo bot sharing the IP stays far under the weight limit.
-The daily data.binance.vision archive for 2026-11-10 does not exist yet and would be hundreds of MB. Entries are the real fills (price, quantity, time = ledger t - hold_s); only the exit rule differs.
-Calibration: replayed `legacy` net -0.0342 U (cons) / -0.0327 U (opt) against the ledger's -0.0307 U for the same 13 trades; mean absolute error 0.0013-0.0014 U per trade. The biggest misses are 01:44 and 03:26: the replay's legacy reaches the taker stop (-0.0118 / -0.0115) where the engine had already left at the touch
-(-0.0101 at the stop distance with a maker exit; -0.0052 at 203 s, 12 s before the replay's fixed 215 s escalation - the engine's guard escalates on adverse momentum).
+## Pillar 4 - replay of the 13 logged harvest entries (tools/replay_overnight_exits.py)  [CORRECTED 11-10 after the first commit]
+Data: Binance USD-M public `fapi/v1/aggTrades`, only the 13 windows [entry - 2 s, entry + 1 200 s] (2.3 MB in `data/replay_overnight_20261110/`, untracked), fetched at ~1 request/s so the Demo bot sharing the IP stays far under
+the weight limit. The daily data.binance.vision archive for 2026-11-10 does not exist yet and would be hundreds of MB. Entries are the real fills (price, quantity, time = ledger t - hold_s); only the exit rule differs.
 
-13 trades, net U (cons / opt): legacy -0.0342 / -0.0327; **patient -0.0294 / -0.0287**; barriers only (TP 0.15 + stop 0.15) -0.0433 / -0.0433.
-- TP / BE / SL / dump counts: legacy 2 / 6 / 3 / 2; patient 4 / 4 / 5 / 0; barriers 6 TP / 6 SL / 1 open at 20 min. Barrier hit rate 6 of 12 = 50 % against a 67.6 % break-even.
-- Patient beats legacy by ~+0.004..0.005 U on 13 trades: it turns two scratches into TPs (00:59, 03:02) and the two DOGE dumps into scratches (01:53, 07:26), and two scratches into stops (05:18, 07:38: -0.0116 / -0.0119 each). Mixed, not a cure; not significant.
-- Not simulated for `patient`: the VPIN >= 0.80 / adverse-flow / regime-flip escalation (the tape has no VPIN or engine flow).
-- Sensitivity, barriers only, same entries, 5 TPs x 3 stops (in-sample, 13 trades: a map, not a recommendation): **all 15 combinations are negative**, -0.014 U (TP 0.46 / SL 0.15) to -0.063 U (TP 0.30 / SL 0.22);
-  the best are TP 0.46 / SL 0.15 (-0.014) and TP 0.10 / SL 0.22 (-0.015, 10 of 13 TPs but -0.0115..-0.0119 on every stop).
-Reading: the exit rule moves the night by about +-0.01 U; no bracket rescues these entries. The fills themselves (maker fills that then move against us: 5 of 13 hit the 0.15 % stop even when held) carry no edge over the
-0.04 % round trip + 0.08 % stop cost. Entry selection / adverse selection is the open problem, not the exit.
+**Validity limit found afterwards**: the Demo venue book is independent of mainnet. The ledger's venue-vs-signal basis at the fill is -8.3..+9.9 bps (median |3.6|) and moves up to 19 bps while a trade is open (PEPE 04:22: +0.2 -> -18.6),
+against a 15 bps TP. The first version compared Demo fill prices with mainnet prints as they are (`--no-rebase`); the tool now moves the entry to its mainnet equivalent by the basis at the fill (default). Neither reproduces the Demo
+trade by trade, so neither can rank exit policies whose difference is smaller than the replay's own error:
+
+net U over the 13 trades (cons / opt fills)      | raw prints      | rebased by the basis
+- legacy                                        | -0.034 / -0.033 | -0.055 / -0.052
+- patient                                       | -0.029 / -0.029 | -0.042 / -0.042
+- barriers only (TP 0.15, stop 0.15)            | -0.043 / -0.043 | -0.049 / -0.049
+- ledger (actual Demo)                          | -0.031          | -0.031
+- legacy replay vs ledger, mean abs error / trade | 0.0013-0.0014 U | 0.0023 U (the average |trade| is 0.0049 U)
+What survives both versions: **every policy is negative**; **all 15 TP x SL brackets (TP 0.10..0.46, stop 0.10..0.22, barriers only) are negative** (raw -0.014..-0.063 U, rebased -0.032..-0.077 U);
+the barrier hit rate is 6 of 12-13 against a 67.6 % break-even; patient beats legacy in both (+0.005 / +0.013 U), which is inside the calibration error. Not simulated for `patient`: the VPIN / adverse-flow / regime-flip
+escalation (the tape has none). Reading: the exit rule is second-order; no bracket rescues these entries; and a 15 bps harvest cannot be validated on a Demo book that wanders +-10-19 bps from mainnet.
 
 ## Not done
 - No change to VESKA / RUNE / the 0.05 U cap / the halt; no change to ADA's spread cap; no relaxation of `micro_ofi_min`; the CVD flow regime lock stays.
 - Replay limits: touch = last print, no queue, mainnet prints vs a Demo venue, entries chosen by the engine (survivorship of maker fills), n = 13.
 
 ## Verify / rollback
-`python -m pytest -q`; tests/test_micro_drift_unshackle.py (7), tests/test_replay_overnight_exits.py (14). Rollback: `micro_harvest_macro_ofi=0.55`, `drift_exempt` returns False (revert the commit).
-Reproduce the replay: `python -I tools/replay_overnight_exits.py replay --ledger data/engine_trades.jsonl --since 2026-11-09T23:00:00+07:00 --data data/replay_overnight_20261110 [--tp X --sl Y]`.
+`python -m pytest -q`; tests/test_micro_drift_unshackle.py (7), tests/test_replay_overnight_exits.py (15). Rollback: `micro_harvest_macro_ofi=0.55`, `drift_exempt` returns False (revert the commit).
+Reproduce the replay: `python -I tools/replay_overnight_exits.py replay --ledger data/engine_trades.jsonl --since 2026-11-09T23:00:00+07:00 --data data/replay_overnight_20261110 [--tp X --sl Y] [--no-rebase]`.

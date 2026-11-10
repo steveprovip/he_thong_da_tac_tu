@@ -12,6 +12,10 @@ The ENTRIES are the real fills of the Demo run (symbol, side, price, quantity, t
             branch is NOT simulated - a limit of this replay.)
   barriers  TP + stop only.
 A position still open after --horizon_s (1 200 s) leaves at the last print as a maker (counted, flagged HORIZON).
+BASIS: the Demo venue book is independent of mainnet.  Each ledger row carries the venue-vs-signal basis at the fill (+-10 bps here, 0.2 -> -18.6 bps
+between fill and exit on PEPE, against a 15 bps TP), so by default the entry is moved to its mainnet equivalent  entry / (1 + basis_bps / 1e4)  before
+the barriers are laid (--no-rebase = the first version of this tool, which compared Demo prices with mainnet prints).  A constant basis is still an
+approximation: the Demo book drifts against mainnet while the trade is open.
 Fill models (as tools/replay_exit_policies.py): opt = a resting closing order fills on an opposite-side print AT or through its price;
 cons = only THROUGH it.  No queue position, no market impact, touch = last print.  Fees: maker 2 bps, taker 5 bps + 1 bp slip.
 `legacy` is also compared with the ledger's own net per trade: that error is the honesty check of the whole replay.
@@ -49,7 +53,7 @@ def load_trades(ledger: Path, since: float) -> list:
             continue                                            # dust remainder of a partial fill
         out.append({'symbol': r['symbol'], 'side': r['side'], 'entry': entry, 'qty': qty, 't_exit': float(r['t']),
                     't0': float(r['t']) - float(r.get('hold_s') or 0.0), 'net': float(r['pnl']), 'reason': r['reason'],
-                    'hold_s': float(r.get('hold_s') or 0.0)})
+                    'hold_s': float(r.get('hold_s') or 0.0), 'basis_bps': float(r.get('basis_bps') or 0.0)})
     return out
 
 
@@ -63,6 +67,8 @@ def simulate(ticks: list, tr: dict, policy: str, model: str = 'opt', cfg: dict =
     """ticks: [(t_s, price, buyer_is_maker)] sorted by time.  -> {'reason', 'exit_px', 'exit_t', 'net', 'mfe_pct', 'maker'}."""
     assert policy in POLICIES and model in ('opt', 'cons')
     d = 1 if tr['side'] == 'BUY' else -1
+    if cfg.get('rebase', True) and tr.get('basis_bps'):
+        tr = {**tr, 'entry': tr['entry'] / (1 + tr['basis_bps'] / 1e4)}       # the Demo fill priced in mainnet terms
     e, t0 = tr['entry'], tr['t0']
     tp, sl = e * (1 + d * cfg['tp'] / 100.0), e * (1 - d * cfg['sl'] / 100.0)
     floor0 = e * (1 + d * 2 * cfg['maker_bps'] / 1e4)           # entry fee + maker exit fee: net ~ 0
@@ -193,7 +199,7 @@ def since_epoch(text: str) -> float:
 def cmd_replay(a) -> None:
     trades = load_trades(a.ledger, since_epoch(a.since))
     ticks = load_ticks(a.data, trades)
-    cfg = {**CFG, 'escalate_s': a.escalate_s, 'horizon_s': a.horizon_s, 'tp': a.tp, 'sl': a.sl}      # --tp / --sl: sensitivity only
+    cfg = {**CFG, 'escalate_s': a.escalate_s, 'horizon_s': a.horizon_s, 'tp': a.tp, 'sl': a.sl, 'rebase': not a.no_rebase}   # --tp / --sl: sensitivity only
     res = run(trades, ticks, cfg)
     summ = summarize(trades, res)
     print(f'{len(trades)} harvest entries, horizon {cfg["horizon_s"]:.0f} s, legacy escalation {cfg["escalate_s"]:.0f} s')
@@ -225,6 +231,7 @@ def main(argv=None) -> None:
     sub.choices['replay'].add_argument('--data', required=True)
     sub.choices['replay'].add_argument('--escalate_s', type=float, default=CFG['escalate_s'])
     sub.choices['replay'].add_argument('--json')
+    sub.choices['replay'].add_argument('--no-rebase', action='store_true', help='compare Demo prices with mainnet prints as they are')
     sub.choices['replay'].add_argument('--tp', type=float, default=CFG['tp'], help='TP %% (the harvester ships 0.15)')
     sub.choices['replay'].add_argument('--sl', type=float, default=CFG['sl'], help='stop %% (the harvester ships 0.15)')
     a = ap.parse_args(argv)

@@ -106,6 +106,17 @@ def test_a_stop_before_the_timers_ends_every_policy_alike():
     assert {p: ro.simulate(ticks, XRP, p)['reason'] for p in ro.POLICIES} == {'legacy': 'SL', 'patient': 'SL', 'barriers': 'SL'}
 
 
+def test_the_entry_is_rebased_by_the_venue_basis_before_the_barriers_are_laid():
+    tr = {**XRP, 'basis_bps': 10.0}                                              # the Demo book sat 10 bps above mainnet at the fill
+    ticks = path([(5, 1.0990), (20, 1.0975)])                                    # mainnet falls to 1.0975
+    old = ro.simulate(ticks, tr, 'barriers', cfg={**ro.CFG, 'rebase': False})
+    new = ro.simulate(ticks, tr, 'barriers')
+    assert old['reason'] == 'TP'                                                 # 1.0975 < the Demo TP 1.09835: an artefact of the basis
+    assert new['reason'] == 'HORIZON'                                            # the mainnet-equivalent TP is 1.1/1.001 x 0.9985 = 1.09725
+    assert ro.simulate(path([(5, 1.0990), (20, 1.0972)]), tr, 'barriers')['reason'] == 'TP'
+    assert ro.simulate(ticks, XRP, 'barriers')['reason'] == 'TP'                 # no basis recorded: unchanged
+
+
 # ============================================================================= ledger, summary, fetch
 def test_load_trades_keeps_real_harvest_rows_only(tmp_path):
     rows = [
