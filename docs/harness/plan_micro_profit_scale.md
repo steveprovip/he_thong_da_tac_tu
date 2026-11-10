@@ -37,8 +37,14 @@ Economic effect UNMEASURED.
 
 ## Not done
 - No two-sided quoting, no real funding settlement, no change to the 3-loss halt, VESKA token (score >= 0.768), RUNE veto, 0.05 U cap or 0.15 U kill.
-- Same-direction exposure cap across the 3 slots (not asked; suggested: at most 2 same-side).
+- (done 11-09g, see below) Same-direction exposure cap across the 3 slots.
 - UI display of `carry_sim` (web_ui has uncommitted owner edits; the SSE field is there for it).
+
+## 11-09g same-side cap (owner: "Cap at 2")
+`Profile.micro_max_same_side` = 2 (0 = off, env `MICRO_MAX_SAME_SIDE` 0-3): `slot_block(side)` refuses a third BUY (or SELL) while two micro positions or in-flight entries are
+already on that side (`PORTFOLIO SIDE 2/2 BUY already open (correlated coins)`, surfaced by `_execute` as `SCANNER: ...`, before any token or order). An open position whose side is
+unknown counts as the same side (UNKNOWN is not "other"). Micro accounts with more than one slot only; the slot count still answers first. It limits net exposure to 2 coins one way
+(max 2 same-side + 1 opposite = a net of one lot at worst for 3 slots); it does not make DOGE / XRP / ADA independent, and the shared 3-loss / 24 h halt is unchanged.
 
 ## Verify / rollback
 `python -m pytest -q` (tests/test_micro_profit_scale.py: 20 new; tests/test_micro_dual.py control for shadow rows; 4 older tests pin `micro_max_positions=1`).

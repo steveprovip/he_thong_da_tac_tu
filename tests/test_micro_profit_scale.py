@@ -53,6 +53,67 @@ def test_three_coins_hold_at_once_the_fourth_waits_and_each_coin_has_one(tmp_pat
     assert es[DOGE].pos is not None
 
 
+def held_side(e, side, qty=72.0, entry=0.0711, sl=0.0709):
+    e.pos = {'side': side, 'qty': qty, 'entry': entry, 'sl': sl}
+
+
+def test_at_most_two_positions_on_one_side_across_the_three_slots(tmp_path):
+    es, _ = scanner(tmp_path)
+    assert es[DOGE].p.micro_max_same_side == 2 and eng.PROFILES['live'].micro_max_same_side == 2
+    held_side(es[DOGE], 'BUY')
+    assert es[XRP].slot_block('BUY') is None and es[XRP].slot_block('SELL') is None        # one BUY open: a second BUY fits
+    held_side(es[XRP], 'BUY', 4.6, 1.1113, 1.109)
+    assert es[ADA].slot_block('BUY') == 'PORTFOLIO SIDE 2/2 BUY already open (correlated coins)'
+    assert es[ADA].slot_block('SELL') is None                                              # the other side is free
+    assert es[ADA].slot_block() is None                                                    # no side asked (display): count rule only
+    held_side(es[ADA], 'SELL', 12.0, 0.42, 0.421)
+    assert es[PEPE].slot_block('SELL') == 'PORTFOLIO FULL 3/3'                             # the slot count still comes first
+    # a SELL book is symmetric
+    held_side(es[DOGE], 'SELL'), held_side(es[XRP], 'SELL', 4.6, 1.1113, 1.1135), held_side(es[ADA], 'BUY', 12.0, 0.42, 0.419)
+    es[ADA].pos = None
+    assert es[ADA].slot_block('SELL') == 'PORTFOLIO SIDE 2/2 SELL already open (correlated coins)' and es[ADA].slot_block('BUY') is None
+
+
+def test_an_unknown_or_in_flight_side_counts_against_the_cap(tmp_path):
+    es, _ = scanner(tmp_path)
+    es[DOGE].busy, es[DOGE]._xm = True, {'side': 'BUY'}                                    # resting entry, side from the order
+    es[XRP].busy, es[XRP]._xm = True, None                                                 # in flight, side not recorded yet
+    assert es[DOGE].open_side() == 'BUY' and es[XRP].open_side() is None
+    assert es[ADA].slot_block('BUY') == 'PORTFOLIO SIDE 2/2 BUY already open (correlated coins)'
+    assert es[ADA].slot_block('SELL') is None                                              # 1 unknown < 2 on the SELL side: fits
+    es[DOGE].busy, es[DOGE]._xm, es[XRP].busy = False, None, False
+    es[PEPE].view = {'amt': -3000.0}                                                       # a venue position seen only by the sync
+    assert es[PEPE].open_side() == 'SELL' and es[ADA].slot_block('BUY') is None
+
+
+def test_the_same_side_cap_is_off_when_asked_or_not_a_micro_account_or_single_slot(tmp_path):
+    off, _ = scanner(tmp_path / 'off', micro_max_same_side=0)
+    held_side(off[DOGE], 'BUY'), held_side(off[XRP], 'BUY', 4.6, 1.1113, 1.109)
+    assert off[ADA].slot_block('BUY') is None                                              # cap 0 = off: 3 BUYs may open
+    one, _ = scanner(tmp_path / 'one', micro_max_positions=1)
+    held_side(one[DOGE], 'BUY')
+    assert one[ADA].slot_block('BUY') == 'PORTFOLIO FULL 1/1'                              # single slot: the count rule answers
+    big = burst_engine(tmp_path / 'big', wallet=5000.0)                                    # not a micro account
+    big.risk.engines = [big, SimpleNamespace(pos={'side': 'BUY', 'qty': 1, 'entry': 1, 'sl': 1}, busy=False, view={},
+                                             open_side=lambda: 'BUY', risk_at_stop=lambda: 0.0, margin_used=lambda: 0.0,
+                                             p=SimpleNamespace(symbol=XRP)),
+                        SimpleNamespace(pos={'side': 'BUY', 'qty': 1, 'entry': 1, 'sl': 1}, busy=False, view={},
+                                        open_side=lambda: 'BUY', risk_at_stop=lambda: 0.0, margin_used=lambda: 0.0,
+                                        p=SimpleNamespace(symbol=ADA))]
+    assert big.slot_block('BUY') is None
+
+
+async def test_the_entry_is_refused_before_any_order_when_the_side_is_full(tmp_path):
+    e, venue, feed = await doge_micro(tmp_path, micro_max_positions=3)
+    e.risk.engines = [e, SimpleNamespace(pos={'side': 'BUY'}, busy=False, view={}, open_side=lambda: 'BUY', risk_at_stop=lambda: 0.01,
+                                         margin_used=lambda: 1.0, p=SimpleNamespace(symbol=XRP)),
+                      SimpleNamespace(pos={'side': 'BUY'}, busy=False, view={}, open_side=lambda: 'BUY', risk_at_stop=lambda: 0.01,
+                                      margin_used=lambda: 1.0, p=SimpleNamespace(symbol=ADA))]
+    res = await e.execute('BUY', BUY, 'SWARM')
+    assert not res['ok'] and res['error'] == 'SCANNER: PORTFOLIO SIDE 2/2 BUY already open (correlated coins)'
+    assert not venue.orders and not [r for r in rows(tmp_path) if r.get('qty_req')]
+
+
 async def test_a_coin_that_already_holds_refuses_a_second_entry(tmp_path):
     e, venue, feed = await doge_micro(tmp_path)
     held(e)
@@ -103,6 +164,9 @@ def test_the_best_candidate_takes_a_slot_only_when_the_better_ones_fill_every_fr
 
 def test_env_flags_for_slots_acceleration_and_bankroll_alias():
     assert micro_capital_env({'MICRO_MAX_POSITIONS': '3', 'MICRO_ACCEL_K': '2.5'}) == {'micro_max_positions': 3, 'micro_accel_k': 2.5}
+    assert micro_capital_env({'MICRO_MAX_SAME_SIDE': '0'}) == {'micro_max_same_side': 0}
+    with pytest.raises(ValueError, match='MICRO_MAX_SAME_SIDE'):
+        micro_capital_env({'MICRO_MAX_SAME_SIDE': '4'})
     assert micro_capital_env({'MICRO_BANKROLL_DEMO': '25'}) == {'micro_bankroll': 25.0}
     assert micro_capital_env({'MICRO_CAPITAL_BANKROLL': '25', 'MICRO_BANKROLL_DEMO': '25'}) == {'micro_bankroll': 25.0}
     for env, word in (({'MICRO_MAX_POSITIONS': '4'}, 'MICRO_MAX_POSITIONS'), ({'MICRO_MAX_POSITIONS': '0'}, 'MICRO_MAX_POSITIONS'),

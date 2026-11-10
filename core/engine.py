@@ -323,6 +323,8 @@ class Profile:
     micro_loss_pause_s: float = 86_400.0  # max_consec_losses (3) AUTO losses in a row -> no entry for 24 h (survives a restart)
     micro_symbols: tuple = MICRO_UNIVERSE  # the coins that may trade (one at a time); the rest observe (signals, no order)
     micro_max_positions: int = 1
+    micro_max_same_side: int = 2        # 11-09g: at most this many open/in-flight micro positions on ONE side (the micro coins are
+                                        # correlated: 3 same-side lots behave like one 3x position); 0 = off. Needs > 1 slot
     micro_rotation: bool = True         # a FORCED micro run scans the whole micro universe, not only the focus symbol
     micro_rank_s: float = 5.0           # router: re-rank the micro coins every 5 s by Momentum Quality = KER x |OFI L10|
     micro_bankroll: float = 5.0         # equity a FORCED micro run on a wallet > micro_equity_max pretends to have
@@ -1300,7 +1302,16 @@ class Engine:
     def open_peers(self) -> list:
         return [o for o in self.risk.engines if o is not self and (o.pos or o.busy or abs(o.view.get('amt') or 0) > 0)]
 
-    def slot_block(self) -> Optional[str]:
+    def open_side(self) -> Optional[str]:
+        """'BUY' | 'SELL' of this symbol's open position or in-flight entry; None = nothing open OR the side is unknown."""
+        if self.pos:
+            return self.pos.get('side')
+        amt = self.view.get('amt') or 0
+        if amt:
+            return 'BUY' if amt > 0 else 'SELL'
+        return ((getattr(self, '_xm', None) or {}).get('side')) if self.busy else None
+
+    def slot_block(self, side: Optional[str] = None) -> Optional[str]:
         """Why this symbol may not open now: single-slot owner, or portfolio count / risk budget used up."""
         if not self.p.multi_slot:
             o = self.peer()
@@ -1309,6 +1320,11 @@ class Engine:
         peers = self.open_peers()
         if len(peers) + 1 > self.max_positions_eff():
             return f'PORTFOLIO FULL {len(peers)}/{self.max_positions_eff()}'
+        cap_s = self.p.micro_max_same_side
+        if cap_s and side in ('BUY', 'SELL') and self.micro_active():
+            n = sum(1 for o in peers if o.open_side() in (side, None))       # an unknown side counts: UNKNOWN is not 'other'
+            if n >= cap_s:
+                return f'PORTFOLIO SIDE {n}/{cap_s} {side} already open (correlated coins)'
         risk, cap = sum(o.risk_at_stop() for o in peers), self.risk_cap()
         if risk >= cap:
             return f'PORTFOLIO RISK {risk:.2f} >= {cap:g} U' + (' (BTC: phần dành SOL/DOGE)' if cap <
@@ -2978,8 +2994,8 @@ class Engine:
         self._harvest_next = self._harvest_macro = False    # one-shot: set by chop_scalp right before execute()
         if self.observer:
             return {'ok': False, 'error': f'OBSERVER: {self.p.symbol} is observe-only (no entries)'}
-        if self.busy or self.pos or self.slot_block():
-            why = self.slot_block()
+        if self.busy or self.pos or self.slot_block(side):
+            why = self.slot_block(side)
             return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
         why_edge = self.entry_edge_block(path, tag)                    # 11-09: no edge / padded quorum -> no order
         if why_edge:

@@ -70,6 +70,11 @@ def micro_capital_env(env):
         if raw not in ('1', '2', '3'):
             raise ValueError('MICRO_MAX_POSITIONS must be 1, 2 or 3')
         out['micro_max_positions'] = int(raw)
+    raw = str(env.get('MICRO_MAX_SAME_SIDE', '')).strip()           # 11-09g: same-side positions across the micro slots (0 = off)
+    if raw:
+        if raw not in ('0', '1', '2', '3'):
+            raise ValueError('MICRO_MAX_SAME_SIDE must be 0, 1, 2 or 3')
+        out['micro_max_same_side'] = int(raw)
     raw = str(env.get('MICRO_ACCEL_K', '')).strip()                 # 11-09f: lot growth per realized USDT (0 = off)
     if raw:
         try:
