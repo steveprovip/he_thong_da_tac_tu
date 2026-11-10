@@ -55,6 +55,8 @@ set "MICRO_CAPITAL_MODE=on"
 set "MICRO_IOC=on"
 rem 11-09e: MICRO_HARVESTER=on = chop-lane maker harvester (KER < 0.28, TP 0.15 / SL 0.15 %) rehearsal; Demo only (a live
 rem profile with it on is an invariant error). Replay of the sister scalper is negative: delete this line to go back to shadow.
+rem 11-10 (b): set back to shadow - the mainnet-tape study (plan_micro_adverse_selection.md section 9) found -6..-7 bps per fill, no filter, no bracket.
+rem MICRO_EXIT_POLICY below only acts on harvest positions, so it is dormant while this is shadow. Use "on" only to rehearse the plumbing.
 set "MICRO_HARVESTER=on"
 rem 11-10: MICRO_EXIT_POLICY=patient = harvest positions keep their TP (BE timer 180 s, scratch only after MFE >= 0.09 %, a negative
 rem touch only on toxic flow); unvalidated (docs/harness/plan_micro_asymmetry_cure.md). Delete this line to go back to the 45 s scratch.
