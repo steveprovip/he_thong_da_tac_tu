@@ -376,6 +376,13 @@ class Profile:
                                         # PnL (capped at max(micro_equity_max, micro_bankroll)): every won USDT raises the lot
     micro_accel_k: float = 0.0          # 11-09f lot = plain compounding target x (1 + k x realized micro PnL USDT), capped at one
                                         # slot's margin share; 0 = off. Demo profile 5.0; live must stay 0 (invariant)
+    micro_exit_policy: str = 'legacy'   # 11-10 chop-harvester exits: 'legacy' = EJECT-BE at 45 s (touch exit above the BE floor, TP
+                                        # cancelled), unfilled at 180 s -> maker at the touch | 'patient' (opt-in, UNVALIDATED): the TP
+                                        # stays, a BE scratch needs MFE >= micro_patient_be_mfe_pct after micro_patient_be_s, and
+                                        # escalation to a negative touch needs toxic flow (below); the exchange SL is the only other exit
+    micro_patient_be_s: float = 180.0
+    micro_patient_be_mfe_pct: float = 0.09  # 60 % of the 0.15 % TP
+    micro_patient_vpin: float = 0.80        # toxic escalation: VPIN >= this OR adverse flow >= flow_limit OR regime flipped
     micro_harvest_macro_soft: bool = True   # 11-09f chop harvester: a 5 m macro that forbids the side no longer blocks when ...
     micro_harvest_macro_ofi: float = 0.55   # ... OFI L10 is WITH the trade by >= 0.55 (resting post-only maker only)
     micro_jumpy_scalp: bool = True      # micro mode: a JUMPY regime does not freeze the scalp lane when ...
@@ -3462,6 +3469,9 @@ class Engine:
                         'drift_probe': self.drift_probe if tag == 'AUTO' else None,
                         **({'eject_s': self.p.scalp_be_s, 'eject_hard_s': self.p.scalp_hard_s,
                             'eject_mfe': 1e9, 'scalp_risk_mult': sr_mult} if path == 'SCALP' else {}),
+                        **({'eject_s': self.p.micro_patient_be_s, 'eject_hard_s': self.p.micro_patient_be_s, 'patient': True,
+                            'patient_mfe': self.p.micro_patient_be_mfe_pct}
+                           if xm.get('harvest') and self.p.micro_exit_policy == 'patient' else {}),
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'micro': self.micro_active(),
@@ -3978,6 +3988,11 @@ class Engine:
     def eject_due(self, p: dict, now: float) -> bool:
         """Time decay: a soft-exit position open >= eject_s whose best excursion never reached +eject_mfe_pct."""
         own = p.get('eject_s')                                        # per-position schedule (SCALP 90 s)
+        if p.get('patient'):
+            # 11-10 patient harvest: the BE scratch is for a trade that already RAN >= patient_mfe and then stalled; a trade that
+            # never moved is not scratched (it keeps its TP and its exchange SL)
+            return (self.p.soft_exits and not p.get('tp1_filled') and now - p['opened'] >= own
+                    and p['mfe_pct'] >= p['patient_mfe'])
         return ((self.p.eject or own is not None) and self.p.soft_exits and not p.get('tp1_filled')
                 and now - p['opened'] >= (own or self.p.eject_s)
                 and p['mfe_pct'] < p.get('eject_mfe', self.p.eject_mfe_pct))
@@ -4011,6 +4026,8 @@ class Engine:
         """11-09: may the EJECT-BE scratch order drop its floor and exit at the touch? Not while gross is below the fee
         hurdle (entry fee + maker exit: a touch exit there books a net loss) unless adverse momentum / toxic flow is
         confirmed; after eject_defer_max_s past hard_s the old behaviour returns, so the time stop stays bounded."""
+        if p.get('patient'):
+            return self.eject_toxic(p, f, fav)
         if not self.p.eject_guard:
             return True
         hurdle = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0
@@ -4028,11 +4045,29 @@ class Engine:
                        f'stays up to {self.p.eject_defer_max_s:.0f}s more (hard SL {p["sl"]:g} stays)')
         return False
 
+    def eject_toxic(self, p: dict, f: dict, fav: float) -> bool:
+        """11-10 patient exits: may a scratch order that is still unfilled drop its floor and leave at the touch?  Only when the
+        touch exit is not a loss (gross already covers entry + maker exit fee) or informed flow is verified: VPIN >= micro_patient_vpin
+        (known), adverse aggressor flow >= the trade's flow limit, or the CVD regime flipped against it.  Time alone never does."""
+        hurdle = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 100.0
+        if fav >= hurdle:
+            return True
+        v = f.get('vpin')
+        why = (f'VPIN {v:.2f} >= {self.p.micro_patient_vpin:g}' if v is not None and v >= self.p.micro_patient_vpin else
+               f'adverse flow {self.adverse_flow(p) / 1e3:.0f}k >= limit' if self.adverse_flow(p) >= (p.get('flow_limit') or self.flow_limit({}))
+               else 'regime flipped' if self.regime_flipped(p, f) else None)
+        if why and not p.get('eject_adverse'):
+            p['eject_adverse'] = why
+            self.event(f'MARIN EJECT escalate on {why} ({fav:+.3f}% < fee hurdle {hurdle:.3f}%)')
+        return why is not None
+
     def eject_floor(self, p: dict) -> float:
-        """Fee-true scratch: entry +/- (entry fee + maker exit fee) -> net PnL ~ 0 when the reduce order fills."""
+        """Fee-true scratch: entry +/- (entry fee + maker exit fee) -> net PnL ~ 0 when the reduce order fills.
+        Patient positions add one tick, so the scratch nets a strictly positive amount (never below the fees)."""
         d = 1 if p['side'] == 'BUY' else -1
         off = (p.get('entry_fee_bps', self.p.maker_bps) + self.p.maker_bps) / 1e4
-        return round_tick(p['entry'] * (1 + d * off), self.spec['tick'], 'up' if d > 0 else 'down')
+        tick = self.spec['tick']
+        return round_tick(p['entry'] * (1 + d * off) + (d * tick if p.get('patient') else 0.0), tick, 'up' if d > 0 else 'down')
 
     def hurdle_gate(self, p: dict, fav: float, now: float) -> Optional[str]:
         """Fee hurdle: why a FLOW / REGIME exit must wait (None = exits allowed). Hard SL and MARIN tiers ignore it."""
@@ -4340,6 +4375,7 @@ class Engine:
                'kelly_f': p.get('kelly_f'), 'size_mult': p.get('size_mult'), 'ratchet': bool(p.get('ratchet')),
                'micro': bool(p.get('micro')),
                'scalp_risk_mult': p.get('scalp_risk_mult'),          # 11-08: SCALP size vs the stop floor
+               'exit_policy': 'patient' if p.get('patient') else None,   # 11-10
                'alt_boost': bool(p.get('alt_boost')), 'eject_floor': (x or {}).get('floor0'),
                'probe': p.get('probe'), 'super_size': bool(p.get('super_size')), 'drift_probe': p.get('drift_probe'),
                'conviction': p.get('conviction'), 'align3': p.get('align3'), 'early_invalid': p.get('early_invalid'),

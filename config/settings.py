@@ -48,6 +48,11 @@ def micro_capital_env(env):
         if ioc not in ('off', 'shadow', 'on'):
             raise ValueError('MICRO_IOC must be off, shadow or on')
         out['micro_ioc'] = ioc
+    policy = str(env.get('MICRO_EXIT_POLICY', '')).strip().lower()         # 11-10 chop-harvester exit policy
+    if policy:
+        if policy not in ('legacy', 'patient'):
+            raise ValueError('MICRO_EXIT_POLICY must be legacy or patient')
+        out['micro_exit_policy'] = policy
     harvester = str(env.get('MICRO_HARVESTER', '')).strip().lower()       # 11-09e chop lane of the dual mode
     if harvester:
         if harvester not in ('off', 'shadow', 'on'):
