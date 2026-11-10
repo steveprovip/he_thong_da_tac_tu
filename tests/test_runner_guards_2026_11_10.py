@@ -415,3 +415,208 @@ async def test_the_demo_loop_appends_the_rows_beside_the_ledger_and_never_depend
     assert gone.carry_sim_state['positions'] and 'error' not in (state or {})
     assert eng.write_carry_rows(tmp_path / 'engine_trades.jsonl', [{'kind': 'BOOK', 'bad': object()}]) == 0      # not JSON: swallowed
     assert eng.write_carry_rows(tmp_path / 'engine_trades.jsonl', []) == 0
+
+
+# ============================================================================= 11-10 (k): the book survives a restart
+def saved(sim):
+    import json
+    return json.loads(json.dumps(sim.snapshot()))                     # exactly what the state file holds
+
+
+NO_PRINTS = {'LINK': {'bn': [], 'hl': []}}
+
+
+async def test_a_saved_book_comes_back_with_its_positions_costs_and_clocks():
+    t = [T0]
+    a = patient(t)
+    await a.step([LINK])
+    t[0] = T0 + 900.0
+    va = await a.step([LINK_FLIP])                                     # one HL print banked, flipped since +900 s
+    state = saved(a)
+    t[0] = T0 + 1000.0                                                 # the next process starts 100 s later
+    b = patient(t)
+    info = b.restore(state, NO_PRINTS)
+    assert info['restored'] and info['pairs'] == ['LINK'] and info['gap_s'] == 100.0 and info['funding_gap_usdt'] == 0.0
+    pa, pb = a.pairs['LINK'], b.pairs['LINK']
+    for k in ('qty', 'opened', 'hold_until', 'min_hold_h', 'flip_since', 'spread_8h_entry', 'short', 'long', 'maker_side'):
+        assert pb[k] == pa[k], k
+    assert pb['settled'] == pa['settled'] == {'bn': 0, 'hl': 1} and b.start == a.start and b.first_t == T0
+    assert pb['bn'].fees == pa['bn'].fees and pb['hl'].funding == pa['hl'].funding and b.equity() == pytest.approx(a.equity())
+    vb = await b.step([LINK_FLIP])
+    assert [r['kind'] for r in b.records] == ['RESTORE', 'BOOK']       # no START and no OPEN: the same book goes on
+    assert b.records[0]['rule']['flip_persist_s'] == 3600.0 and b.records[0]['gap_s'] == 100.0
+    assert vb['fees_total_usdt'] == va['fees_total_usdt'] and vb['positions'][0]['fees_usdt'] == va['positions'][0]['fees_usdt']
+    assert vb['restore']['restored'] and any('CARRY SIM RESTORED 1 pair' in m for m in vb['new_events'])
+    assert vb['positions'][0]['flip_since'] == T0 + 900.0              # the flip clock kept running through the restart
+    t[0] = T0 + 900.0 + 3600.0
+    await a.step([LINK_FLIP])                                          # the twin that never restarted ...
+    await b.step([LINK_FLIP])
+    assert not a.pairs and not b.pairs                                 # ... closes on the same refresh, for the same money
+    assert b.closed[-1]['net_usdt'] == pytest.approx(a.closed[-1]['net_usdt'], abs=1e-4)
+    assert b.closed[-1]['funding_usdt'] == pytest.approx(a.closed[-1]['funding_usdt'], abs=1e-4)
+
+
+async def test_offline_funding_comes_from_the_prints_the_venues_paid_and_is_never_guessed():
+    t = [T0]
+    a = patient(t)
+    await a.step([LINK])                                               # short HL / long BN
+    state, qty = saved(a), a.notional_per_leg / 20.0
+    t[0] = T0 + 10 * 3600.0                                            # ten hours with no process
+    hours = [(1_000_800_000 + i * 3_600_000, 0.00004) for i in range(10)]
+    prints = {'LINK': {'bn': [(1_008_000_000, 0.0002)],
+                       'hl': [(999_000_000, 0.9)] + hours + [(1_040_000_000, 0.9)]}}       # two prints outside the gap
+    b = patient(t)
+    info = b.restore(state, prints)
+    p = b.pairs['LINK']
+    assert info['settled'] == {'bn': 1, 'hl': 10} and info['unsettled'] == {'bn': 0, 'hl': 0} and info['unknown'] == []
+    assert p['hl'].funding == pytest.approx(10 * qty * 20.01 * 0.00004)        # the short leg received ten real prints
+    assert p['bn'].funding == pytest.approx(-qty * 20.0 * 0.0002)              # the long leg paid the one Binance print
+    assert info['funding_gap_usdt'] == pytest.approx(p['hl'].funding + p['bn'].funding, abs=1e-4) and p['settle_t'] == t[0]
+    v = await b.step([LINK])
+    assert v['positions'][0]['settlements'] == {'bn': 1, 'hl': 10}             # nothing is paid a second time
+
+    c = patient(t)
+    info = c.restore(state, {})                                        # the history could not be read
+    assert info['restored'] and info['unknown'] == ['LINK'] and info['unsettled'] == {'bn': 1, 'hl': 10}
+    assert info['funding_gap_usdt'] == 0.0 and c.pairs['LINK']['hl'].funding == 0.0
+    v = await c.step([LINK])                                           # and the next step does not pay them at a stale rate
+    assert v['positions'][0]['unsettled'] == {'bn': 1, 'hl': 10} and v['positions'][0]['funding_usdt'] == 0.0
+    assert any('11 instants UNKNOWN, not credited (LINK)' in m for m in v['new_events'])
+
+
+async def test_a_break_even_hold_runs_on_wall_clock_time_across_restarts():
+    def book(t):
+        return cl.CarrySim(1000.0, slots=1, clock=lambda: t[0], settlement='discrete', hold_breakeven=True,
+                           flip_persist_s=3600.0)
+    t = [T0]
+    a = book(t)
+    await a.step([LINK])                                               # 40 h hold
+    t[0] = T0 + 10 * 3600.0
+    b = book(t)
+    b.restore(saved(a), NO_PRINTS)
+    await b.step([LINK, HOT])                                          # outranked ten hours in: thirty hours of hold are left
+    assert list(b.pairs) == ['LINK'] and not b.closed
+    t[0] = T0 + 40 * 3600.0 + 1.0
+    c = book(t)
+    c.restore(saved(b), NO_PRINTS)
+    await c.step([LINK, HOT])                                          # third process, the hold is over: rotated
+    assert list(c.pairs) == ['AAVE'] and c.closed[-1]['why'].startswith('ROTATE')
+    close = next(r for r in c.records if r['kind'] == 'CLOSE')
+    assert close['hold_s'] == 40 * 3600.0 + 1.0 and close['code'] == 'ROTATE'
+
+
+async def test_a_state_that_cannot_be_trusted_leaves_a_fresh_book_and_says_why():
+    t = [T0]
+    a = patient(t)
+    await a.step([LINK])
+    state = saved(a)
+    broken = {**state, 'pairs': {'LINK': {k: v for k, v in state['pairs']['LINK'].items() if k != 'bn'}}}
+    cases = [(state, T0 + 8 * 86400.0, {}, 'd old'), (state, T0 - 10.0, {}, 'from the future'),
+             ({**state, 'schema': 99}, T0 + 60.0, {}, 'schema'), (None, T0 + 60.0, {}, 'schema'),
+             ('{}', T0 + 60.0, {}, 'schema'), (state, T0 + 60.0, {'slots': 2}, 'slots or utilization'),
+             (broken, T0 + 60.0, {}, 'unreadable state'), ({**state, 'start': None}, T0 + 60.0, {}, 'time or capital')]
+    for st, now, kw, word in cases:
+        t[0] = now
+        fresh = patient(t, **kw)
+        info = fresh.restore(st, NO_PRINTS)
+        assert info['restored'] is False and word in info['why'], (word, info)
+        assert not fresh.pairs and fresh.start == 1000.0 and fresh.cash == 1000.0 and fresh.first_t is None
+        await fresh.step([])
+        assert [r['kind'] for r in fresh.records] == ['RESTORE_SKIP', 'START', 'BOOK'], word
+    t[0] = T0 + 60.0
+    assert 'already running' in a.restore(state, NO_PRINTS)['why'] and list(a.pairs) == ['LINK']
+
+
+async def test_a_halted_book_and_its_closed_pairs_come_back_too():
+    t = [T0]
+    a = patient(t)
+    await a.step([LINK])
+    t[0] = T0 + 300.0
+    await a.step([fx.FundingQuote('LINK', 0.0001, 0.00005, 20.0, 20.05)])       # a 20 bps jump: closed, new pairs frozen
+    a.kill.halt('drawdown test')
+    t[0] = T0 + 600.0
+    b = patient(t)
+    assert b.restore(saved(a), {})['pairs'] == []
+    assert b.kill.halted == 'drawdown test' and b.basis_freeze['coin'] == 'LINK' and b.closed[-1]['why'].startswith('EJECT-BASIS')
+    assert b.fees_closed == a.fees_closed > 0 and b.cash == pytest.approx(a.cash)
+    v = await b.step([LINK, AAVE])
+    assert not b.pairs and v['kill'] and v['basis_freeze']             # a restart is not a way around the kill switch
+
+
+def test_the_print_fetcher_reads_both_venues_and_refuses_a_full_page():
+    import io
+    import json
+    calls = []
+    bn = [{'symbol': '1000PEPEUSDT', 'fundingTime': 5000, 'fundingRate': '0.00010000'},
+          {'symbol': '1000PEPEUSDT', 'fundingTime': 3000, 'fundingRate': '-0.00020000'},
+          {'symbol': '1000PEPEUSDT', 'fundingTime': 9500, 'fundingRate': '0.5'}]          # after the window
+    hl = [{'coin': 'kPEPE', 'time': 4000, 'fundingRate': '0.0000125'}, {'coin': 'kPEPE', 'time': 1000, 'fundingRate': '0.9'}]
+
+    def opener(rows_bn, rows_hl):
+        def op(req, timeout=None):
+            calls.append((req.full_url, req.data))
+            return io.BytesIO(json.dumps(rows_bn if 'fundingRate?' in req.full_url else rows_hl).encode())
+        return op
+    out = fx.fetch_funding_prints('1000PEPE', 1000, 9000, opener=opener(bn, hl))
+    assert out == {'bn': [(3000, -0.0002), (5000, 0.0001)], 'hl': [(4000, 0.0000125)]}      # oldest first, (start, end] only
+    assert 'symbol=1000PEPEUSDT' in calls[0][0] and 'startTime=1001' in calls[0][0] and 'endTime=9000' in calls[0][0]
+    assert calls[0][1] is None and calls[1][0] == fx.HL_INFO_URL
+    assert json.loads(calls[1][1]) == {'type': 'fundingHistory', 'coin': 'kPEPE', 'startTime': 1001, 'endTime': 9000}
+    with pytest.raises(ValueError, match='full page'):
+        fx.fetch_funding_prints('LINK', 0, 10, opener=opener([], [{'time': 1, 'fundingRate': '0'}] * fx.HL_PRINT_PAGE))
+    with pytest.raises(ValueError, match='two lists'):
+        fx.fetch_funding_prints('LINK', 0, 10, opener=opener({'code': -1121, 'msg': 'Invalid symbol.'}, []))
+
+
+def loop_runner(ledger, **prof):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    e0 = SimpleNamespace(account={'wallet': 1000.0}, p=replace(eng.PROFILES['demo'], **prof), event=lambda m: None)
+    if ledger is not None:
+        e0.ledger = ledger
+    return SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
+
+
+async def test_a_second_process_continues_the_book_of_the_first(tmp_path):
+    import json
+    assert eng.PROFILES['demo'].carry_sim_persist is True
+    ledger, quotes = tmp_path / 'engine_trades.jsonl', (lambda: [LINK])
+    r1 = loop_runner(ledger)
+    await eng.Runner.funding_loop(r1, once=True, fetch=quotes)
+    first = r1.carry_sim_state['positions'][0]
+    assert (tmp_path / 'carry_sim_state.json').exists() and not (tmp_path / 'carry_sim_state.json.tmp').exists()
+    assert json.loads((tmp_path / 'carry_sim_state.json').read_text(encoding='utf-8'))['pairs']['LINK']['qty'] > 0
+
+    asked = []
+
+    def prints(coin, a, b):
+        asked.append((coin, a, b))
+        return {'bn': [], 'hl': []}
+    r2 = loop_runner(ledger)                                           # a new process: nothing in memory
+    await eng.Runner.funding_loop(r2, once=True, fetch=quotes, fetch_prints=prints)
+    st = r2.carry_sim_state
+    assert [c for c, _, _ in asked] == ['LINK'] and asked[0][1] < asked[0][2]
+    assert st['restore']['restored'] and st['restore']['pairs'] == ['LINK'] and st['restore']['unknown'] == []
+    assert len(st['positions']) == 1 and st['positions'][0]['opened'] == first['opened']      # the same pair, no new entry
+    assert st['fees_total_usdt'] == r1.carry_sim_state['fees_total_usdt']                    # and no second entry cost
+    rows = [json.loads(x)['kind'] for x in (tmp_path / 'carry_sim.jsonl').read_text(encoding='utf-8').splitlines()]
+    assert rows == ['START', 'OPEN', 'BOOK', 'RESTORE', 'BOOK']
+
+    def offline(coin, a, b):
+        raise OSError('no network')
+    r3 = loop_runner(ledger)                                           # the history cannot be read: the pairs still come back
+    await eng.Runner.funding_loop(r3, once=True, fetch=quotes, fetch_prints=offline)
+    assert r3.carry_sim_state['restore']['restored'] and r3.carry_sim_state['positions'][0]['opened'] == first['opened']
+
+    r4 = loop_runner(ledger, carry_sim_persist=False)                  # switched off: a fresh book, the file untouched
+    before = (tmp_path / 'carry_sim_state.json').read_text(encoding='utf-8')
+    await eng.Runner.funding_loop(r4, once=True, fetch=quotes, fetch_prints=offline)
+    assert r4.carry_sim_state['restore'] is None and r4.carry_sim_state['positions'][0]['opened'] != first['opened']
+    assert (tmp_path / 'carry_sim_state.json').read_text(encoding='utf-8') == before
+
+    (tmp_path / 'carry_sim_state.json').write_text('{not json', encoding='utf-8')
+    r5 = loop_runner(ledger)                                           # an unreadable file: a fresh book, no error
+    state = await eng.Runner.funding_loop(r5, once=True, fetch=quotes, fetch_prints=offline)
+    assert 'error' not in (state or {}) and r5.carry_sim_state['restore'] is None and r5.carry_sim_state['positions']
+    assert eng.load_carry_state(None) is None and eng.save_carry_state(None, {}) is False
+    assert eng.save_carry_state(tmp_path / 'nowhere' / 'engine_trades.jsonl', {}) is False     # no folder: swallowed

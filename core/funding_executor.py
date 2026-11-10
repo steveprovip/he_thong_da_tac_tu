@@ -249,6 +249,34 @@ def fetch_quotes(coins: Iterable[str] = CARRY_COINS, timeout: float = 10.0, open
     return quotes_from(bn, hl, coins, bn_funding_info=info)
 
 
+BN_FUNDING_RATE_URL = 'https://fapi.binance.com/fapi/v1/fundingRate'
+BN_PRINT_PAGE, HL_PRINT_PAGE = 1000, 500
+
+
+def fetch_funding_prints(coin: str, start_ms: int, end_ms: int, timeout: float = 10.0, opener=None) -> dict:
+    """11-10 (k): the funding prints both venues actually paid in (start_ms, end_ms] -> {'bn': [(t_ms, rate)], 'hl': [...]},
+    oldest first; rate = the fraction paid at that print (Binance per its own interval, Hyperliquid per hour). Two public
+    read-only calls (blocking: run it in a thread). Raises on network / parse errors and when a venue returns a full
+    page (more prints than one call holds: the window is too long to trust), so the caller treats the gap as UNKNOWN."""
+    op = opener or urllib.request.urlopen
+    a, b = int(start_ms), int(end_ms)
+    url = f'{BN_FUNDING_RATE_URL}?symbol={coin}USDT&startTime={a + 1}&endTime={b}&limit={BN_PRINT_PAGE}'
+    with op(urllib.request.Request(url, headers={'User-Agent': 'funding-prints'}), timeout=timeout) as r:
+        bn = json.load(r)
+    body = {'type': 'fundingHistory', 'coin': HL_NAME.get(coin, coin), 'startTime': a + 1, 'endTime': b}
+    req = urllib.request.Request(HL_INFO_URL, data=json.dumps(body).encode(),
+                                 headers={'Content-Type': 'application/json', 'User-Agent': 'funding-prints'})
+    with op(req, timeout=timeout) as r:
+        hl = json.load(r)
+    if not isinstance(bn, list) or not isinstance(hl, list):
+        raise ValueError('funding prints: expected two lists')
+    if len(bn) >= BN_PRINT_PAGE or len(hl) >= HL_PRINT_PAGE:
+        raise ValueError('funding prints: a full page came back, the window is longer than one call covers')
+    out = {'bn': sorted((int(x['fundingTime']), float(x['fundingRate'])) for x in bn),
+           'hl': sorted((int(x['time']), float(x['fundingRate'])) for x in hl)}
+    return {k: [(t, rate) for t, rate in v if a < t <= b] for k, v in out.items()}
+
+
 def carry_view(book: 'ShadowCarryBook', quotes: Iterable[FundingQuote], intents: List[dict], now: float,
                top: int = 6) -> dict:
     """Telemetry snapshot: best spreads (eligible or not) with APR = spread x 3 x 365, the virtual book, why-not."""

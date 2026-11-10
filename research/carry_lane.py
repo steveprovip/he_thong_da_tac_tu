@@ -516,7 +516,11 @@ class CarrySim:
 
     11-10 (j) self.records: the structured rows of the last step (START once, OPEN / OPEN_FAIL, CLOSE with a reason code
     GUARD / BASIS / FLIP / ROTATE, CLOSE_FAIL, FLIP and FLIP_CLEAR, BASIS_FREEZE, one BOOK mark per refresh). The sim
-    writes no file; core.engine.Runner.funding_loop appends them to carry_sim.jsonl beside the trade ledger."""
+    writes no file; core.engine.Runner.funding_loop appends them to carry_sim.jsonl beside the trade ledger.
+
+    11-10 (k) snapshot() / restore(): the book used to start from zero with every process, so each session paid new
+    entry costs and no break-even hold could complete. The engine loop saves snapshot() every refresh and hands it to
+    restore() at start-up; see restore() for what the offline gap does to funding and to the stops."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
@@ -558,6 +562,9 @@ class CarrySim:
         self.fees_closed = 0.0                               # simulated fees already paid by closed pairs
         self.basis_freeze_bps = float(basis_freeze_bps)      # 11-10 (g): a held pair's basis moved this far against it
         self.basis_freeze: Optional[dict] = None             # ... since entry -> no NEW pair for one rotation interval
+        self.boot_events: list = []                          # 11-10 (k): what restore() has to say reaches the first step
+        self.boot_records: list = []
+        self.restore_info: Optional[dict] = None
 
     @property
     def notional_per_leg(self) -> float:
@@ -569,11 +576,164 @@ class CarrySim:
     def _book(self, venue, sym: str, mark: float) -> None:
         venue.set_book(sym, mark * (1 - self.half), mark * (1 + self.half))
 
-    async def _open(self, coin: str, v: dict, q) -> None:
+    @staticmethod
+    def _venues(cash: float) -> tuple:
+        """The two isolated paper accounts of one pair (bps: BN maker 2 / taker 5, HL maker 1.5 / taker 4.5)."""
         from core.venues.paper import PaperPerpVenue
+        return PaperPerpVenue('BN', 2.0, 5.0, cash, auto_fill=True), PaperPerpVenue('HL', 1.5, 4.5, cash)
+
+    def _rule(self) -> dict:
+        return {'min_spread_8h': self.min_spread, 'min_apr_pct': self.min_apr, 'min_net_apr_pct': self.min_net_apr,
+                'min_basis_bps': self.min_basis, 'basis_stop_bps': self.basis_stop_bps,
+                'basis_freeze_bps': self.basis_freeze_bps, 'rotation_interval_s': self.rotation_interval_s,
+                'hold_breakeven': self.hold_breakeven, 'flip_persist_s': self.flip_persist_s,
+                'round_trip_bps': HEDGE_ROUND_TRIP_BPS}
+
+    # ------------------------------------------------------------------ 11-10 (k): the book survives a restart
+    STATE_SCHEMA = 1
+    PAIR_KEYS = ('bs', 'hs', 'short', 'long', 'qty', 'maker_side', 'opened', 'spread_8h_entry', 'spread_8h',
+                 'gross_apr_pct', 'net_apr_pct', 'entry_bn_mark', 'entry_hl_mark', 'basis_drag_bps', 'settle_t',
+                 'min_hold_h', 'hold_until', 'flip_since')
+
+    def snapshot(self) -> dict:
+        """The whole book as plain JSON values (the sim writes no file; the engine loop saves this every refresh)."""
+        def acct(v):
+            return {'cash': v.cash, 'fees': v.fees, 'realized': v.realized, 'funding': v.funding,
+                    'positions': {sym: dict(p) for sym, p in v.positions.items()},
+                    'books': {sym: [b['bid'], b['ask']] for sym, b in v.books.items()}}
+        return {'schema': self.STATE_SCHEMA, 't': self.clock(), 'start': self.start, 'cash': self.cash,
+                'slots': self.slots, 'utilization': self.utilization, 'settlement': self.settlement,
+                'first_t': self.first_t, 'funding_closed': self.funding_closed, 'fees_closed': self.fees_closed,
+                'closed': self.closed[-50:], 'last_rotation_t': self.last_rotation_t,
+                'rotation_targets': list(self.rotation_targets), 'basis_eject_until': dict(self.basis_eject_until),
+                'basis_freeze': dict(self.basis_freeze) if self.basis_freeze else None,
+                'kill': {'peak': self.kill.peak, 'halted': self.kill.halted},
+                'pairs': {c: {**{k: p.get(k) for k in self.PAIR_KEYS}, 'rates': list(p['rates']),
+                              'settled': dict(p['settled']), 'unsettled': dict(p.get('unsettled') or {}),
+                              'bn': acct(p['bn']), 'hl': acct(p['hl'])} for c, p in self.pairs.items()}}
+
+    @staticmethod
+    def offline_windows(state, now: float) -> dict:
+        """{coin: (start_ms, end_ms)}: the funding each saved pair missed while no process ran."""
+        out = {}
+        pairs = state.get('pairs') if isinstance(state, dict) else None
+        for coin, p in (pairs or {}).items():
+            t0 = p.get('settle_t') if isinstance(p, dict) else None
+            if _finite(t0) and t0 < now:
+                out[coin] = (int(t0 * 1000), int(now * 1000))
+        return out
+
+    def _restore_refusal(self, state, now: float, max_age_s: float) -> Optional[str]:
+        if not isinstance(state, dict) or state.get('schema') != self.STATE_SCHEMA:
+            return 'unknown state schema'
+        if self.first_t is not None or self.pairs:
+            return 'this book is already running'
+        if not _finite(state.get('t'), state.get('start'), state.get('cash')) or state['start'] <= 0:
+            return 'state has no usable time or capital'
+        age = now - state['t']
+        if age < 0:
+            return 'state is from the future'
+        if age > max_age_s:
+            return f'state is {age / 86400:.1f} d old (limit {max_age_s / 86400:g} d)'
+        if state.get('slots') != self.slots or not _finite(state.get('utilization')) or \
+                abs(state['utilization'] - self.utilization) > 1e-12:
+            return 'slots or utilization changed: the saved pairs were sized for another book'
+        return None
+
+    def restore(self, state, prints: Optional[dict] = None, max_age_s: float = 7 * 86400.0) -> dict:
+        """Continue the book a previous process saved with snapshot(). Positions, fees, banked funding, each pair's
+        opening time, break-even hold and flip clock come back as they were, so a hold is measured in wall-clock time
+        across restarts. While no process ran nothing watched the pairs: the first step after this marks them at the
+        new quotes and applies every exit (a basis that gapped past the stop closes there, not at the stop).
+
+        Offline funding: prints = {coin: {'bn': [(t_ms, rate)], 'hl': [...]}} are the prints the venues really paid in
+        the gap (core.funding_executor.fetch_funding_prints); each is settled on the saved position at the last saved
+        mark. A coin without prints (the fetch failed) is UNKNOWN: nothing is credited and the missed instants are
+        counted in the pair's `unsettled`, never guessed from the last rate seen.
+        -> {'restored': bool, ...}; a refused or unreadable state leaves a fresh book and says why."""
+        now = self.clock()
+        why = self._restore_refusal(state, now, max_age_s)
+        try:
+            built = None if why else self._rebuild(state, prints or {}, now)
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            why = f'unreadable state ({type(exc).__name__}: {exc})'[:120]
+        if why:
+            self.restore_info = {'restored': False, 'why': why, 't': now}
+            self.boot_records.append({'kind': 'RESTORE_SKIP', 't': now, 'why': why})
+            self.boot_events.append(f'CARRY SIM state not restored: {why} - fresh book')
+            return self.restore_info
+        pairs, done, missed, gap_usdt, unknown = built
+        self.start, self.cash = float(state['start']), float(state['cash'])
+        self.first_t = state.get('first_t') if _finite(state.get('first_t')) else state['t']
+        self.funding_closed, self.fees_closed = float(state.get('funding_closed') or 0.0), float(state.get('fees_closed') or 0.0)
+        self.closed = list(state.get('closed') or [])
+        self.last_rotation_t = state.get('last_rotation_t')
+        self.rotation_targets = [c for c in (state.get('rotation_targets') or []) if c in pairs]
+        self.basis_eject_until = dict(state.get('basis_eject_until') or {})
+        self.basis_freeze = dict(state['basis_freeze']) if state.get('basis_freeze') else None
+        kill = state.get('kill') or {}
+        self.kill.peak, self.kill.halted = kill.get('peak'), kill.get('halted')
+        self.pairs = pairs
+        gap = now - state['t']
+        self.restore_info = {'restored': True, 't': now, 'state_t': state['t'], 'gap_s': round(gap, 1), 'pairs': list(pairs),
+                             'settled': done, 'unsettled': missed, 'funding_gap_usdt': round(gap_usdt, 4),
+                             'unknown': unknown}
+        self.boot_records.append({'kind': 'RESTORE', **self.restore_info, 'capital': self.start, 'rule': self._rule()})
+        self.boot_events.append(
+            f'CARRY SIM RESTORED {len(pairs)} pair(s) after {gap / 3600:.1f} h offline'
+            + (': ' + ', '.join(pairs) if pairs else '')
+            + f' · offline funding {gap_usdt:+.4f} USDT from {done["bn"]} BN + {done["hl"]} HL prints'
+            + (f' · {missed["bn"] + missed["hl"]} instants UNKNOWN, not credited ({", ".join(unknown)})' if unknown else ''))
+        return self.restore_info
+
+    def _rebuild(self, state: dict, prints: dict, now: float) -> tuple:
+        """-> (pairs, prints settled per venue, instants missed per venue, offline funding, coins without prints).
+        Touches nothing on self, so a state that breaks half-way leaves the book as it was."""
+        n = float(state['start']) * self.utilization / (2.0 * self.slots)
+        pairs, done, missed, gap_usdt, unknown = {}, {'bn': 0, 'hl': 0}, {'bn': 0, 'hl': 0}, 0.0, []
+
+        async def equity():
+            return self.equity()
+        for coin, p in (state.get('pairs') or {}).items():
+            bn, hl = self._venues(n)
+            for venue, d in ((bn, p['bn']), (hl, p['hl'])):
+                venue.cash, venue.fees = float(d['cash']), float(d['fees'])
+                venue.realized, venue.funding = float(d['realized']), float(d['funding'])
+                venue.positions = {sym: {'amt': float(x['amt']), 'entry': float(x['entry'])}
+                                   for sym, x in d['positions'].items()}
+                for sym, (bid, ask) in d['books'].items():
+                    venue.set_book(sym, bid, ask)
+            pair = {**{k: p.get(k) for k in self.PAIR_KEYS}, 'rates': tuple(p['rates']),
+                    'settled': {k: int((p.get('settled') or {}).get(k, 0)) for k in ('bn', 'hl')},
+                    'unsettled': {k: int((p.get('unsettled') or {}).get(k, 0)) for k in ('bn', 'hl')},
+                    'bn': bn, 'hl': hl,
+                    'ex': DualLegExecutor(bn, hl, self.kill, equity, ExecPolicy(maker_timeout_s=0.0, poll_s=0.0), self.clock)}
+            if not _finite(pair['settle_t'], pair['opened'], pair['qty'], pair['hold_until'], pair['min_hold_h']):
+                raise ValueError(f'{coin}: a saved time or size is not a number')
+            t0, before = pair['settle_t'], bn.funding + hl.funding
+            got = prints.get(coin)
+            if got is None:                                  # UNKNOWN: count what was missed, credit nothing
+                lost = {venue: max(int(now // step) - int(t0 // step), 0) for venue, step in self.SETTLE_S.items()}
+                for venue, k in lost.items():
+                    pair['unsettled'][venue] += k
+                    missed[venue] += k
+                if any(lost.values()):
+                    unknown.append(coin)
+            else:
+                for venue, sym in (('bn', pair['bs']), ('hl', pair['hs'])):
+                    for t_ms, rate in got.get(venue, ()):
+                        if t0 * 1000 < t_ms <= now * 1000:
+                            pair[venue].settle_funding(sym, float(rate), int(t_ms))
+                            pair['settled'][venue] += 1
+                            done[venue] += 1
+            pair['settle_t'] = max(t0, now)
+            gap_usdt += bn.funding + hl.funding - before
+            pairs[coin] = pair
+        return pairs, done, missed, gap_usdt, unknown
+
+    async def _open(self, coin: str, v: dict, q) -> None:
         n = self.notional_per_leg
-        bn = PaperPerpVenue('BN', 2.0, 5.0, n, auto_fill=True)
-        hl = PaperPerpVenue('HL', 1.5, 4.5, n)
+        bn, hl = self._venues(n)
         bs, hs = f'{coin}USDT', self.HL_NAME.get(coin, coin)
         self._book(bn, bs, q.bn_mark)
         self._book(hl, hs, q.hl_mark)
@@ -595,7 +755,8 @@ class CarrySim:
                             'gross_apr_pct': v['gross_apr_pct'], 'net_apr_pct': v['net_apr_pct'],
                             'entry_bn_mark': q.bn_mark, 'entry_hl_mark': q.hl_mark, 'basis_drag_bps': 0.0,
                             'rates': (q.bn_rate_8h, q.hl_rate_1h), 'settle_t': self.clock(), 'settled': {'bn': 0, 'hl': 0},
-                            'min_hold_h': (breakeven_h(v['spread_bps_8h']) or 0.0) if self.hold_breakeven else 0.0}
+                            'min_hold_h': (breakeven_h(v['spread_bps_8h']) or 0.0) if self.hold_breakeven else 0.0,
+                            'flip_since': None, 'unsettled': {'bn': 0, 'hl': 0}}
         self.pairs[coin]['hold_until'] = self.pairs[coin]['opened'] + self.pairs[coin]['min_hold_h'] * 3600.0
         self._rec('OPEN', coin=coin, short=v['short'], long=v['long'], spread_8h=round(v['spread_bps_8h'], 4),
                   gross_apr_pct=round(v['gross_apr_pct'], 3), net_apr_pct=round(v['net_apr_pct'], 3),
@@ -670,15 +831,11 @@ class CarrySim:
         dt_h = 0.0 if self.last_t is None else max(now - self.last_t, 0.0) / 3600.0
         started = self.first_t is None
         self.first_t = now if started else self.first_t
-        self.last_t, self.events, self.records = now, [], []
+        self.last_t, self.events, self.records = now, self.boot_events, self.boot_records
+        self.boot_events, self.boot_records = [], []
         if started:
             self._rec('START', capital=self.start, slots=self.slots, notional_per_leg=round(self.notional_per_leg, 4),
-                      settlement=self.settlement, rule={
-                          'min_spread_8h': self.min_spread, 'min_apr_pct': self.min_apr, 'min_net_apr_pct': self.min_net_apr,
-                          'min_basis_bps': self.min_basis, 'basis_stop_bps': self.basis_stop_bps,
-                          'basis_freeze_bps': self.basis_freeze_bps, 'rotation_interval_s': self.rotation_interval_s,
-                          'hold_breakeven': self.hold_breakeven, 'flip_persist_s': self.flip_persist_s,
-                          'round_trip_bps': HEDGE_ROUND_TRIP_BPS})
+                      settlement=self.settlement, rule=self._rule())
         rotation_due = (self.last_rotation_t is None or
                         now - self.last_rotation_t >= self.rotation_interval_s - EPS)
         views = {}
@@ -797,6 +954,7 @@ class CarrySim:
                 'net_apr_pct': round(p['net_apr_pct'], 2), 'gross_apr_pct': round(p['gross_apr_pct'], 2),
                 'basis_drag_bps': round(p['basis_drag_bps'], 2), 'breakeven_h': breakeven_h(p['spread_8h']),
                 'min_hold_h': p['min_hold_h'], 'hold_until': p['hold_until'], 'flip_since': p.get('flip_since'),
+                'unsettled': dict(p.get('unsettled') or {}),
                 'funding_usdt':round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
                 'fees_usdt': round(p['bn'].fees + p['hl'].fees, 4),
                 'net_usdt': round(p['bn'].equity() + p['hl'].equity() - 2 * n, 4)} for c, p in self.pairs.items()]
@@ -828,6 +986,7 @@ class CarrySim:
                 'fees_total_usdt': round(fees_total, 4),
                 'net_apr_realized_pct': round((eq - self.start) / self.start / days * 365 * 100, 2) if days >= 1 / 24 else None,
                 'basis_freeze': dict(self.basis_freeze) if self.basis_freeze else None,
+                'restore': dict(self.restore_info) if self.restore_info else None,
                 'drawdown': round(1 - eq / self.kill.peak, 6) if self.kill.peak else None,
                 'kill': None if ok else kill_why, 'positions': pos, 'top': rows[:8],
                 'closed': self.closed[-5:], 'new_events': list(self.events)}

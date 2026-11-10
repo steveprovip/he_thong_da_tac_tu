@@ -83,6 +83,44 @@ def write_carry_rows(ledger, rows) -> int:
     return len(lines)
 
 
+def save_carry_state(ledger, state) -> bool:
+    """11-10 (k): the simulated carry book's snapshot -> carry_sim_state.json beside the trade ledger, written to a .tmp
+    and renamed (a kill in mid-write leaves the previous file). Bookkeeping: a failure is swallowed."""
+    if not ledger:
+        return False
+    try:
+        path = Path(ledger).parent / 'carry_sim_state.json'
+        tmp = path.with_suffix('.json.tmp')
+        tmp.write_text(json.dumps(state), encoding='utf-8')
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError):
+        return False
+    return True
+
+
+def load_carry_state(ledger) -> Optional[dict]:
+    """-> the saved snapshot, or None when there is none or it cannot be read (the book then starts fresh)."""
+    if not ledger:
+        return None
+    try:
+        state = json.loads((Path(ledger).parent / 'carry_sim_state.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def carry_gap_prints(windows: dict, fetch) -> dict:
+    """{coin: funding prints of both venues} for each offline window (blocking: run it in a thread). A coin whose
+    history cannot be read is left out, which CarrySim.restore reads as UNKNOWN (nothing credited)."""
+    out = {}
+    for coin, (start_ms, end_ms) in windows.items():
+        try:
+            out[coin] = fetch(coin, start_ms, end_ms)
+        except Exception:
+            continue
+    return out
+
+
 def jev_lift(path: str, raw_consensus: Optional[float]) -> Optional[bool]:
     """Label JEV authorizations whose raw swarm score was below the fixed 76.8% quorum."""
     if raw_consensus is None:
@@ -740,6 +778,9 @@ class Profile:
                                             # funding hour (it closed WLD on a single -0.36 bps/8 h print after 55 min). 0 = at once
     carry_sim_log: bool = True              # 11-10 (j) CarrySim rows (opens, closes with a reason code, flips, a book mark per refresh)
                                             # -> data/carry_sim.jsonl. Bookkeeping only: the book's state lives in memory and was lost
+    carry_sim_persist: bool = True          # 11-10 (k) the book is saved to data/carry_sim_state.json every refresh and restored at
+                                            # start-up (offline funding from the venues' real prints, else UNKNOWN). Delete the file
+                                            # to start a fresh book
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -5269,7 +5310,7 @@ class Runner:
                 return lane.last
             await asyncio.sleep(getattr(lane, 'every_s', 1.0))
 
-    async def funding_loop(self, once: bool = False, fetch=None) -> Optional[dict]:
+    async def funding_loop(self, once: bool = False, fetch=None, fetch_prints=None) -> Optional[dict]:
         """10-16 (b): every funding_every_s refresh the shadow carry book from public funding quotes; errors are kept
         in the snapshot (stale quotes are never shown as current), never fatal."""
         from core import funding_executor as fx
@@ -5299,13 +5340,21 @@ class Runner:
                 if e0 and getattr(e0.p, 'carry_sim', False):
                     from research.carry_lane import CarrySim
                     sim = getattr(self, 'carry_sim', None)
+                    persist = getattr(e0.p, 'carry_sim_persist', False)
                     if sim is None:
                         # 11-10 (e): funding paid at the venues' settlement instants (HL hourly, BN 8 h), net-APR entry floor
                         # 11-10 (h): no rotation before a pair's break-even hours; (i): a flip must last before it closes
                         sim = self.carry_sim = CarrySim(wallet or 1000.0, min_net_apr_pct=e0.p.carry_min_net_apr_pct,
                                                         settlement='discrete', hold_breakeven=e0.p.carry_hold_breakeven,
                                                         flip_persist_s=e0.p.carry_flip_persist_s)
+                        saved = load_carry_state(getattr(e0, 'ledger', None)) if persist else None
+                        if saved is not None:                             # 11-10 (k): the book of the previous process
+                            prints = await asyncio.to_thread(carry_gap_prints, CarrySim.offline_windows(saved, time.time()),
+                                                             fetch_prints or fx.fetch_funding_prints)
+                            sim.restore(saved, prints)
                     self.carry_sim_state = await sim.step(quotes)
+                    if persist:
+                        save_carry_state(getattr(e0, 'ledger', None), sim.snapshot())
                     if getattr(e0.p, 'carry_sim_log', False):            # 11-10 (j): rows a restart does not erase
                         write_carry_rows(getattr(e0, 'ledger', None), sim.records)
                     for message in self.carry_sim_state.get('new_events', ()):

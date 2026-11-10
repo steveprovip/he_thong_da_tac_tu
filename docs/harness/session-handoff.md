@@ -1049,3 +1049,38 @@ Row kinds (every row has `kind`, `t`, `schema`, `code` = commit of the checkout)
 - `FLIP_CLEAR` exists only for the log (no cockpit event): it is the numerator of the reversion rate that entry (i) could not measure.
 - The reason code is passed by the caller, not parsed from the text of `why`.
 - Rollback: `carry_sim_log=False` on the profile, or `git revert` the commit; the file can be deleted at any time.
+
+## Handoff 6C — 2026-11-10 (k) (carry sim book saved every refresh and restored at start-up; DEMO sim only, nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner approved (2026-11-10, after entry j) the fourth follow-up: restore the simulated carry book's open pairs at start-up so a break-even hold (17-48 h) can span restarts instead of every 1-2 h session paying new entry costs on a book that starts from zero. Done means: snapshot / restore in `CarrySim`, the demo loop saving and restoring, an honest rule for the funding of the offline gap, tests, full suite green, committed.
+
+### 2. Ràng buộc (Constraints)
+Simulated book only (paper venues, no order leaves the process); no engine start / restart. `CarrySim` still does no file IO and core/ still does not import core.venues (tests/test_venues.py). Bookkeeping failures (state file, history fetch) cannot stop the funding loop. Nothing is guessed for the offline gap: real prints or UNKNOWN. No AI attribution in commits; nothing pushed.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, base commit `4ef4ea6`. Changed:
+- `research/carry_lane.py`: `CarrySim.snapshot()` (plain JSON: capital, cash, closed pairs, rotation / freeze / kill-switch state, and per pair both paper accounts with positions, fees, realized, funding, last books, plus opening time, hold, flip clock, rates, settle time); `restore(state, prints)`; `offline_windows(state, now)`; `_venues`, `_rule`; rows `RESTORE` / `RESTORE_SKIP`; view keys `restore`, `positions[].unsettled`.
+- `core/funding_executor.py`: `fetch_funding_prints(coin, start_ms, end_ms)` (Binance `GET /fapi/v1/fundingRate`, Hyperliquid `POST info {"type": "fundingHistory"}`; one page each, a full page raises).
+- `core/engine.py`: `save_carry_state` (tmp + rename), `load_carry_state`, `carry_gap_prints`, Profile `carry_sim_persist` True, `Runner.funding_loop(..., fetch_prints=None)` restores when the sim is created and saves after every step.
+- `tests/test_runner_guards_2026_11_10.py`: 7 new tests (28 in the file).
+Files at run time: `data/carry_sim_state.json` (git-ignored by `data/*.json`; `.json.tmp` by `data/*.tmp`). Neither exists yet. The running bot has the old code.
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/`: 2163 passed before, 2170 passed after (7 new in tests/test_runner_guards_2026_11_10.py), 0 failed, 231.7 s. The suite wrote no carry file into `data/`.
+- A restored book equals its twin that never restarted: same positions, fees, banked funding, flip clock; both close on the same refresh for the same net (test). A 40 h hold opened in process 1 survives an outranked scan in process 2 at 10 h and is rotated in process 3 at 40 h (test).
+- Live read-only check of the new fetcher (AVAX, last 12 h, 2026-11-10): Binance 2 prints 8 h apart, Hyperliquid 12 prints exactly 1.0 h apart (time stamps 60-80 ms after the hour); both lists parse. One call, not a monitor.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: restart `run.bat micro`. The first run starts a fresh book and writes the state file; from the second run on the cockpit event log shows `CARRY SIM RESTORED n pair(s) after x h offline ...`.
+2. To start a fresh book on purpose (also the only reset of a halted kill switch): delete `data/carry_sim_state.json`.
+3. Read `data/carry_sim.jsonl` after a few days: `RESTORE` rows give the gap and the offline funding; `BOOK` rows the path of fees against funding.
+4. Runner guards (entry g): still need >= 30 `runner: true` rows.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Offline funding = the prints the venues really paid in the gap, each settled on the saved position at the LAST SAVED mark (the mark at the print is not fetched: an error of the size of the price move over the gap, a few percent of the funding amount). When the history cannot be read the gap is UNKNOWN: nothing is credited, the missed instants are counted per pair in `unsettled` and shown; they are never paid later at a stale rate. The in-session rule (a failed refresh is settled at the last known rate) is unchanged: it covers minutes, not hours.
+- The offline gap is unwatched, as a real position would be: the first step after a restore marks the pairs at the new quotes and applies every exit. A basis that moved past the -3 bps stop while offline closes at the new marks, not at the stop; a flip clock keeps running through the gap (no known positive print), so a pair that was flipped at shutdown and still is at start-up can close on the first refresh.
+- Refused states leave a fresh book and a `RESTORE_SKIP` row with the reason: older than 7 days, time in the future, unknown schema, slots or utilization changed (the pairs were sized for another book), unreadable. The saved capital wins over the wallet of the new process: it is the same book.
+- The kill switch and the basis freeze are restored: a restart is not a way around them.
+- The new fetcher sends a neutral User-Agent, not the project name.
+- Rollback: `carry_sim_persist=False` on the profile (fresh book every process, as before), or `git revert` the commit.
