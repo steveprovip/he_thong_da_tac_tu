@@ -382,6 +382,13 @@ class Profile:
                                         # cap are untouched. Ledger: 0 of 129 trades ever reached MFE +0.5 % (max 0.441 %)
     micro_runner_tp_pct: float = 2.5
     micro_runner_trail_atr: float = 2.0
+    micro_runner_inval_ofi: float = 0.70    # 11-10 (g) a runner's early invalidation is ARMED (the profile-wide one stays 'shadow'):
+                                        # inside early_inval_s, OFI L10 <= -0.70 against it or CVD velocity <= -early_inval_vel_usd
+                                        # -> maker exit at the touch (EARLY-INVALID). 0 = off. UNVALIDATED: of the 5 ledger trades
+                                        # whose first shadow trigger was |OFI| >= 0.70 the early exit was better in 2, worse in 3
+    micro_runner_stale_s: float = 420.0     # 11-10 (g) a runner has no 120 / 180 s eject; open this long with MFE still under
+    micro_runner_stale_mfe_pct: float = 0.20    # this, it gets the EJECT-BE scratch (floor, then the touch eject_hard_s - eject_s
+                                        # later, fee-hurdle guard as for every eject). 0 s = off: SL / ratchet / flow / regime only
     micro_equity_track: bool = True     # forced micro on a big (Demo) wallet: virtual equity = micro_bankroll + realized micro
                                         # PnL (capped at max(micro_equity_max, micro_bankroll)): every won USDT raises the lot
     micro_accel_k: float = 0.0          # 11-09f lot = plain compounding target x (1 + k x realized micro PnL USDT), capped at one
@@ -2925,10 +2932,16 @@ class Engine:
                                 f'(phí maker 2 chiều {2 * self.p.maker_bps:g} bps)'))
         return out, probe
 
-    def early_invalid_due(self, p: dict, now: float, f: dict) -> Optional[str]:
+    def early_invalid_due(self, p: dict, now: float, f: dict, runner: bool = False) -> Optional[str]:
         """10-08z2: within early_inval_s of the fill, CVD velocity 10 s >= early_inval_vel_usd against the position
-        or OFI L10 flipped to <= -early_inval_ofi -> reason, else None."""
-        if self.p.early_invalidation not in ('shadow', 'on') or p.get('tag') != 'AUTO' or p.get('path') == 'SCALP':
+        or OFI L10 flipped to <= -early_inval_ofi -> reason, else None.
+        11-10 (g) runner=True: the ARMED check of a runner position (OFI limit micro_runner_inval_ofi, 0 = off), whatever
+        the profile-wide mode says."""
+        lim = self.p.micro_runner_inval_ofi if runner else self.p.early_inval_ofi
+        if runner:
+            if not p.get('runner') or not lim:
+                return None
+        elif self.p.early_invalidation not in ('shadow', 'on') or p.get('tag') != 'AUTO' or p.get('path') == 'SCALP':
             return None
         if now - p['opened'] > self.p.early_inval_s:
             return None
@@ -2937,7 +2950,7 @@ class Engine:
         if vel <= -self.p.early_inval_vel_usd:
             return f'CVD {vel / 1e3:+.0f}k/s against'
         ofi = f.get('ofi_10s')
-        if ofi is not None and ofi * d <= -self.p.early_inval_ofi:
+        if ofi is not None and ofi * d <= -lim:
             return f'OFI flipped {ofi:+.2f}'
         return None
 
@@ -3585,6 +3598,9 @@ class Engine:
                         **({'eject_s': self.p.micro_patient_be_s, 'eject_hard_s': self.p.micro_patient_be_s, 'patient': True,
                             'patient_mfe': self.p.micro_patient_be_mfe_pct}
                            if xm.get('harvest') and self.p.micro_exit_policy == 'patient' else {}),
+                        **({'eject_s': self.p.micro_runner_stale_s, 'eject_mfe': self.p.micro_runner_stale_mfe_pct,
+                            'eject_hard_s': self.p.micro_runner_stale_s + max(self.p.eject_hard_s - self.p.eject_s, 0.0)}
+                           if runner and self.p.micro_runner_stale_s > 0 else {}),     # 11-10 (g) stale-runner scratch
                         'px_vel_15s': f.get('px_vel_15s'), 'macro': self.macro.get('name'),
                         'tag': tag, 'path': path, 'score': decision.score, 'reason': decision.reason,
                         'micro': self.micro_active(),
@@ -3606,8 +3622,10 @@ class Engine:
                    f'{(self.diag or {}).get("jev", 0):.1f}' if route == 'ioc' else 'POST-ONLY GTX maker')
             self.event(f'VESKA {tag} {side} {qty_str} {sym} @ {fill:g} ({how}, {ms:.0f} ms) · {path} '
                        f'{decision.score * 100:.1f}% · TP1 {tp:g} x{fmt(self.pos["tp_qty"], step)} · SL {sl:g}'
-                       + (f' · RUNNER (TP is a cap, planned {tp_plan:g}; no time eject; trail from '
-                          f'+{self.p.trail_activate_pct}%)' if runner else ''))
+                       + (f' · RUNNER (TP is a cap, planned {tp_plan:g}; '
+                          + (f'stale eject {self.pos["eject_s"]:.0f}s under +{self.pos["eject_mfe"]:g}% MFE'
+                             if self.pos.get('eject_s') else 'no time eject')
+                          + f'; trail from +{self.p.trail_activate_pct}%)' if runner else ''))
             try:
                 await self.place_entry_stop(sym, opp, fmt(sl, tick), self.pos['sl_cid'])
             except Exception as exc:
@@ -4006,6 +4024,14 @@ class Engine:
                            f'(fee hurdle bypassed, hard SL {p["sl"]:g} stays)')
                 await self.start_soft_exit('EARLY-INVALID')
                 return
+        why_run = self.early_invalid_due(p, now, f, runner=True)
+        if why_run:                              # 11-10 (g): a runner has no time eject, so this one acts ('armed' beside the shadow record)
+            p['early_invalid'] = {**(p.get('early_invalid') or {}),
+                                  'armed': {'t': round(now - p['opened'], 1), 'fav_pct': round(fav, 4), 'why': why_run}}
+            self.event(f'MARIN RUNNER EARLY INVALIDATION {why_run} at {fav:+.3f}% -> post-only reduce at the touch '
+                       f'(fee hurdle bypassed, hard SL {p["sl"]:g} stays)')
+            await self.start_soft_exit('EARLY-INVALID')
+            return
         if self.eject_fast_due(p, now, f):
             self.event(f'MARIN FAST EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_fast_s:.0f}s, MFE '
                        f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_fast_mfe_pct}%, 15s velocity '
@@ -4014,9 +4040,14 @@ class Engine:
             return
         if self.eject_due(p, now):
             px = self.eject_floor(p)
-            self.event(f'MARIN TIME-DECAY EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_s:.0f}s, MFE '
-                       f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_mfe_pct}% -> post-only reduce at BE {px:g} '
-                       f'(entry {"+" if d > 0 else "-"}fees), at the touch after {self.p.eject_hard_s:.0f}s')
+            if p.get('runner'):                  # 11-10 (g): the runner's own schedule (micro_runner_stale_s / _mfe_pct)
+                self.event(f'MARIN RUNNER STALE EJECT: {now - p["opened"]:.0f}s >= {p["eject_s"]:.0f}s, MFE '
+                           f'{p["mfe_pct"]:+.3f}% < +{p["eject_mfe"]:g}% -> post-only reduce at BE {px:g} '
+                           f'(entry {"+" if d > 0 else "-"}fees), at the touch after {p["eject_hard_s"]:.0f}s')
+            else:
+                self.event(f'MARIN TIME-DECAY EJECT: {now - p["opened"]:.0f}s >= {self.p.eject_s:.0f}s, MFE '
+                           f'{p["mfe_pct"]:+.3f}% < +{self.p.eject_mfe_pct}% -> post-only reduce at BE {px:g} '
+                           f'(entry {"+" if d > 0 else "-"}fees), at the touch after {self.p.eject_hard_s:.0f}s')
             await self.start_soft_exit('EJECT-BE', floor=px)
             return
         flip = self.regime_flipped(p, f)
@@ -4104,8 +4135,8 @@ class Engine:
     def eject_due(self, p: dict, now: float) -> bool:
         """Time decay: a soft-exit position open >= eject_s whose best excursion never reached +eject_mfe_pct."""
         own = p.get('eject_s')                                        # per-position schedule (SCALP 90 s)
-        if p.get('runner'):                                           # 11-10 (e): a runner leaves by SL / ratchet / trail / flow / regime
-            return False
+        if p.get('runner') and own is None:                           # 11-10 (e): no chop eject for a runner; (g) its own stale
+            return False                                              # schedule, set at the fill, runs through the lines below
         if p.get('patient'):
             # 11-10 patient harvest: the BE scratch is for a trade that already RAN >= patient_mfe and then stalled; a trade that
             # never moved is not scratched (it keeps its TP and its exchange SL)

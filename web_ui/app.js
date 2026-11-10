@@ -108,13 +108,17 @@
       const pos = sim.positions || [];
       // one nowrap line that ellipsizes: the two yield numbers first, the full text in the tooltip
       txt('ck-carry-book', `SIM ${pos.length}/${(sim.rule || {}).slots ?? '—'} · P&L ${sg(sim.pnl, 4)} U`
-        + (fin(sim.funding_total_usdt) ? ` · funding ${sg(sim.funding_total_usdt, 4)} U` : '') + ` · equity ${fx(sim.equity, 2)}`
+        + (fin(sim.funding_total_usdt) ? ` · funding ${sg(sim.funding_total_usdt, 4)} U` : '')
+        + (fin(sim.fees_total_usdt) ? ` · fees ${fx(sim.fees_total_usdt, 4)} U` : '') + ` · equity ${fx(sim.equity, 2)}`
         + (pos.length ? ' · ' + pos.map(p => `${p.coin} ${sg(p.net_usdt, 3)}`).join(' · ') : '') + (sim.kill ? ' · KILL: ' + sim.kill : ''));
       cls('ck-carry-book', 'book ' + tone(sim.pnl));
       $('ck-carry-book').title = $('ck-carry-book').textContent;
       const mins = fin(rotation.next_scan) ? Math.max(0, (rotation.next_scan - Date.now() / 1000) / 60) : null;
-      txt('ck-carry-note', `ROTATION ${fx((rotation.interval_s || 3600) / 60, 0)}m · next ${mins === null ? '—' : fx(mins, 0) + 'm'}`
+      const frz = sim.basis_freeze;            // 11-10 (g): a held pair's basis jumped against it -> no new pair for one interval
+      txt('ck-carry-note', (frz ? `BASIS FREEZE ${frz.coin} ${sg(frz.drag_bps, 1)} bps · ` : '')
+        + `ROTATION ${fx((rotation.interval_s || 3600) / 60, 0)}m · next ${mins === null ? '—' : fx(mins, 0) + 'm'}`
         + ` · ${(rotation.targets || []).join('/') || 'no target'} · BASIS STOP ${sg(rotation.basis_stop_bps, 1)} bps`);
+      $('ck-carry-note').title = $('ck-carry-note').textContent;
     } else {
       txt('ck-carry-book', 'SIM BOOK off');
       txt('ck-carry-note', 'T6 public quote scan · instantaneous APR is not a forecast');

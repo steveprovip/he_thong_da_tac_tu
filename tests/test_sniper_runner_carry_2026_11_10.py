@@ -117,7 +117,9 @@ async def test_a_runner_fill_rests_its_tp_at_the_cap_keeps_the_planned_tp_and_tr
     assert low.pos['runner'] is False and low.pos['tp'] == low.pos['tp_plan']
 
 
-def test_a_runner_is_never_time_ejected_and_everything_else_still_is(tmp_path):
+def test_a_runner_skips_the_chop_ejects_and_everything_else_still_gets_them(tmp_path):
+    # 11-10 (g): a runner now carries its own 420 s stale schedule from the fill (tests/test_runner_guards_2026_11_10.py);
+    # the bare dict below has none, which is what micro_runner_stale_s = 0 leaves
     e = burst_engine(tmp_path, eject=True, eject_fast=True)
     now = 1_000.0
     stale = {'opened': now - 500.0, 'mfe_pct': 0.0, 'tp1_filled': False}

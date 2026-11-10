@@ -101,6 +101,13 @@ def realtime_apr(q: CarryQuote, cost_bps: float = HEDGE_ROUND_TRIP_BPS, hold_day
             'basis_bps': (p_short - p_long) / (0.5 * (p_short + p_long)) * 1e4}, ''
 
 
+def breakeven_h(spread_bps_8h, cost_bps: float = HEDGE_ROUND_TRIP_BPS) -> Optional[float]:
+    """Hours the present spread must last to repay one round trip; None when it pays nothing (<= 0 or UNKNOWN)."""
+    if not _finite(spread_bps_8h) or spread_bps_8h <= 0:
+        return None
+    return round(cost_bps / (spread_bps_8h / 8.0), 1)
+
+
 # ------------------------------------------------------------------ 2. entry rule (replay parity)
 @dataclass(frozen=True)
 class CarryRule:
@@ -489,7 +496,11 @@ class CarrySim:
     seen BEFORE the instant (the quote after it already estimates the next period). A pair opened and closed inside one
     Binance window earns no Binance funding, which the continuous estimate credited. A Binance symbol on a 4 h interval is
     settled as its 8 h equivalent on the 8 h grid. A refresh with UNKNOWN quotes settles nothing; the instants it skipped
-    are settled at the next known refresh from the last known rates. min_net_apr_pct adds a net-APR entry floor."""
+    are settled at the next known refresh from the last known rates. min_net_apr_pct adds a net-APR entry floor.
+
+    11-10 (g) basis_freeze_bps (15): the -3 bps basis stop closes a pair on a slow drift; a drag of 15 bps or more in one
+    refresh is a venue dislocation, so the book also opens no NEW pair for one rotation interval (view key basis_freeze).
+    Telemetry: fees_total_usdt, net_apr_realized_pct (the book after all simulated costs) and breakeven_h per coin."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
@@ -498,9 +509,11 @@ class CarrySim:
     def __init__(self, capital_usdt: float, slots: int = 3, utilization: float = 0.7, min_spread_8h: float = 2.5,
                  min_apr_pct: float = 20.0, min_basis_bps: float = 1.5, half_spread_bps: float = 0.5,
                  clock: Callable[[], float] = time.time, rotation_interval_s: float = 3600.0,
-                 basis_stop_bps: float = -3.0, min_net_apr_pct: float = 0.0, settlement: str = 'continuous'):
-        if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps, min_net_apr_pct) and capital_usdt > 0
-                 and slots >= 1 and 0 < utilization <= 1 and rotation_interval_s > 0 and basis_stop_bps < 0)):
+                 basis_stop_bps: float = -3.0, min_net_apr_pct: float = 0.0, settlement: str = 'continuous',
+                 basis_freeze_bps: float = 15.0):
+        if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps, min_net_apr_pct, basis_freeze_bps)
+                 and capital_usdt > 0 and slots >= 1 and 0 < utilization <= 1 and rotation_interval_s > 0
+                 and basis_stop_bps < 0 and basis_freeze_bps > 0)):
             raise ValueError('need positive capital, slots >= 1, utilization in (0, 1]')
         if settlement not in ('continuous', 'discrete'):
             raise ValueError('settlement must be continuous or discrete')
@@ -521,6 +534,9 @@ class CarrySim:
         self.basis_eject_until: dict = {}
         self.first_t: Optional[float] = None
         self.funding_closed = 0.0                            # simulated funding already banked by closed pairs
+        self.fees_closed = 0.0                               # simulated fees already paid by closed pairs
+        self.basis_freeze_bps = float(basis_freeze_bps)      # 11-10 (g): a held pair's basis moved this far against it
+        self.basis_freeze: Optional[dict] = None             # ... since entry -> no NEW pair for one rotation interval
 
     @property
     def notional_per_leg(self) -> float:
@@ -573,6 +589,7 @@ class CarrySim:
         self.pairs.pop(coin)
         fund = p['bn'].funding + p['hl'].funding
         self.funding_closed += fund
+        self.fees_closed += p['bn'].fees + p['hl'].fees
         self.closed.append({'coin': coin, 'why': why, 'net_usdt': round(got - 2 * n, 4), 'funding_usdt': round(fund, 4),
                             'days': round((self.clock() - p['opened']) / 86400, 3)})
         self.events.append(f'CARRY SIM CLOSE {coin}: {why} · net {got - 2 * n:+.4f} USDT (simulated)')
@@ -633,7 +650,13 @@ class CarrySim:
                                        else (p['entry_hl_mark'], p['entry_bn_mark']))
             short_now, long_now = ((q.bn_mark, q.hl_mark) if p['short'] == 'BN' else (q.hl_mark, q.bn_mark))
             p['basis_drag_bps'] = ((long_now / long_entry) - (short_now / short_entry)) * 1e4
-            legs = {'BN': (await p['bn'].margin_view(), await p['bn'].position_view(p['bs'])),
+            if p['basis_drag_bps'] <= -self.basis_freeze_bps + EPS:      # far past the -3 bps stop in one refresh: a dislocation
+                self.basis_freeze = {'coin': coin, 'drag_bps': round(p['basis_drag_bps'], 2), 't': now,
+                                     'until': now + self.rotation_interval_s}
+                self.events.append(f'CARRY SIM BASIS DIVERGENCE {coin}: {p["basis_drag_bps"]:+.2f} bps against the pair since '
+                                   f'entry (limit -{self.basis_freeze_bps:g}) -> no new pair for '
+                                   f'{self.rotation_interval_s / 60:.0f} min')
+            legs ={'BN': (await p['bn'].margin_view(), await p['bn'].position_view(p['bs'])),
                     'HL': (await p['hl'].margin_view(), await p['hl'].position_view(p['hs']))}
             action, why = self.guard.assess(legs, True, 1.0)
             if action in (CLOSE, DERISK):
@@ -662,8 +685,10 @@ class CarrySim:
                 q, v, _ = views.get(coin, (None, None, 'UNKNOWN'))
                 if coin not in target and v is not None:
                     await self._close(coin, f'ROTATE net APR rank outside top {self.slots}')
+        if self.basis_freeze and self.basis_freeze['until'] <= now:
+            self.basis_freeze = None
         for q, v, _ in ranked:
-            if (ok and (not rotation_due or q.coin in self.rotation_targets)
+            if (ok and not self.basis_freeze and (not rotation_due or q.coin in self.rotation_targets)
                     and q.coin not in self.pairs and len(self.pairs) < self.slots
                     and self.cash >= 2 * self.notional_per_leg - 1e-9):
                 await self._open(q.coin, v, q)
@@ -681,7 +706,7 @@ class CarrySim:
                 rows.append({'coin': coin, 'status': 'UNKNOWN', 'why': why})
                 continue
             eligible = self._entry_ok(v)
-            rows.append({'coin': coin, 'short': v['short'], 'long': v['long'],
+            rows.append({'coin': coin, 'short': v['short'], 'long': v['long'], 'breakeven_h': breakeven_h(v['spread_bps_8h']),
                          'spread_8h': round(v['spread_bps_8h'], 3), 'apr_pct': round(v['net_apr_pct'], 2),
                          'net_apr_pct': round(v['net_apr_pct'], 2), 'gross_apr_pct': round(v['gross_apr_pct'], 2),
                          'basis_bps': round(v['basis_bps'], 2), 'selected': coin in self.rotation_targets,
@@ -690,13 +715,14 @@ class CarrySim:
         rows.sort(key=lambda r: -r.get('net_apr_pct', -1e9))
         fund_open = sum(p['bn'].funding + p['hl'].funding for p in self.pairs.values())
         fund_total = fund_open + self.funding_closed
-        days = 0.0 if self.first_t is None else max(self.clock() - self.first_t, 0.0) / 86400.0
+        fees_total = self.fees_closed + sum(p['bn'].fees + p['hl'].fees for p in self.pairs.values())
+        days =0.0 if self.first_t is None else max(self.clock() - self.first_t, 0.0) / 86400.0
         pos = [{'coin': c, 'short': p['short'], 'long': p['long'], 'notional_per_leg': round(n, 2),
                 'opened': p['opened'], 'spread_8h_entry': round(p['spread_8h_entry'], 3),
                 'spread_8h': round(p['spread_8h'], 3), 'apr_pct': round(p['net_apr_pct'], 2),
                 'net_apr_pct': round(p['net_apr_pct'], 2), 'gross_apr_pct': round(p['gross_apr_pct'], 2),
-                'basis_drag_bps': round(p['basis_drag_bps'], 2),
-                'funding_usdt': round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
+                'basis_drag_bps': round(p['basis_drag_bps'], 2), 'breakeven_h': breakeven_h(p['spread_8h']),
+                'funding_usdt':round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
                 'fees_usdt': round(p['bn'].fees + p['hl'].fees, 4),
                 'net_usdt': round(p['bn'].equity() + p['hl'].equity() - 2 * n, 4)} for c, p in self.pairs.items()]
         return {'t': self.clock(), 'mode': 'SIMULATED · paper venues · no real order',
@@ -706,7 +732,8 @@ class CarrySim:
                 'rule': {'min_spread_8h': self.min_spread, 'min_apr_pct': self.min_apr, 'min_basis_bps': self.min_basis,
                          'min_net_apr_pct': self.min_net_apr,
                          'slots': self.slots, 'validated': False, 'rotation_interval_s': self.rotation_interval_s,
-                         'basis_stop_bps': self.basis_stop_bps,
+                         'basis_stop_bps': self.basis_stop_bps, 'basis_freeze_bps': self.basis_freeze_bps,
+                         'round_trip_bps': HEDGE_ROUND_TRIP_BPS,
                          'tie_priority': ['1000PEPE', 'WLD'],
                          'replay_reference': 'XV H28|k2 holdout +14.59 bps / 28 d = 1.90 %/yr net'},
                 'rotation': {'interval_s': self.rotation_interval_s, 'last_scan': self.last_rotation_t,
@@ -719,6 +746,12 @@ class CarrySim:
                 'funding_total_usdt': round(fund_total, 4), 'funding_open_usdt': round(fund_open, 4),
                 'funding_closed_usdt': round(self.funding_closed, 4), 'run_days': round(days, 4),
                 'funding_apr_pct': round(fund_total / self.start / days * 365 * 100, 2) if days >= 1 / 24 else None,
+                # 11-10 (g): what the book made after every simulated fee, hedge slip and basis move, annualized on the start
+                # capital. The per-coin "net APR" is today's spread held 28 days; a pair that rotates sooner pays the same
+                # round trip (breakeven_h = hours of the present spread that repay it)
+                'fees_total_usdt': round(fees_total, 4),
+                'net_apr_realized_pct': round((eq - self.start) / self.start / days * 365 * 100, 2) if days >= 1 / 24 else None,
+                'basis_freeze': dict(self.basis_freeze) if self.basis_freeze else None,
                 'drawdown': round(1 - eq / self.kill.peak, 6) if self.kill.peak else None,
                 'kill': None if ok else kill_why, 'positions': pos, 'top': rows[:8],
                 'closed': self.closed[-5:], 'new_events': list(self.events)}
