@@ -239,10 +239,10 @@
     const sc = s.scanner || {}, rad = $('scan-radar');
     if (rad) {
       const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-      const cls = l => /OPEN|ORDER/.test(l) ? 'open' : /^TREND (BUY|SELL)/.test(l) ? 'trend' : /^MR (BUY|SELL)/.test(l) ? 'mr'
+      const cls = l => /SWARM_OVERRIDE/.test(l) ? 'override' : /OPEN|ORDER/.test(l) ? 'open' : /^TREND (BUY|SELL)/.test(l) ? 'trend' : /^MR (BUY|SELL)/.test(l) ? 'mr'
         : /CHOP|FROZEN/.test(l) ? 'chop' : 'idle';   // /FROZEN/.test(l): VFR < 3 (ATR 15 m cannot pay the fees)
       const html = (sc.rows || []).map(r => `<button type="button" class="radar-chip ${cls(r.label)}${r.symbol === sc.focus ? ' focus' : ''}"`
-        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · VFR ${fin(r.vfr) ? fx(r.vfr, 2) : '—'} (ATR15m ${fin(r.atr15_pct) ? fx(r.atr15_pct, 3) : '—'}%) · SL ${fin(r.sl_pct) ? fx(r.sl_pct, 2) : '—'}% · TP1 ${fin(r.tp_pct) ? fx(r.tp_pct, 2) : '—'}% · ${r.reason || ''}`)}">`
+        + ` data-symbol="${esc(r.symbol)}" title="${esc(`${r.path || r.regime || '—'} · KER ${fin(r.ker) ? fx(r.ker, 2) : '—'} · VFR ${fin(r.vfr) ? fx(r.vfr, 2) : '—'} (ATR15m ${fin(r.atr15_pct) ? fx(r.atr15_pct, 3) : '—'}%) · SL ${fin(r.sl_pct) ? fx(r.sl_pct, 2) : '—'}% · TP1 ${fin(r.tp_pct) ? fx(r.tp_pct, 2) : '—'}% · ${r.reason || ''}`)}">`
         + `${esc(r.symbol.replace('USDT', ''))}: ${esc(r.label)}</button>`).join('<i>|</i>');
       // per-coin realised PnL (ledger): BTC: -0.79 U | SOL: +0.33 U (PROFIT MAKER) | DOGE: 0.00 U
       const pnl = (sc.rows || []).filter(r => fin(r.pnl)).map(r => `<span class="coin-pnl ${r.pnl > 0 ? 'win' : r.pnl < 0 ? 'loss' : ''}"`

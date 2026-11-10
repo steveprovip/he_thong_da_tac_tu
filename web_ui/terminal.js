@@ -91,7 +91,7 @@
       ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (r - 14), cy + Math.sin(a) * (r - 14)); ctx.lineTo(cx + Math.cos(a) * (r + 7), cy + Math.sin(a) * (r + 7)); ctx.stroke();
     }
     const pr = tv('pressure'), ob = tv('obi');
-    const inner = r - 22; ctx.lineWidth = 6; ctx.strokeStyle = ob >= 0 ? C.em : C.cr; ctx.globalAlpha = .55;
+    const inner = Math.max(0, r - 22); ctx.lineWidth = 6; ctx.strokeStyle = ob >= 0 ? C.em : C.cr; ctx.globalAlpha = .55;   // 11-07: a 1 px canvas (pre-layout) gave a negative radius
     ctx.beginPath(); ctx.arc(cx, cy, inner, ang(0), ang(ob), ob < 0); ctx.stroke(); ctx.globalAlpha = 1;
     const a = ang(pr), col = pr > .15 ? C.em : pr < -.15 ? C.cr : C.gold;
     ctx.strokeStyle = col; ctx.lineWidth = 2.4; ctx.shadowColor = col; ctx.shadowBlur = 14;
@@ -311,6 +311,7 @@
   /* ------------------------------------------------------------ frame loop */
   let last = performance.now(), liqTick = 0;
   function frame(now) {
+    requestAnimationFrame(frame);           // 11-07: schedule first - one throwing surface must not freeze every canvas
     const dt = Math.min(100, now - last); last = now;
     for (const [key, t] of tweens) {
       if (Math.abs(t.target - t.v) > 1e-7) {
@@ -321,7 +322,6 @@
     }
     if (now - liqTick > 1000) { liqTick = now; sLiq.dirty = true; }   // scroll the 120 s window
     for (const s of surfaces) s.render();
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 })();
