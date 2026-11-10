@@ -500,7 +500,12 @@ class CarrySim:
 
     11-10 (g) basis_freeze_bps (15): the -3 bps basis stop closes a pair on a slow drift; a drag of 15 bps or more in one
     refresh is a venue dislocation, so the book also opens no NEW pair for one rotation interval (view key basis_freeze).
-    Telemetry: fees_total_usdt, net_apr_realized_pct (the book after all simulated costs) and breakeven_h per coin."""
+    Telemetry: fees_total_usdt, net_apr_realized_pct (the book after all simulated costs) and breakeven_h per coin.
+
+    11-10 (h) hold_breakeven (the demo engine loop): the hourly scan rotated a pair out after one hour while its 15 bps
+    round trip needs breakeven_h(entry spread) hours of funding (40 h at 3 bps / 8 h). With the flag a pair is not
+    ROTATEd before that time has passed; the scan fills free slots only. Risk and thesis exits (guard, basis stop,
+    spread flipped or gone) are unchanged. It stops paying a round trip per hour; it does not make the spread last."""
 
     HL_NAME = {'1000PEPE': 'kPEPE'}
     ROTATION_PRIORITY = {'1000PEPE': 0, 'WLD': 1}
@@ -510,7 +515,7 @@ class CarrySim:
                  min_apr_pct: float = 20.0, min_basis_bps: float = 1.5, half_spread_bps: float = 0.5,
                  clock: Callable[[], float] = time.time, rotation_interval_s: float = 3600.0,
                  basis_stop_bps: float = -3.0, min_net_apr_pct: float = 0.0, settlement: str = 'continuous',
-                 basis_freeze_bps: float = 15.0):
+                 basis_freeze_bps: float = 15.0, hold_breakeven: bool = False):
         if (not (_finite(capital_usdt, rotation_interval_s, basis_stop_bps, min_net_apr_pct, basis_freeze_bps)
                  and capital_usdt > 0 and slots >= 1 and 0 < utilization <= 1 and rotation_interval_s > 0
                  and basis_stop_bps < 0 and basis_freeze_bps > 0)):
@@ -518,6 +523,7 @@ class CarrySim:
         if settlement not in ('continuous', 'discrete'):
             raise ValueError('settlement must be continuous or discrete')
         self.min_net_apr, self.settlement = float(min_net_apr_pct), settlement
+        self.hold_breakeven = bool(hold_breakeven)           # 11-10 (h): no ROTATE before breakeven_h(entry spread) has passed
         self.cash = self.start = float(capital_usdt)
         self.slots, self.utilization = int(slots), float(utilization)
         self.min_spread, self.min_apr, self.min_basis = float(min_spread_8h), float(min_apr_pct), float(min_basis_bps)
@@ -572,7 +578,9 @@ class CarrySim:
                             'spread_8h_entry': v['spread_bps_8h'], 'spread_8h': v['spread_bps_8h'],
                             'gross_apr_pct': v['gross_apr_pct'], 'net_apr_pct': v['net_apr_pct'],
                             'entry_bn_mark': q.bn_mark, 'entry_hl_mark': q.hl_mark, 'basis_drag_bps': 0.0,
-                            'rates': (q.bn_rate_8h, q.hl_rate_1h), 'settle_t': self.clock(), 'settled': {'bn': 0, 'hl': 0}}
+                            'rates': (q.bn_rate_8h, q.hl_rate_1h), 'settle_t': self.clock(), 'settled': {'bn': 0, 'hl': 0},
+                            'min_hold_h': (breakeven_h(v['spread_bps_8h']) or 0.0) if self.hold_breakeven else 0.0}
+        self.pairs[coin]['hold_until'] = self.pairs[coin]['opened'] + self.pairs[coin]['min_hold_h'] * 3600.0
         self.events.append(f'CARRY SIM OPEN {coin}: short {v["short"]} / long {v["long"]} {v["spread_bps_8h"]:+.2f} '
                            f'bps/8h (net APR {v["net_apr_pct"]:.1f} %) · {n:,.0f} USDT per leg · BN post-only + HL IOC '
                            f'(simulated)')
@@ -676,10 +684,16 @@ class CarrySim:
                         key=lambda x: (-x[1]['net_apr_pct'], self.ROTATION_PRIORITY.get(x[0].coin, 99), x[0].coin))
         if rotation_due:
             self.last_rotation_t = now
-            self.rotation_targets = [q.coin for q, _, _ in ranked[:self.slots]]
+            # 11-10 (h): a pair whose round trip is not repaid yet keeps its slot; the scan only fills the free ones.
+            # Guard, basis-stop and spread-flip exits above do not wait for it.
+            locked = [c for c, p in self.pairs.items() if now < p['hold_until'] - EPS]
+            self.rotation_targets = locked + [q.coin for q, _, _ in ranked
+                                              if q.coin not in locked][:max(self.slots - len(locked), 0)]
             self.events.append('CARRY SIM ROTATION SCAN: ' +
                                (', '.join(self.rotation_targets) if self.rotation_targets else 'no eligible pairs') +
-                               ' · highest Net APR; 1000PEPE/WLD preferred on ties')
+                               ' · highest Net APR; 1000PEPE/WLD preferred on ties' +
+                               (' · kept to break-even: ' + ', '.join(
+                                   f'{c} {(self.pairs[c]["hold_until"] - now) / 3600.0:.1f} h' for c in locked) if locked else ''))
             target = set(self.rotation_targets)
             for coin in list(self.pairs):
                 q, v, _ = views.get(coin, (None, None, 'UNKNOWN'))
@@ -722,6 +736,7 @@ class CarrySim:
                 'spread_8h': round(p['spread_8h'], 3), 'apr_pct': round(p['net_apr_pct'], 2),
                 'net_apr_pct': round(p['net_apr_pct'], 2), 'gross_apr_pct': round(p['gross_apr_pct'], 2),
                 'basis_drag_bps': round(p['basis_drag_bps'], 2), 'breakeven_h': breakeven_h(p['spread_8h']),
+                'min_hold_h': p['min_hold_h'], 'hold_until': p['hold_until'],
                 'funding_usdt':round(p['bn'].funding + p['hl'].funding, 4), 'settlements': dict(p['settled']),
                 'fees_usdt': round(p['bn'].fees + p['hl'].fees, 4),
                 'net_usdt': round(p['bn'].equity() + p['hl'].equity() - 2 * n, 4)} for c, p in self.pairs.items()]
@@ -733,7 +748,7 @@ class CarrySim:
                          'min_net_apr_pct': self.min_net_apr,
                          'slots': self.slots, 'validated': False, 'rotation_interval_s': self.rotation_interval_s,
                          'basis_stop_bps': self.basis_stop_bps, 'basis_freeze_bps': self.basis_freeze_bps,
-                         'round_trip_bps': HEDGE_ROUND_TRIP_BPS,
+                         'round_trip_bps': HEDGE_ROUND_TRIP_BPS, 'hold_breakeven': self.hold_breakeven,
                          'tie_priority': ['1000PEPE', 'WLD'],
                          'replay_reference': 'XV H28|k2 holdout +14.59 bps / 28 d = 1.90 %/yr net'},
                 'rotation': {'interval_s': self.rotation_interval_s, 'last_scan': self.last_rotation_t,

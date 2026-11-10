@@ -958,3 +958,31 @@ Branch `feat/janas-autoresearch-smc`, base commit `2e1a5fa` (the owner's prompt 
 - Not done: `early_invalidation='on'` profile-wide (it would also act on non-runner SWARM entries; shadow evidence +0.56 bps mean, mixed), any entry-gate change, a real carry leg.
 - Lesson: the same shadow field that "proved" the loser's exit was sitting on the winner's row; read every row that carries the field before arming a rule from one of them. A policy that removes a time stop needs its replacement in the same commit.
 - Rollback: set the three `micro_runner_*` knobs to 0 (guards off, runner as in 11-10 e), `basis_freeze_bps` is a constructor default; `git revert` the commit for the rest.
+
+## Handoff 6C — 2026-11-10 (h) (carry sim: no rotation before a pair's break-even hours; DEMO sim only, nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner approved (2026-11-10, after entry g) the follow-up: the simulated carry book holds a pair at least its break-even hours instead of rotating it out at the hourly scan. Done means: the rule in `CarrySim` behind a flag, the demo loop using it, tests, full suite green, committed.
+
+### 2. Ràng buộc (Constraints)
+Simulated book only (paper venues, no order leaves the process); no engine start / restart. Unchanged: entry rule (2.5 bps/8 h, gross 20 %, net-APR floor 25 % on demo, basis >= +1.5 bps), slots, guard, kill switch, the -3 bps basis stop, the 15 bps basis freeze, the spread-flip exit, discrete settlement. The library default of `CarrySim` stays the hourly rotation, so the existing carry tests keep their meaning. No AI attribution in commits; nothing pushed.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, base commit `23370f7`. Changed: `research/carry_lane.py` (`CarrySim(hold_breakeven=False)`; each pair stores `min_hold_h` = `breakeven_h(entry spread)` and `hold_until`; the rotation scan keeps pairs inside their hold and fills free slots only; view keys `positions[].min_hold_h`, `positions[].hold_until`, `rule.hold_breakeven`; scan event lists the kept pairs), `core/engine.py` (Profile `carry_hold_breakeven` True; `Runner.funding_loop` passes it), `tests/test_runner_guards_2026_11_10.py` (3 new tests, 15 in the file). `web_ui/` untouched. The running bot still has the old book; a restart of `run.bat micro` loads this one (the book restarts from zero either way: its state is in memory).
+
+### 4. Bằng chứng (Evidence)
+- `python -m pytest -q tests/`: 2154 passed before, 2157 passed after (3 new in tests/test_runner_guards_2026_11_10.py), 0 failed, 233.6 s.
+- The snapshot behind the change (entry g): 1.67 h, P&L -1.2814 U against +0.0237 U of funding; the two closed pairs lasted 55 minutes each: AAVE by "ROTATE net APR rank outside top 3" (-0.2322 U), WLD by "spread -0.36 bps/8h (flipped or gone)" (-0.5387 U). So one of the two logged closes is the rotation this change removes; the other is the spread-flip exit, which is unchanged. Carry events are not persisted (no log file holds "CARRY SIM CLOSE"), so n = 2 is all there is.
+- Arithmetic: a round trip is 15 bps; at the entry floor (2.5 bps/8 h) the hold is 48 h, at 3 bps/8 h 40 h, at 7 bps/8 h 17.1 h. Sessions so far ran 0.5-1.7 h, so inside one session a pair is now never rotated out; it still pays its entry half (6.5 bps of fees plus slip: 0.37 U per pair at 573.75 U per leg) on the first refresh.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: restart `run.bat micro` to load it; watch `fees_total_usdt` against `funding_total_usdt` on the cockpit book line.
+2. The spread-flip exit is now the largest source of round trips left (a -0.36 bps/8 h print closed WLD after 55 minutes). Whether a flip must persist before it closes a pair is an owner decision; not changed here.
+3. Persist carry events (or the closed list) if the book is to be judged over days: today nothing survives a restart.
+4. Runner guards (entry g): still need >= 30 `runner: true` rows.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- Scope = the ROTATE exit only, as approved ("instead of rotating hourly"). A pair inside its hold keeps its slot, so a better-ranked coin waits for a free slot; after `hold_until` the old rank rule applies again.
+- The hold is fixed at entry from the entry spread (time, not realized funding): simple and testable. If the spread decays the pair has not actually broken even at `hold_until`; the docstring says so.
+- Not a profit claim: the replay-validated rule is H28|k2 at 1.90 %/yr and says instantaneous spreads decay. This removes a cost the book charged itself every hour; a session shorter than the hold still ends below zero by its entry costs.
+- Rollback: `carry_hold_breakeven=False` on the profile (or `hold_breakeven=False`), or `git revert` the commit.

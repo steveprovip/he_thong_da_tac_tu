@@ -206,3 +206,55 @@ def test_the_cockpit_shows_the_fees_and_the_freeze():
     if 'ck-carry-book' not in js:
         pytest.skip('web_ui/app.js is not the single-screen cockpit')
     assert 'sim.fees_total_usdt' in js and 'sim.basis_freeze' in js
+
+
+# ============================================================================= 11-10 (h): no rotation before the break-even hours
+HOT = fx.FundingQuote('AAVE', 0.0001, 0.0001, 100.0, 100.05)          # 7 bps / 8 h: outranks LINK's 3
+
+
+async def test_a_pair_is_not_rotated_out_before_its_break_even_hours():
+    t = [T0]
+    sim = cl.CarrySim(1000.0, slots=1, clock=lambda: t[0], settlement='discrete', hold_breakeven=True)
+    v = await sim.step([LINK])
+    pos = v['positions'][0]
+    assert pos['min_hold_h'] == 40.0 and pos['hold_until'] == T0 + 40 * 3600.0 and v['rule']['hold_breakeven'] is True
+    t[0] += 3600.0
+    v = await sim.step([LINK, HOT])                                    # the hourly scan: AAVE ranks first, LINK keeps its slot
+    assert list(sim.pairs) == ['LINK'] and not sim.closed and v['rotation']['targets'] == ['LINK']
+    assert any('kept to break-even: LINK 39.0 h' in m for m in v['new_events'])
+    t[0] = T0 + 40 * 3600.0 + 1.0
+    v = await sim.step([LINK, HOT])                                    # 40 h later the rotation is allowed again
+    assert list(sim.pairs) == ['AAVE'] and sim.closed[-1]['why'].startswith('ROTATE')
+    assert v['positions'][0]['min_hold_h'] == pytest.approx(15.0 / (7.0 / 8.0), abs=0.05)     # 17.1 h at 7 bps / 8 h
+
+    old = cl.CarrySim(1000.0, slots=1, clock=lambda: t[0], settlement='discrete')    # library default: the hourly rotation
+    t[0] = T0
+    v = await old.step([LINK])
+    assert v['positions'][0]['min_hold_h'] == 0.0 and v['rule']['hold_breakeven'] is False
+    t[0] += 3600.0
+    await old.step([LINK, HOT])
+    assert list(old.pairs) == ['AAVE'] and old.closed[-1]['why'].startswith('ROTATE')
+
+
+async def test_the_hold_does_not_delay_a_flip_a_basis_stop_or_a_free_slot():
+    t = [T0]
+    sim = cl.CarrySim(1000.0, slots=2, clock=lambda: t[0], settlement='discrete', hold_breakeven=True)
+    await sim.step([LINK])
+    t[0] += 3600.0
+    await sim.step([LINK, HOT])                                        # a free slot is filled by the scan as before
+    assert set(sim.pairs) == {'LINK', 'AAVE'}
+    t[0] += 300.0
+    await sim.step([LINK_FLIP, HOT])                                   # the spread flipped inside the hold: closed at once
+    assert 'LINK' not in sim.pairs and 'flipped or gone' in sim.closed[-1]['why']
+    t[0] += 300.0
+    await sim.step([fx.FundingQuote('AAVE', 0.0001, 0.0001, 100.0, 100.10)])     # short leg +5 bps: the -3 bps stop
+    assert not sim.pairs and sim.closed[-1]['why'].startswith('EJECT-BASIS')
+
+
+async def test_the_demo_loop_holds_pairs_to_break_even():
+    from types import SimpleNamespace
+    assert eng.PROFILES['demo'].carry_hold_breakeven is True
+    e0 = SimpleNamespace(account={'wallet': 1000.0}, p=eng.PROFILES['demo'], event=lambda m: None)
+    r = SimpleNamespace(engines={'SOLUSDT': e0}, carry_state=None, carry_sim_state=None)
+    await eng.Runner.funding_loop(r, once=True, fetch=lambda: [LINK])
+    assert r.carry_sim.hold_breakeven is True and r.carry_sim_state['positions'][0]['min_hold_h'] == 40.0

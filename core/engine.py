@@ -716,6 +716,8 @@ class Profile:
     carry_sim: bool = False
     carry_min_net_apr_pct: float = 25.0     # 11-10 (e) CarrySim entry floor on the instantaneous net APR (the RFC rule's 2.5 bps/8 h is
                                             # 25.4 % net already). An annualized instant spread, not a forecast: replay realized 1.90 %/yr
+    carry_hold_breakeven: bool = True       # 11-10 (h) CarrySim: a pair is not ROTATEd before its entry spread has had the hours it needs
+                                            # to repay the 15 bps round trip (40 h at 3 bps/8 h); guard / basis / flip exits still act
 
 
 # SOL/DOGE-first (2026-10-07o): max size per coin as (qty, notional USD). SOL 0.70 (~$80 at $115) unless the
@@ -5277,8 +5279,9 @@ class Runner:
                     sim = getattr(self, 'carry_sim', None)
                     if sim is None:
                         # 11-10 (e): funding paid at the venues' settlement instants (HL hourly, BN 8 h), net-APR entry floor
+                        # 11-10 (h): no rotation before a pair's break-even hours
                         sim = self.carry_sim = CarrySim(wallet or 1000.0, min_net_apr_pct=e0.p.carry_min_net_apr_pct,
-                                                        settlement='discrete')
+                                                        settlement='discrete', hold_breakeven=e0.p.carry_hold_breakeven)
                     self.carry_sim_state = await sim.step(quotes)
                     for message in self.carry_sim_state.get('new_events', ()):
                         e0.event(message)
