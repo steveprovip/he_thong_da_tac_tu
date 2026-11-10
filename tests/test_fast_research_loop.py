@@ -347,6 +347,17 @@ def test_stream_url_has_all_streams():
     assert 'solusdt@forceOrder' in mkt and 'aggTrade' not in pub
 
 
+def test_light_mode_keeps_only_the_book_diffs_and_the_trades():
+    pub, mkt = rm.stream_url(['DOGEUSDT', 'XRPUSDT'], 'public', light=True), rm.stream_url(['DOGEUSDT', 'XRPUSDT'], 'market', light=True)
+    assert pub.endswith('dogeusdt@depth@100ms/xrpusdt@depth@100ms') and mkt.endswith('dogeusdt@aggTrade/xrpusdt@aggTrade')
+    assert 'bookTicker' not in pub and 'forceOrder' not in mkt
+    assert 'bookTicker' in rm.stream_url(['DOGEUSDT'], 'public') and 'forceOrder' in rm.stream_url(['DOGEUSDT'], 'market')   # default unchanged
+
+
+def test_free_gb_walks_up_to_an_existing_parent(tmp_path):
+    assert rm.free_gb(tmp_path / 'not' / 'created' / 'yet') > 0.0
+
+
 def test_recorder_never_uses_order_endpoints():
     src = (ROOT / 'tools' / 'record_market.py').read_text()
     for bad in ('/fapi/v1/order', 'signature', 'X-MBX-APIKEY', '.env', 'listenKey'):

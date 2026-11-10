@@ -40,11 +40,11 @@ one test and ~120 h for ten, on a venue that is not the mainnet tape. **The Demo
 
 ## 6. Proposed phases (each ends in a decision for you)
 0. Done: ledger + tape evidence, `tools/replay_overnight_exits.py`, this scope.
-1. **Instrument, no behaviour change** (~0.5 day): for every harvest *attempt* (filled or not) log the feature vector at decision and at fill; post-fill with-trade markouts at 1 / 5 / 15 / 30 / 60 s from BOTH the signal feed and the venue book;
+1. **DONE 11-10 - Instrument, no behaviour change** (`core/harvest_markout.py`, `micro_harvest_log` default True, tests/test_harvest_markout.py 10): see section 8. Original scope (~0.5 day): for every harvest *attempt* (filled or not) log the feature vector at decision and at fill; post-fill with-trade markouts at 1 / 5 / 15 / 30 / 60 s from BOTH the signal feed and the venue book;
    add `shadow` rows for the first 60 s-cut candidates. Funnel counters `SWARM_*` (already in) say how many candidates reach this stage at all. Tests on the mock venue.
 2. **Mainnet-tape study, offline** (~1-2 days + the download): simulate the lane over N days of public aggTrades (fill = print through the touch within the TTL, the engine's exits, fees 2 / 5 + 1 bps), 4 coins x 14-21 days;
    features computable from aggTrades only (flow, velocity, KER, ATR, VPIN, trade rate, fill speed, post-fill markout). Depth-based features (OFI, queue) need a recording: run the existing recorder
-   (`tools/record_market.py --light`, public WS, no orders) in parallel for the next days. Time-separated split (last 30 % of days held out), block bootstrap by day, deflate for the number of features tried.
+   (`tools/record_market.py --light`, public WS, no orders) in parallel for the next days. NOTE: `--light` existed only in the docs; it was added on 11-10 (depth@100ms + aggTrade, no bookTicker / forceOrder = 36 % fewer bytes) together with `--min-free-gb`. Time-separated split (last 30 % of days held out), block bootstrap by day, deflate for the number of features tried.
    Estimated download: the 13 windows came to 55 k prints / 2.3 MB JSON; a coin-day is ~0.1-0.9 M prints (DOGE lowest, PEPE highest), roughly 1-11 MB zipped, so ~60-600 MB for 4 coins x 14 days (estimate from that sample, not measured).
 3. **Filter in shadow** (`micro_adverse='shadow'`, ~1 day): implement only what Phase 2 supports; log would-block / would-cut next to the real outcome for >= 400 fills. No effect on orders.
 4. **Arm on the Demo** (`'on'`) only if Phases 2 and 3 agree out of sample; never on the live profile (invariant, like the harvester).
@@ -59,3 +59,15 @@ kept fills >= 25 %; the improvement survives removing the best day. If no filter
 ## Risks
 Multiple testing on a few features; regime change between weeks; the maker-fill model is optimistic (no queue position: real fills are fewer and more adverse); the simulator reproduces the mainnet, not the Demo; the single visible
 signal (C) is a post-fill damage detector, so it can only shrink the loss, not create the edge; and a filter that keeps 10-25 % of fills may leave too few trades to matter at 5 U lots (one TP nets +0.0056 U).
+
+## 8. Phase 1 as built (11-10, approved by the owner together with Phase 2 downloads, the recorder, and a payoff redesign if Phase 2 finds no edge)
+- **Log**: `data/harvest_markouts.jsonl`, one line per harvest ORDER (filled or not), bookkeeping only. `Engine.hlog_post` at the post (feature vector: OFI, KER, VPIN, spread, ATR, 15 / 60 s velocity, CVD 15 s / 60 s / 3 m, CVD velocity,
+  OBI, depth imbalance, top-of-book sizes, queue_qty at our side, basis, macro / regime / flow, score, edge_bps, consensus), `hlog_fill` at the fill (feature vector again), `hlog_close` when it will not fill, `hlog_step` on every tick.
+- **Series**, signed with the trade, bps, at 1 / 5 / 15 / 30 / 60 s: `q_sig` / `q_ven` from the post against the quote rebased to mainnet terms (exists for UNFILLED orders: the unconditional markout), `f_sig` / `f_ven` from the fill
+  (signal feed = mainnet mid, venue book = Demo mid). `complete: false` = written at 240 s with the horizons reached; open records at a shutdown are lost.
+- **Join keys**: `harvest_key` (`SYMBOL-ms`) is on the log line, the order row (`engine_orders.jsonl`) and the trade row (`engine_trades.jsonl`).
+- **Not built**: separate shadow rows for the 60 s-cut candidates: they are a pure function of `f_sig` at 15 / 30 / 60 s and the thresholds, so Phase 2 derives them offline from this log.
+- **Recorder** (started 2026-11-10 09:07, public WebSocket, no orders): `tools/record_market.py --symbols DOGEUSDT,XRPUSDT,1000PEPEUSDT --light --duration 604800 --min-free-gb 8`, output `data/recordings/<SYMBOL>/<UTC hour>.jsonl.gz`
+  (git-ignored), log `data/recordings/recorder.log`, PID in `recorder.pid`. ADA is not recorded (it never trades: ZEPHR veto). Measured 4.9 KB/s compressed for 3 coins (~0.43 GB/day, 3.0 GB for the 7 days); F: had 15 GB free (92 % full),
+  the run stops itself below 8 GB free. Stop it: `Stop-Process -Id (Get-Content dataecordingsecorder.pid)`.
+- **Next**: let >= 7 days of recorder + >= 400 logged harvest orders accumulate; Phase 2 (download of aggTrades, ~60-600 MB, approved) can start on the aggTrades-only features now and add the depth features when the recording has its week.

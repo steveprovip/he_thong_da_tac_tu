@@ -36,6 +36,7 @@ from core import micro_swarm as swarm
 from core import regime_classifier as rc
 from core import invariants as inv
 from core import toxicity_guard as tg
+from core.harvest_markout import MarkoutLog
 from core.consensus_engine import ConsensusEngine, Decision, TokenAuthority
 from core.position_sizer import MicroCapitalSizer
 from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, round_tick
@@ -383,6 +384,8 @@ class Profile:
     micro_patient_be_s: float = 180.0
     micro_patient_be_mfe_pct: float = 0.09  # 60 % of the 0.15 % TP
     micro_patient_vpin: float = 0.80        # toxic escalation: VPIN >= this OR adverse flow >= flow_limit OR regime flipped
+    micro_harvest_log: bool = True          # 11-10 Phase 1 (plan_micro_adverse_selection): per-ORDER feature vector + post-post / post-fill markouts
+                                            # (signal feed and venue book) -> data/harvest_markouts.jsonl. Bookkeeping only: no order depends on it
     micro_harvest_macro_soft: bool = True   # 11-09f chop harvester: a 5 m macro that forbids the side no longer blocks when ...
     micro_harvest_macro_ofi: float = 0.30   # ... OFI L10 is WITH the trade by >= 0.30 (11-10: was 0.55; = the harvest OFI floor, so the
                                             # 5 m macro no longer gates the chop lane at all). The CVD flow regime stays a block.
@@ -1232,6 +1235,8 @@ class Engine:
         self.ker_adapt: Optional[dict] = None         # 10-08x adaptive KER result of the last churn check
         self.align3_last: Optional[str] = None        # 10-08z2 three-layer alignment of the last churn check
         self.funnel = xf.Funnel(clock=self.clock)    # 10-08v: why-no-trade counters (1 Hz time-share)
+        self.harvest_log = (MarkoutLog(self.ledger.parent / 'harvest_markouts.jsonl', clock=lambda: self.clock())
+                            if self.p.micro_harvest_log and self.ledger else None)     # 11-10 Phase 1
         self.autonomy = None                          # 10-09 (cc) core.autonomy.Autonomy, attached by the Runner
         self.trend_owned = False                      # 10-09 (dd) the venue position belongs to the 4H trend lane
         self.orphans: dict = {}                       # 10-08w: entry cids whose cancel failed -> retried in sync()
@@ -1502,6 +1507,57 @@ class Engine:
         if k is None:
             return None
         return 'CHOP' if k < self.p.micro_ker_min - 1e-12 else 'TREND'
+
+    # ------------------------------------------------------------------ 11-10 Phase 1: harvest attempt log (bookkeeping only)
+    HLOG_FEATURES = ('ofi_10s', 'ker', 'vpin', 'spread_bps', 'atr_pct', 'px_vel_15s', 'px_vel_60s', 'cvd_15s', 'cvd_60s', 'cvd_3m',
+                     'cvd_vel_10s', 'obi', 'depth10_imb', 'bid_qty', 'ask_qty', 'vwap_dev_pct', 'range_pos')
+
+    def hlog_features(self, f: dict, side: str, px: Optional[float], decision=None) -> dict:
+        """Feature vector of one harvest order: the micro features at that moment, our queue proxy (the size at our side of the touch),
+        the swarm's view, the venue-vs-signal basis.  None = unknown."""
+        f = f or {}
+        out = {k: (round(float(f[k]), 6) if isinstance(f.get(k), (int, float)) else None) for k in self.HLOG_FEATURES}
+        b = self.book()
+        out.update(queue_qty=(b.get('bid_qty') if side == 'BUY' else b.get('ask_qty')), quote_px=px,
+                   basis_bps=basis_bps(self.feed.price(), b.get('price')), macro=(self.macro or {}).get('name'),
+                   regime=(self.reg or {}).get('name'), flow=(self.flow or {}).get('state'))
+        if decision is not None:
+            out.update(score=getattr(decision, 'score', None), edge_bps=(self.diag or {}).get('edge_bps'),
+                       consensus=(self.diag or {}).get('consensus'))
+        return out
+
+    def hlog_call(self, fn, *a, **kw) -> None:
+        if self.harvest_log is None:
+            return
+        try:
+            fn(*a, **kw)
+        except Exception as exc:                                 # the log must never reach the trading path
+            self.harvest_log.errors += 1
+            if self.harvest_log.errors == 1:
+                self.event(f'HARVEST LOG error {type(exc).__name__}: {exc}'[:160])
+
+    def hlog_post(self, xm: dict, side: str, px: float, f: dict, decision) -> None:
+        def go():
+            key = xm['hkey'] = f'{self.p.symbol}-{int(self.clock() * 1000)}'
+            self.harvest_log.post(key, self.p.symbol, side, px, self.feed.price(), self.book().get('price'),
+                                  self.hlog_features(f, side, px, decision),
+                                  extra={'macro_soft': bool(xm.get('macro_soft')), 'cvd_soft': xm.get('cvd_soft'),
+                                         'qty_req': xm.get('qty_req'), 'policy': self.p.micro_exit_policy})
+        self.hlog_call(go)
+
+    def hlog_fill(self, xm: dict, fill: float) -> None:
+        if xm.get('hkey'):
+            self.hlog_call(lambda: self.harvest_log.filled(
+                xm['hkey'], fill, self.feed.price(), self.book().get('price'),
+                self.hlog_features(self.feed.features(self.clock()), xm.get('side'), fill)))
+
+    def hlog_close(self, xm: dict) -> None:
+        if xm.get('hkey'):
+            self.hlog_call(self.harvest_log.close, xm['hkey'])
+
+    def hlog_step(self, f: dict) -> None:
+        if self.harvest_log is not None and self.harvest_log.open:
+            self.hlog_call(self.harvest_log.sample, (f or {}).get('price'), self.book().get('price'), self.p.symbol)
 
     def drift_exempt(self, f: Optional[dict] = None) -> bool:
         """11-10: the DRIFT lock (60 s / 3 m flows disagree: no TREND entry) is a trend-lane guard; in chop the two windows disagree most of
@@ -2160,6 +2216,7 @@ class Engine:
 
     async def _tick(self) -> Optional[Decision]:
         f = self.features = self.feed.features(self.clock())
+        self.hlog_step(f)                             # 11-10 Phase 1: markout samples of the open harvest orders
         self.edge_shadow_step(f)                      # 11-09: the virtual NO EDGE probe moves on every tick
         if self.regime_clf is not None and f.get('price'):
             self.regime_state = self.regime_clf.update(self.clock(), float(f['price']))
@@ -2998,6 +3055,7 @@ class Engine:
                'micro_ttl_s': xm.get('micro_ttl_s'), 'ttl_cut': xm.get('ttl_cut'), 'micro_ioc': xm.get('micro_ioc'),
                'micro_floor': xm.get('micro_floor'), 'tp_lift': xm.get('tp_lift'),
                'harvest': xm.get('harvest'), 'cvd_soft': xm.get('cvd_soft'), 'macro_soft': xm.get('macro_soft'),
+               'harvest_key': xm.get('hkey'),
                'bracket': xm.get('bracket'), 'micro_bracket': xm.get('micro_bracket'),
                 'dyn_cut': xm.get('dyn_cut'), 'orphan': xm.get('orphan'), 'tox': xm.get('tox'),
                **{k: v for k, v in xm.items() if k.startswith('cs_')}, 'error': err[:160] or None}
@@ -3256,6 +3314,8 @@ class Engine:
                 return {'ok': False, 'error': why}
             self.pending_risk = pl['loss_at_sl']
             xm.update(qty_req=pl['qty'], route=route, px_first=px)
+            if harvest:
+                self.hlog_post(xm, side, px, f, decision)
             intent = MicroIntent(sym, side, pl['qty_str'], route, tag, int(self.clock() * 1000))
             token = self.authority.issue(intent, decision)
             self.authorized += 1
@@ -3427,6 +3487,7 @@ class Engine:
                 xm['t_fill'] = xm['t_done']                       # partial fill found at cancel time
             self.latency.append(ms)
             if filled <= 0:
+                self.hlog_close(xm)
                 self.cooldown_until = self.clock() + self.p.unfilled_cooldown_s
                 self.phase = 'SCANNING'
                 if tox_abort is not None:
@@ -3502,7 +3563,8 @@ class Engine:
                         'ack_ms': xm.get('ack_ms'),
                         'fill_wait_ms': round((xm['t_fill'] - xm['t_ack']) * 1000, 1)
                         if xm.get('t_fill') and xm.get('t_ack') else None,
-                        'markout_bps': {}}
+                        'markout_bps': {}, 'harvest_key': xm.get('hkey')}
+            self.hlog_fill(xm, fill)
             self.trade_times.append(self.clock())
             how = (f'IOC TAKER super-edge, cons {(self.diag or {}).get("consensus", 0) * 100:.1f}% JEV '
                    f'{(self.diag or {}).get("jev", 0):.1f}' if route == 'ioc' else 'POST-ONLY GTX maker')
@@ -4401,6 +4463,7 @@ class Engine:
                'signal_mid': p.get('signal_mid'), 'venue_mid': p.get('venue_mid'), 'basis_bps': p.get('basis_bps'),
                'basis_exit_bps': basis_bps(self.feed.price(), self.book().get('price')),
                'ack_ms': p.get('ack_ms'), 'fill_wait_ms': p.get('fill_wait_ms'), 'markout_bps': p.get('markout_bps'),
+               'harvest_key': p.get('harvest_key'),
                'px_vel_15s': p.get('px_vel_15s'), 'plock': p.get('plock', False),
                'hurdle_blocks': p.get('hurdle_blocks', 0), 'hurdle_first_px': p.get('hurdle_first_px'),
                'hurdle_first_pct': p.get('hurdle_first_pct'), 'hold_s': self.clock() - p['opened'],

@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import gzip
 import json
+import shutil
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -36,9 +37,12 @@ REST_DEPTH = 'https://fapi.binance.com/fapi/v1/depth?symbol={sym}&limit=1000'
 STREAMS = tuple(k for _, ks in WS_ROUTES.values() for k in ks)
 
 
-def stream_url(symbols, route='public'):
+LIGHT_KINDS = ('depth@100ms', 'aggTrade')       # --light: the book diffs rebuild best bid / ask, so bookTicker (36 % of the bytes) and forceOrder go
+
+
+def stream_url(symbols, route='public', light=False):
     base, kinds = WS_ROUTES[route]
-    return base + '/'.join(f'{s.lower()}@{k}' for s in symbols for k in kinds)
+    return base + '/'.join(f'{s.lower()}@{k}' for s in symbols for k in kinds if not light or k in LIGHT_KINDS)
 
 
 def hour_key(ns: int) -> str:
@@ -110,12 +114,12 @@ async def snapshot_loop(symbols, writer, every, stop):
             pass
 
 
-async def stream_loop(symbols, writer, stop, route='public'):
+async def stream_loop(symbols, writer, stop, route='public', light=False):
     import websockets
     backoff = 1.0
     while not stop.is_set():
         try:
-            async with websockets.connect(stream_url(symbols, route), ping_interval=20, ping_timeout=20,
+            async with websockets.connect(stream_url(symbols, route, light), ping_interval=20, ping_timeout=20,
                                           max_size=2 ** 22) as ws:
                 backoff = 1.0
                 while not stop.is_set():
@@ -134,16 +138,26 @@ async def stream_loop(symbols, writer, stop, route='public'):
             backoff = min(60.0, backoff * 2)
 
 
-async def run(symbols, out: Path, duration: float, snap_every: float):
+def free_gb(path: Path) -> float:
+    p = Path(path)
+    while not p.exists() and p != p.parent:
+        p = p.parent
+    return shutil.disk_usage(p).free / 1e9
+
+
+async def run(symbols, out: Path, duration: float, snap_every: float, light: bool = False, min_free_gb: float = 0.0):
     writer = HourlyWriter(out)
     stop = asyncio.Event()
-    tasks = [asyncio.create_task(stream_loop(symbols, writer, stop, r)) for r in WS_ROUTES]
+    tasks = [asyncio.create_task(stream_loop(symbols, writer, stop, r, light)) for r in WS_ROUTES]
     tasks.append(asyncio.create_task(snapshot_loop(symbols, writer, snap_every, stop)))
     t0 = time.time()
     try:
         while not stop.is_set():
             await asyncio.sleep(5)
             if duration and time.time() - t0 >= duration:
+                stop.set()
+            elif min_free_gb and free_gb(out) < min_free_gb:      # a days-long run on a nearly full disk stops itself
+                print(f'free disk {free_gb(out):.1f} GB < --min-free-gb {min_free_gb:g}: stopping')
                 stop.set()
     except (KeyboardInterrupt, asyncio.CancelledError):
         stop.set()
@@ -158,9 +172,11 @@ def main(argv=None):
     ap.add_argument('--out', type=Path, default=Path('data/recordings'))
     ap.add_argument('--duration', type=float, default=0.0, help='seconds; 0 = until Ctrl+C')
     ap.add_argument('--snapshot-every', type=float, default=600.0)
+    ap.add_argument('--light', action='store_true', help='depth@100ms + aggTrade only (no bookTicker / forceOrder): ~0.43 GB/day for 3 coins')
+    ap.add_argument('--min-free-gb', type=float, default=0.0, help='stop when the output disk has less free space than this (0 = off)')
     a = ap.parse_args(argv)
     syms = [s.strip().upper() for s in a.symbols.split(',') if s.strip()]
-    counts = asyncio.run(run(syms, a.out, a.duration, a.snapshot_every))
+    counts = asyncio.run(run(syms, a.out, a.duration, a.snapshot_every, a.light, a.min_free_gb))
     print('recorded', counts)
     return 0
 
