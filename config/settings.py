@@ -100,6 +100,24 @@ def micro_capital_env(env):
         if not syms or len(set(syms)) != len(syms) or not all(re.fullmatch(r'[A-Z0-9]{2,20}USDT', s) for s in syms):
             raise ValueError('MICRO_CAPITAL_SYMBOLS must be a comma list of distinct USDT symbols, e.g. DOGEUSDT,XRPUSDT')
         out['micro_symbols'] = syms
+    raw = str(env.get('MICRO_OFI_MIN', '')).strip()                 # 11-11: dynamic OFI floor for micro trend entries
+    if raw:
+        try:
+            ofi_floor = float(raw)
+        except ValueError:
+            raise ValueError('MICRO_OFI_MIN must be a number') from None
+        if not 0.0 <= ofi_floor <= 1.0:
+            raise ValueError('MICRO_OFI_MIN must be in [0, 1]')
+        out['micro_ofi_min'] = ofi_floor
+    raw = str(env.get('MICRO_MIN_EDGE_BPS', '')).strip()            # 11-11: fee-gate edge floor for micro mode
+    if raw:
+        try:
+            edge_floor = float(raw)
+        except ValueError:
+            raise ValueError('MICRO_MIN_EDGE_BPS must be a number') from None
+        if not 0.0 <= edge_floor <= 50.0:
+            raise ValueError('MICRO_MIN_EDGE_BPS must be in [0, 50]')
+        out['scalp_min_edge_bps'] = edge_floor
     return out
 
 

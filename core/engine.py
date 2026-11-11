@@ -3476,7 +3476,10 @@ class Engine:
                 dyn_mode = self.p.dyn_ttl if auto else 'off'
                 cross_at = t_post + self.p.super_cross_after_s if cross_mode in ('shadow', 'on') else None
                 do_cross, dyn_logged, mid0 = False, False, self.feed.price()
-                micro_ttl_on, micro_next = auto and self.p.micro_ttl and self.micro_active(), 0.0
+                micro_ttl_on = (
+                    self.micro_active() and self.p.micro_ttl and tag == 'AUTO' and path != 'MR'
+                )
+                micro_next = 0.0
                 while True:
                     now_m = time.monotonic()
                     if now_m >= deadline and micro_ttl_on:
@@ -4125,7 +4128,8 @@ class Engine:
         adverse = self.adverse_flow(p)
         p['adverse_usd'] = adverse
         limit = p.get('flow_limit') or self.flow_limit({})
-        p['breathing'] = now - p['opened'] < self.p.flow_breath_s
+        breath_s = 5.0 if self.micro_active() else self.p.flow_breath_s
+        p['breathing'] = (now - p['opened'] < breath_s) and (adverse < 25_000.0)
         flow_due = self.p.flow_exit and adverse >= limit and not p['breathing']
         against = self.flow.get('buy_ok' if p['side'] == 'SELL' else 'sell_ok')
         if gate and against and self.p.hurdle_concordance_override:

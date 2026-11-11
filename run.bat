@@ -71,6 +71,9 @@ set "MICRO_CAPITAL_BANKROLL=15"
 rem 11-10: MICRO_EXIT_POLICY=patient = harvest positions keep their TP (BE timer 180 s, scratch only after MFE >= 0.09 %, a negative
 rem touch only on toxic flow); unvalidated (docs/harness/plan_micro_asymmetry_cure.md). Delete this line to go back to the 45 s scratch.
 set "MICRO_EXIT_POLICY=patient"
+rem 11-11: liberate entry gates; prevent 90-min turnover freeze while keeping flow alignment
+set "MICRO_OFI_MIN=0.45"
+set "MICRO_MIN_EDGE_BPS=7.0"
 call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
 start "" "http://127.0.0.1:8765"
 "%PY%" -m core.engine --mode demo

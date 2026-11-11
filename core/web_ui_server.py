@@ -36,8 +36,12 @@ CONTROL_ROUTES = {'/api/force_test_trade': 'force_test_trade', '/api/switch_mode
 STREAM_HZ = 4.0
 STREAM_MAX_S = 300.0          # browser EventSource reconnects; bounds handler threads
 _proxy_down_until = [0.0]
-CSP = ("default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
-       "script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+CSP = ("default-src 'self' data: blob:; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' data: https://fonts.gstatic.com; "
+       "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; "
+       "connect-src 'self' wss://fstream.binance.com wss://stream.binance.com:9443 https://fapi.binance.com https://api.binance.com https://*.binance.com wss://*.binance.com https://*.bybit.com wss://*.bybit.com https://*.okx.com wss://*.okx.com; "
+       "img-src 'self' data: blob:; frame-src 'self'; frame-ancestors 'none'")
 
 
 def _num(value):
@@ -246,6 +250,38 @@ def make_server(telemetry, host='127.0.0.1', port=8765, shutdown_file=None, rada
             elif path in assets:
                 file, content_type = assets[path]
                 payload = (ROOT/'web_ui'/file).read_bytes()
+            elif path in ('/chart', '/chart/'):
+                chart_entry = ROOT / 'web_ui' / 'chart' / 'index.html'
+                if chart_entry.is_file():
+                    payload, content_type = chart_entry.read_bytes(), 'text/html; charset=utf-8'
+                else:
+                    self.send_error(404)
+                    return
+            elif path.startswith('/chart/'):
+                rel = path[len('/chart/'):]
+                chart_root = (ROOT / 'web_ui' / 'chart').resolve()
+                target = (chart_root / rel).resolve()
+                if chart_root in target.parents and target.is_file():
+                    ext = target.suffix.lower()
+                    mimes = {
+                        '.html': 'text/html; charset=utf-8',
+                        '.css': 'text/css; charset=utf-8',
+                        '.js': 'text/javascript; charset=utf-8',
+                        '.mjs': 'text/javascript; charset=utf-8',
+                        '.json': 'application/json; charset=utf-8',
+                        '.svg': 'image/svg+xml',
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.ico': 'image/x-icon',
+                        '.woff2': 'font/woff2',
+                        '.woff': 'font/woff',
+                    }
+                    content_type = mimes.get(ext, 'application/octet-stream')
+                    payload = target.read_bytes()
+                else:
+                    self.send_error(404)
+                    return
             elif path == '/health':
                 payload, content_type = b'{"ok":true}', 'application/json'
             else:
