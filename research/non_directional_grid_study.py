@@ -60,15 +60,17 @@ MICRO_NOTIONAL = k.MICRO_NOTIONAL
 def simulate(lo: np.ndarray, hi: np.ndarray, cl: np.ndarray, d: np.ndarray, qlo: np.ndarray, qhi: np.ndarray,
              freeze: bool) -> dict:
     """Windows x bars arrays of log(low / P0), log(high / P0), log(close / P0); quotes at -d / +d; band (qlo, qhi).
-    -> per-window gross (log-return units), maker fills, forced exits (freeze / window end), completed pairs."""
+    -> per-window gross (log-return units), maker fills, forced exits (freeze / window end), completed pairs, and
+    `active` (a quote was posted: the unit of plan section 3)."""
     n = d.size
     pos = np.zeros(n, np.int8)
-    live = np.ones(n, bool)
     gross = np.zeros(n)
     makers, t_frz, t_end, pairs = (np.zeros(n, np.int32) for _ in range(4))
     never = np.zeros(n, bool)
-    bid_ok = (qlo < -d) if freeze else ~never           # a quote beyond the band edge is not posted
-    ask_ok = (qhi > d) if freeze else ~never
+    bid_ok = (d > 0) & ((qlo < -d) if freeze else ~never)   # a quote beyond the band edge is not posted
+    ask_ok = (d > 0) & ((qhi > d) if freeze else ~never)
+    active = bid_ok | ask_ok                            # at bar 1 the previous close is P0: passive for both quotes
+    live = active.copy()
     c_prev = np.zeros(n)
     for j in range(lo.shape[1]):
         low, high = lo[:, j], hi[:, j]
@@ -78,17 +80,23 @@ def simulate(lo: np.ndarray, hi: np.ndarray, cl: np.ndarray, d: np.ndarray, qlo:
         # inventory: the band exit is taken before a favourable fill of the same bar
         m = lng & out_lo
         gross[m] += qlo[m] + d[m]; t_frz[m] += 1; pos[m] = 0; live[m] = False
-        m = lng & ~out_lo & (high > d)
+        m = lng & ~out_lo & ask_ok & (high > d)
         gross[m] += 2 * d[m]; makers[m] += 1; pairs[m] += 1; pos[m] = 0; live[m & out_hi] = False
+        m = lng & ~out_lo & ~ask_ok & out_hi                         # no ask inside the band: taker at the upper edge
+        gross[m] += qhi[m] + d[m]; t_frz[m] += 1; pos[m] = 0; live[m] = False
         m = sht & out_hi
         gross[m] += d[m] - qhi[m]; t_frz[m] += 1; pos[m] = 0; live[m] = False
-        m = sht & ~out_hi & (low < -d)
+        m = sht & ~out_hi & bid_ok & (low < -d)
         gross[m] += 2 * d[m]; makers[m] += 1; pairs[m] += 1; pos[m] = 0; live[m & out_lo] = False
+        m = sht & ~out_hi & ~bid_ok & out_lo                         # no bid inside the band: taker at the lower edge
+        gross[m] += d[m] - qlo[m]; t_frz[m] += 1; pos[m] = 0; live[m] = False
         # flat: a quote rests only if the previous close is on its passive side
         fb = flat & bid_ok & (c_prev > -d) & (low < -d)
         fa = flat & ask_ok & (c_prev < d) & (high > d)
         both, ob, oa = fb & fa, fb & ~fa, fa & ~fb
-        m = (both | ob) & out_lo                                      # bought, then the band broke below
+        m = both & out_lo & out_hi                                    # both edges broke: the worse of the two orders
+        gross[m] += np.minimum(qlo[m] + d[m], d[m] - qhi[m]); makers[m] += 1; t_frz[m] += 1; live[m] = False
+        m = (both & out_lo & ~out_hi) | (ob & out_lo)                # bought, then the band broke below
         gross[m] += qlo[m] + d[m]; makers[m] += 1; t_frz[m] += 1; live[m] = False
         m = (both & ~out_lo & out_hi) | (oa & out_hi)                # sold, then the band broke above
         gross[m] += d[m] - qhi[m]; makers[m] += 1; t_frz[m] += 1; live[m] = False
@@ -105,7 +113,8 @@ def simulate(lo: np.ndarray, hi: np.ndarray, cl: np.ndarray, d: np.ndarray, qlo:
     gross[m] += cl[m, -1] + d[m]; t_end[m] += 1
     m = pos == -1
     gross[m] += d[m] - cl[m, -1]; t_end[m] += 1
-    return {'gross': gross, 'makers': makers, 't_frz': t_frz, 't_end': t_end, 'pairs': pairs}
+    return {'gross': gross, 'makers': makers, 't_frz': t_frz, 't_end': t_end, 'pairs': pairs, 'active': active,
+            'd': np.asarray(d, float)}
 
 
 def net_bps(sim: dict, schedule: str = PRIMARY) -> np.ndarray:
@@ -114,17 +123,28 @@ def net_bps(sim: dict, schedule: str = PRIMARY) -> np.ndarray:
 
 
 def cell_stats(sim: dict, mask: np.ndarray, day: np.ndarray, n_days: int) -> dict:
-    """Statistics of one cell on the windows of `mask` (the regime): per ACTIVE window, clustered by UTC day."""
+    """Statistics of one cell on the windows of `mask` (the regime): per ACTIVE window (a quote was posted; a window
+    with no fill counts 0), clustered by UTC day."""
+    regime = int(mask.sum())
+    mask = mask & sim['active']
     n = int(mask.sum())
     if not n:
-        return {'windows': 0, 'fill_windows': 0, 'mean_net_bps': None}
+        return {'windows': 0, 'regime_windows': regime, 'fill_windows': 0, 'mean_net_bps': None}
     net = net_bps(sim)[mask]
     mean, se = k.mean_se(net, day[mask])
     sd = float(net.std(ddof=1)) if n > 1 else 0.0
     filled = sim['makers'][mask] > 0
-    out = {'windows': n, 'fill_windows': int(filled.sum()), 'fill_share': float(filled.mean()),
-           'mean_net_bps': mean, 'se': se, 'lcb95': mean - 1.645 * se,
+    forced = (sim['t_frz'][mask] + sim['t_end'][mask]) > 0
+    clean = filled & ~forced                                # every fill of the window was paired off by a maker exit
+    out = {'windows': n, 'regime_windows': regime, 'fill_windows': int(filled.sum()), 'fill_share': float(filled.mean()),
+           'mean_net_bps': mean, 'se': se, 'lcb95': mean - 1.645 * se, 'sd_net_bps': sd,
            'mean_net_bps_filled': float(net[filled].mean()) if filled.any() else None,
+           'pair_only_share': float(clean.mean()), 'forced_share': float(forced.mean()),
+           'mean_net_bps_pair_only': float(net[clean].mean()) if clean.any() else None,
+           'mean_net_bps_forced': float(net[forced].mean()) if forced.any() else None,
+           'quote_distance_bps': float(sim['d'][mask].mean() * 1e4),
+           'pairs': int(sim['pairs'][mask].sum()), 'maker_fills': int(sim['makers'][mask].sum()),
+           'freeze_exits': int(sim['t_frz'][mask].sum()), 'end_exits': int(sim['t_end'][mask].sum()),
            'gross_bps': float(sim['gross'][mask].mean() * 1e4),
            'gross_se': k.mean_se(sim['gross'][mask] * 1e4, day[mask])[1],
            'makers_per_window': float(sim['makers'][mask].mean()), 'pairs_per_window': float(sim['pairs'][mask].mean()),
@@ -142,11 +162,11 @@ def cell_stats(sim: dict, mask: np.ndarray, day: np.ndarray, n_days: int) -> dic
 def verdict(ho: dict, fr: dict) -> dict:
     from core.fast_eval import dsr
     if not ho['windows']:
-        return {'verdict': 'NO EDGE', 'checks': {'fill_windows>=300': False}}
+        return {'verdict': 'NO EDGE', 'checks': {'fill_windows>=300': False}, 'dsr': None}
     d = dsr(ho['sr_window'], ho['windows'], ho['skew'], ho['kurt'], 1.0 / ho['windows'], N_TRIALS)
     checks = {'fill_windows>=300': ho['fill_windows'] >= MIN_FILL_WINDOWS, 'lcb95>0': ho['lcb95'] > 0,
               'dsr>=0.95': bool(d >= 0.95),
-              'fresh_windows>=100_and_mean>0': bool(fr['windows'] >= 100 and fr['mean_net_bps'] > 0)}
+              'fresh_windows>=100_and_mean>0': bool(fr['windows'] >= 100 and (fr['mean_net_bps'] or 0.0) > 0)}
     return {'verdict': 'EDGE' if all(checks.values()) else 'NO EDGE', 'checks': checks, 'dsr': d}
 
 
@@ -240,10 +260,16 @@ def evaluate(inputs: dict, thr: dict, n_days: int) -> dict:
     return out
 
 
-def run(symbols=k.SYMBOLS, log=print) -> dict:
+def choose_t1(train_cells: dict) -> str:
+    """The (k, freeze) cell with the highest TRAIN mean net bps per active window under the ATLAS LOW gate."""
+    atlas = {c: v for c, v in train_cells.items() if c.startswith('ATLAS|') and v['mean_net_bps'] is not None}
+    return max(atlas, key=lambda c: atlas[c]['mean_net_bps'])
+
+
+def run(symbols=k.SYMBOLS, log=print, bars: dict | None = None) -> dict:
     t0 = time.time()
     u = k.uniforms(k.SEED)
-    bars = {s: k.load_bars(s) for s in symbols}
+    bars = {s: k.load_bars(s) for s in symbols} if bars is None else bars
     reps, inputs, thr = {}, {}, None
     for part in k.PARTS:
         panel = k.Panel(bars, part, u)
@@ -254,8 +280,7 @@ def run(symbols=k.SYMBOLS, log=print) -> dict:
         reps[part] = {'days': n_days, 'windows': {s: int(v['w'].size) for s, v in inputs[part].items()},
                       **evaluate(inputs[part], thr, n_days), 'regimes': variance_ratio(inputs[part], thr)}
         log(part, 'windows', reps[part]['windows'], f'{time.time() - t0:.0f} s')
-    atlas = {c: v for c, v in reps['TRAIN']['cells'].items() if c.startswith('ATLAS|')}
-    t1 = max(atlas, key=lambda c: atlas[c]['mean_net_bps'])
+    t1 = choose_t1(reps['TRAIN']['cells'])
     out = {'plan': PLAN, 'symbols': list(symbols), 'k_grid': K_GRID, 'freezes': FREEZES, 'schedules': SCHEDULES,
            'thresholds': thr, 'partitions': reps,
            'T1': {'cell': t1, **{p: reps[p]['cells'][t1] for p in k.PARTS},

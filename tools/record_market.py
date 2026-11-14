@@ -31,11 +31,13 @@ import argparse
 import asyncio
 import gzip
 import json
+import os
 import queue
 import shutil
 import threading
 import time
 import urllib.request
+import zlib
 from collections import Counter, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,13 +74,64 @@ def symbol_of(stream: str) -> str:
     return stream.split('@', 1)[0].upper()
 
 
+FLUSH_EVERY_NS = 5_000_000_000                  # a killed run loses at most this much of each hourly file
+
+
+def gzip_complete(path: Path) -> bool:
+    """True when every gzip member of the file is whole (the file was closed, not cut off by a kill)."""
+    d, fed = zlib.decompressobj(31), False
+    with open(path, 'rb') as f:
+        chunk = f.read(1 << 20)
+        while chunk:
+            try:
+                d.decompress(chunk)
+            except zlib.error:
+                return False
+            fed = True
+            if d.eof:
+                chunk, d, fed = d.unused_data, zlib.decompressobj(31), False
+            else:
+                chunk = b''
+            chunk = chunk or f.read(1 << 20)
+    return not fed
+
+
+def repair_gzip(path: Path) -> bool:
+    """An hourly file left by a killed run ends inside a gzip member; a member appended behind it would be unreadable
+    (2026-11-14: one hard kill + restart broke all three hour files at the join). Rewrite every whole line that can
+    still be decompressed as one complete member. -> True if the file was rewritten."""
+    if gzip_complete(path):
+        return False
+    tmp = path.with_name(path.name + '.repair')
+    d, tail = zlib.decompressobj(31), b''
+    with open(path, 'rb') as src, gzip.open(tmp, 'wb') as dst:
+        chunk = src.read(1 << 20)
+        while chunk:
+            try:
+                text = tail + d.decompress(chunk)
+            except zlib.error:
+                break
+            cut = text.rfind(b'\n') + 1
+            dst.write(text[:cut])
+            tail = text[cut:]
+            chunk = d.unused_data if d.eof else b''
+            if d.eof:
+                d = zlib.decompressobj(31)
+            chunk = chunk or src.read(1 << 20)
+    os.replace(tmp, path)
+    return True
+
+
 class HourlyWriter:
-    """One gzip file per (symbol, UTC hour); rotates on the first message of a new hour."""
+    """One gzip file per (symbol, UTC hour); rotates on the first message of a new hour. A file that already exists
+    is made whole before it is appended to, and every open file is sync-flushed every FLUSH_EVERY_NS."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
         self.open = {}
         self.counts = {}
+        self.flushed = {}
+        self.repaired = 0
 
     def path(self, sym: str, hk: str) -> Path:
         return self.root / sym / f'{hk}.jsonl.gz'
@@ -94,9 +147,14 @@ class HourlyWriter:
                 cur[1].close()
             p = self.path(sym, hk)
             p.parent.mkdir(parents=True, exist_ok=True)
+            if p.exists() and p.stat().st_size and repair_gzip(p):
+                self.repaired += 1
             self.open[sym] = (hk, gzip.open(p, 'at', encoding='utf-8'))
             cur = self.open[sym]
         cur[1].write(line)
+        if ns - self.flushed.get(sym, 0) >= FLUSH_EVERY_NS:
+            cur[1].flush()                               # Z_SYNC_FLUSH: what is on disk decompresses up to here
+            self.flushed[sym] = ns
         self.counts[sym] = self.counts.get(sym, 0) + 1
 
     def close(self):
@@ -332,7 +390,7 @@ def free_gb(path: Path) -> float:
 
 
 async def run(symbols, out: Path, duration: float, snap_every: float, light: bool = False, min_free_gb: float = 0.0,
-              liq: bool = False, stats_every: float = 60.0):
+              liq: bool = False, stats_every: float = 60.0, stop_file: Path | None = None):
     hourly = HourlyWriter(out)
     sink = ThreadedSink(hourly, DailyWriter(out) if liq else None)
     router = Router(sink)
@@ -353,6 +411,9 @@ async def run(symbols, out: Path, duration: float, snap_every: float, light: boo
                 stop.set()
             elif min_free_gb and free_gb(out) < min_free_gb:      # a days-long run on a nearly full disk stops itself
                 print(f'free disk {free_gb(out):.1f} GB < --min-free-gb {min_free_gb:g}: stopping')
+                stop.set()
+            elif stop_file is not None and Path(stop_file).exists():   # a console-less run cannot get Ctrl+C: the
+                print(f'stop file {stop_file}: stopping', flush=True)  # watchdog asks this way, files close cleanly
                 stop.set()
     except (KeyboardInterrupt, asyncio.CancelledError):
         stop.set()
@@ -377,11 +438,14 @@ def main(argv=None):
                     help='liquidation study: !forceOrder@arr (all symbols) -> <out>/liquidations_<YYYYMMDD>.jsonl with the '
                          'symbol touch attached; bookTicker + aggTrade of --symbols -> hourly gz; no depth, no REST')
     ap.add_argument('--stats-every', type=float, default=60.0, help='seconds between loop-cost / write-lag lines (0 = end only)')
+    ap.add_argument('--stop-file', type=Path, default=None,
+                    help='stop cleanly (gzip members closed) once this file exists; used by tools/watchdog_recorder.py')
     a = ap.parse_args(argv)
     syms = [s.strip().upper() for s in a.symbols.split(',') if s.strip()]
     if a.liq and a.light:
         ap.error('--liq and --light are different stream sets: pick one')
-    counts = asyncio.run(run(syms, a.out, a.duration, a.snapshot_every, a.light, a.min_free_gb, a.liq, a.stats_every))
+    counts = asyncio.run(run(syms, a.out, a.duration, a.snapshot_every, a.light, a.min_free_gb, a.liq, a.stats_every,
+                             a.stop_file))
     print('recorded', counts)
     return 0
 

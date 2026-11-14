@@ -1,5 +1,20 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-14 (g) — NDG-1 two-sided quoting under the ATLAS low-volatility gate (pre-registered) + recorder watchdog
+| # | Command | Result |
+|---|---|---|
+| 1 | plan hash before any run: `sha256sum docs/research_upgrade/plan_non_directional_grid_2026_11.md` | `441c3d31...b776` = trial_log row `ndg1-prereg` (2026-11-14T08:51:56Z); no `data/non_directional_grid_study.json` existed |
+| 2 | `python -m pytest -q tests/test_non_directional_grid.py` (before the first run) | 22 passed (hand cases from the plan text, scalar reference on 8 000 random paths, martingale gross -0.017 / -0.019 sigma per window, OU gross +0.97 sigma, z 314) |
+| 3 | `python -m research.non_directional_grid_study` (88 s; run twice, JSON identical apart from the timer) | T1 = ATLAS k1 BAND: TRAIN -4.63 +- 0.29 (n 22 695), HOLDOUT -4.38 +- 0.19 bps (n 32 486, 16 338 with a fill, gross -0.12 +- 0.06, LCB95 -4.69, DSR 0.00), FRESH -4.25 +- 0.43 (n 6 070) = NO EDGE; 216 of 216 cell x fee schedule x partition means negative |
+| 4 | same run, regimes | VR(15) HOLDOUT LOW 0.940 +- 0.022 / MID 0.931 +- 0.019 / HIGH 0.882 +- 0.057; T1 net LOW -4.38 / MID -3.96 / HIGH -4.53 / ALL -4.19; LOW share 41.3 % HOLDOUT, 49.0 % FRESH |
+| 5 | `python tools/watchdog_recorder.py start --out <scratchpad> --child-cmd '["python","-c","import time; time.sleep(600)"]' --interval 2` then `taskkill /F` on the child, `ensure`, `stop` | launched via WMI (this session's job object refuses breakaway), heartbeat `job: {"in_job": false}`; child killed -> restarted after 5 s (restarts 1, last exit code 1); `ensure` on a live supervisor: no-op; `stop` exit 2 (STOPPED); `ensure` after a stop: stays stopped |
+| 6 | live smoke, read-only public streams, scratch folder: `python tools/watchdog_recorder.py start --mode light --out <scratchpad>`, hard kill of the recorder after 31 s, `stop` | BEFORE the recorder fix: restart appended a gzip member behind the cut one, all 3 hour files unreadable at the join (invalid block type / EOFError). AFTER (`repair_gzip` + 5 s sync flush): restart in 5 s, heartbeat steps 10.10 / 10.08 / 10.06 s, stop "clean, exit 0", 3 hour files complete, 731-1 292 lines each over 68 s, largest gap 10.9-11.1 s across the kill |
+| 7 | `python -m pytest -q tests/test_watchdog_recorder.py tests/test_liquidation_recorder.py` | 36 passed (19 watchdog incl. one real detached launch, 17 recorder incl. 3 new: stop file, repair before append, 5 s flush) |
+| 8 | `python -m pytest -q` (final) | 2400 passed, 0 failed, 269.0 s (2356 + 44 new) |
+| 9 | `check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — 2026-11-14 (g)"` | exit 0, 6 / 6 sections |
+
+Not run: Demo / live engine; the recorder on `data/recordings` (owner decision: 14.7 GB free on F:); the scheduled task for `ensure`. Not measured: touch fills and queue position of a resting quote (klines carry no depth); a supervisor surviving the end of THIS agent session (the launch leaves the session's job object, which is the evidence available from inside the session).
+
 ## 2026-11-14 (f) — ATLAS density forecasters: L2 loop, kline loop (pre-registered), tail trigger, carry + overlay
 | # | Command | Result |
 |---|---|---|

@@ -219,6 +219,67 @@ def test_run_liq_end_to_end_writes_both_files_and_calls_no_rest(tmp_path, monkey
     assert sorted(urls) == sorted([MKT + 'dogeusdt@aggTrade/!forceOrder@arr', PUB + 'dogeusdt@bookTicker'])
 
 
+def test_a_stop_file_ends_the_run_cleanly_and_closes_the_gzip_members(tmp_path, monkeypatch):
+    """2026-11-14: a console-less recorder under tools/watchdog_recorder.py cannot be sent Ctrl+C."""
+    import time
+    urls = []
+    script = {'public': [[frame('dogeusdt@bookTicker', BOOK)]], 'market': [[frame('dogeusdt@aggTrade', TRADE)]]}
+
+    def connect(url, **kw):
+        return fake_websockets(script['public' if url.startswith(PUB) else 'market'], urls).connect(url, **kw)
+
+    monkeypatch.setitem(sys.modules, 'websockets', types.SimpleNamespace(connect=connect))
+    stop_file = tmp_path / 'recorder.stop'
+    threading.Timer(0.3, lambda: stop_file.write_text('stop')).start()
+    t0 = time.time()
+    counts = asyncio.run(rm.run(['DOGEUSDT'], tmp_path / 'rec', duration=120, snap_every=600, liq=True, stats_every=0,
+                                stop_file=stop_file))
+    assert time.time() - t0 < 15 and counts['DOGEUSDT'] == 2            # long before the 120 s duration
+    files = list((tmp_path / 'rec' / 'DOGEUSDT').glob('*.jsonl.gz'))
+    assert files and all(len(gzip.open(f, 'rt').read().splitlines()) == 2 for f in files)   # complete gzip members
+
+
+def test_an_hour_file_cut_off_by_a_kill_is_made_whole_before_the_restart_appends(tmp_path):
+    t0 = 1_794_297_600 * 10 ** 9
+    nl = chr(10)
+    lines = [json.dumps({'r': t0 + n, 's': 'aggTrade', 'd': {'p': str(n) * 40}}) + nl for n in range(4000)]
+    whole = gzip.compress(''.join(lines).encode())
+    p = tmp_path / 'DOGEUSDT' / f'{rm.hour_key(t0)}.jsonl.gz'
+    p.parent.mkdir()
+    p.write_bytes(whole[:int(len(whole) * 0.6)])                        # a hard kill: the member has no end
+    assert not rm.gzip_complete(p)
+    with pytest.raises((EOFError, OSError)):
+        gzip.open(p, 'rt').read()
+    w = rm.HourlyWriter(tmp_path)
+    w.write_line('DOGEUSDT', t0 + 10, '{"new":1}' + nl)
+    w.write_line('DOGEUSDT', t0 + 11, '{"new":2}' + nl)
+    w.close()
+    got = gzip.open(p, 'rt').read().splitlines(keepends=True)            # readable to the end, old data kept
+    assert w.repaired == 1 and rm.gzip_complete(p) and got[-2:] == ['{"new":1}' + nl, '{"new":2}' + nl]
+    kept = got[:-2]
+    assert 1000 < len(kept) < 4000 and kept == lines[:len(kept)]         # whole lines only, in order, none invented
+    before = p.read_bytes()
+    w2 = rm.HourlyWriter(tmp_path)                                       # a clean file is appended to as before
+    w2.write_line('DOGEUSDT', t0 + 12, '{"new":3}' + nl)
+    w2.close()
+    assert w2.repaired == 0 and p.read_bytes()[:len(before)] == before
+    assert gzip.open(p, 'rt').read().splitlines()[-1] == '{"new":3}' and not list(p.parent.glob('*.repair'))
+
+
+def test_an_open_hour_file_is_flushed_every_five_seconds_so_a_kill_loses_little(tmp_path):
+    import zlib
+    t0 = 1_794_297_600 * 10 ** 9
+    nl = chr(10)
+    w = rm.HourlyWriter(tmp_path)
+    for n, dt in enumerate((0.0, 1.0, 2.0, 6.0, 7.0)):                   # the line at +6 s crosses the flush period
+        w.write_line('DOGEUSDT', t0 + int(dt * 1e9), json.dumps({'n': n}) + nl)
+    on_disk = (tmp_path / 'DOGEUSDT' / f'{rm.hour_key(t0)}.jsonl.gz').read_bytes()      # the writer is still open
+    text = zlib.decompressobj(31).decompress(on_disk).decode().replace(chr(13), '')    # text mode: CRLF on Windows
+    assert text ==''.join(json.dumps({'n': n}) + nl for n in range(4))                  # all but the 1 s after it
+    w.close()
+    assert rm.FLUSH_EVERY_NS == 5 * 10 ** 9
+
+
 def test_cli_refuses_liq_with_light():
     with pytest.raises(SystemExit):
         rm.main(['--liq', '--light', '--duration', '1'])
