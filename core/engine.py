@@ -23,7 +23,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
@@ -39,6 +39,7 @@ from core import toxicity_guard as tg
 from core.harvest_markout import MarkoutLog
 from core.consensus_engine import ConsensusEngine, Decision, TokenAuthority
 from core.position_sizer import MicroCapitalSizer
+from core import net_expectancy as nx
 from live.radar_auto_trader import DemoVenue, ShadowVenue, fmt, floor_step, round_tick
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -378,6 +379,13 @@ class Profile:
     micro_max_loss_usdt: float = 0.05   # loss at the stop incl. fees <= 0.05 U (1 % of 5 U)
     micro_daily_kill_usdt: float = 0.15
     micro_loss_pause_s: float = 86_400.0  # max_consec_losses (3) AUTO losses in a row -> no entry for 24 h (survives a restart)
+    micro_session_losses: int = 2       # 11-13 directive: 2 micro AUTO net losses in a row inside today's trading day (the
+                                        # daily-kill day) -> no entry until the next day starts; ledger-derived; 0 = off
+    micro_net_ev_gate: str = 'shadow'   # 11-13: 'off' | 'shadow' (verdict logged) | 'on' (a micro AUTO entry needs LCB95 of the
+                                        # micro lane's NET bps / trade > 0 over >= net_ev_min_n real or virtual trades; no
+                                        # evidence = driftless price = EV -costs -> refused). core/net_expectancy.py
+    net_ev_min_n: int = 30
+    net_ev_window: int = 100            # the evidence is the last 100 settled micro trades (and the last 100 virtual ones)
     micro_symbols: tuple = MICRO_UNIVERSE  # the coins that may trade (one at a time); the rest observe (signals, no order)
     micro_max_positions: int = 1
     micro_max_same_side: int = 2        # 11-09g: at most this many open/in-flight micro positions on ONE side (the micro coins are
@@ -1534,6 +1542,56 @@ class Engine:
         rows = [r for r in self.all_rows if r.get('micro')]      # only trades taken under the micro rules (11-09d)
         return self.micro_sizer().halt_until(rows, self.clock(), lookback_s=self.p.micro_loss_pause_s)
 
+    def micro_session_halt_until(self) -> Optional[float]:
+        """11-13: micro_session_losses micro AUTO NET losses in a row inside today's trading day (local date of the engine
+        clock, the daily-kill day) -> no entry until the next day starts. Ledger-derived, so a restart cannot erase it; a
+        winner resets the streak; other tags neither add nor reset; a row without pnl or time is UNKNOWN and skipped."""
+        k = self.p.micro_session_losses
+        if not k or not self.micro_active():
+            return None
+        now = self.clock()
+        today = datetime.fromtimestamp(now).date()
+        streak = 0
+        for r in reversed(self.all_rows):
+            if not r.get('micro') or r.get('pnl') is None or r.get('t') is None:
+                continue
+            if datetime.fromtimestamp(float(r['t'])).date() != today:
+                break
+            if r.get('tag') != 'AUTO':
+                continue
+            pnl = float(r['pnl'])
+            if pnl > 0:
+                break
+            streak += pnl < 0
+            if streak >= k:
+                nxt = datetime.combine(today + timedelta(days=1), datetime.min.time()).timestamp()
+                return nxt if now < nxt else None
+        return None
+
+    def net_ev_verdict(self, path: str) -> dict:
+        """11-13: core.net_expectancy.verdict on the micro lane's evidence: NET bps per settled micro AUTO trade (ledger,
+        all micro coins pooled) and this symbol's virtual edge_shadow trades; the driftless EV of the bracket this entry
+        would use is reported (maker in / maker TP, maker in + taker stop + slip)."""
+        p = self.p
+        real = []
+        for r in self.all_rows:
+            if r.get('micro') and r.get('tag') == 'AUTO' and r.get('pnl') is not None:
+                notional = float(r.get('qty') or 0.0) * float(r.get('entry') or 0.0)
+                if notional > 0:
+                    real.append(float(r['pnl']) / notional * 1e4)
+        virt = [x * 100.0 for x in self.edge_shadow_rows()] if p.edge_shadow else []
+        tp = sl = None
+        try:
+            bp = self.bracket_plan(path, self.features or {}) if self.spec else None
+            if bp and bp.get('tp_pct') and bp.get('sl_pct'):
+                tp, sl = bp['tp_pct'] * 100.0, bp['sl_pct'] * 100.0
+        except Exception:                                   # an unknown bracket only hides the driftless EV figure
+            tp = sl = None
+        v = nx.verdict(real[-p.net_ev_window:], virt[-p.net_ev_window:], tp_bps=tp, sl_bps=sl,
+                       c_win_bps=2 * p.maker_bps, c_loss_bps=p.maker_bps + p.taker_bps + p.slip_bps, min_n=p.net_ev_min_n)
+        self.net_ev_last = v
+        return v
+
     def micro_pnl(self) -> float:
         """Realized NET pnl (USDT) of the settled `micro`-flagged ledger rows (restart-proof); unknown pnl is skipped, never 0."""
         return math.fsum(float(r['pnl']) for r in self.all_rows if r.get('micro') and r.get('pnl') is not None)
@@ -2293,6 +2351,9 @@ class Engine:
             r = (False, why)
         elif (halt := self.micro_halt_until()) is not None:
             r = (False, f'MICRO HALT: {self.p.max_consec_losses} losses in a row · {halt - now:.0f}s left')
+        elif (sess := self.micro_session_halt_until()) is not None:
+            r = (False, f'MICRO SESSION STOP: {self.p.micro_session_losses} losses in a row today · '
+                        f'{sess - self.clock():.0f}s to the next day')
         elif now < self.pause_until:
             r = (False, f'{self.consec_losses} losses · pause {self.pause_until - now:.0f}s')
         elif now < self.cooldown_until:
@@ -2620,6 +2681,14 @@ class Engine:
         if tag != 'AUTO':
             return None
         p = self.p
+        if p.micro_net_ev_gate in ('shadow', 'on') and self.micro_active():      # 11-13 net-expectancy gate
+            v = self.net_ev_verdict(path)
+            if not v['allow']:
+                if p.micro_net_ev_gate == 'on':
+                    return v['why']
+                if self.clock() - getattr(self, '_net_ev_evt_t', -1e9) >= 60.0:
+                    self._net_ev_evt_t = self.clock()
+                    self.event(f'NET EV GATE (shadow) would refuse {path}: {v["why"]}')
         if p.kelly and p.kelly_no_edge_gate and p.max_loss_usdt is None:
             k = self.kelly()
             fmt3 = lambda v, spec: '—' if v is None else format(v, spec)
@@ -2680,7 +2749,7 @@ class Engine:
         return {**self.kelly_of(self.edge_shadow_rows()),
                 'open': None if v is None else {k: v[k] for k in ('side', 'state', 'quote', 'tp_pct', 'sl_pct')}}
 
-    def edge_shadow_arm(self, side: str, path: str) -> None:
+    def edge_shadow_arm(self, side: str, path: str, why: str = 'KELLY NO EDGE') -> None:
         """A NO EDGE refusal opens ONE virtual trade, never an order: the maker quote the real entry would have joined
         and the same TP / SL bracket. It fills only when the tape trades THROUGH the quote (queue not assumed won),
         exits at TP only when the tape trades through it, at the stop with slip, or at the touch after the hold."""
@@ -2695,7 +2764,7 @@ class Engine:
         st['pos'] = {'side': side, 'path': path, 'quote': px, 't': self.clock(), 'state': 'PENDING',
                      'tp_pct': bp['tp_pct'], 'sl_pct': bp['sl_pct'], 'mfe': 0.0}
         self._shadow_row({'outcome': 'SHADOW_EDGE_OPEN', 'side': side, 'path': path, 'quote': px,
-                          'tp_pct': bp['tp_pct'], 'sl_pct': bp['sl_pct'], 'why': 'KELLY NO EDGE'})
+                          'tp_pct': bp['tp_pct'], 'sl_pct': bp['sl_pct'], 'why': why})
 
     def edge_shadow_step(self, f: dict) -> None:
         """Advance the virtual trade on this tick (cheap when none is open)."""
@@ -3190,8 +3259,8 @@ class Engine:
             return {'ok': False, 'error': 'busy or position open' if not why else f'SCANNER: {why}'}
         why_edge = self.entry_edge_block(path, tag)                    # 11-09: no edge / padded quorum -> no order
         if why_edge:
-            if why_edge.startswith('KELLY NO EDGE'):
-                self.edge_shadow_arm(side, path)                       # probe with a virtual trade, no order
+            if why_edge.startswith(('KELLY NO EDGE', 'NET EV')):
+                self.edge_shadow_arm(side, path, 'NET EV' if why_edge.startswith('NET EV') else 'KELLY NO EDGE')
             if self.clock() - getattr(self, '_edge_evt_t', -1e9) >= 60.0:
                 self._edge_evt_t = self.clock()
                 self.event(f'OKAPI refused {side} {path}: {why_edge}')
@@ -4128,8 +4197,11 @@ class Engine:
         adverse = self.adverse_flow(p)
         p['adverse_usd'] = adverse
         limit = p.get('flow_limit') or self.flow_limit({})
-        breath_s = 5.0 if self.micro_active() else self.p.flow_breath_s
-        p['breathing'] = (now - p['opened'] < breath_s) and (adverse < 25_000.0)
+        micro = self.micro_active()
+        breath_s = 5.0 if micro else self.p.flow_breath_s
+        # 11-11 knife shield (adverse >= 25 k USD ends the breathing room) is a micro rule: applied to every mode it broke
+        # the pinned non-micro anti-churn behaviour (tests/test_anti_churn.py, 520 k noise inside the breathing room)
+        p['breathing'] = (now - p['opened'] < breath_s) and (not micro or adverse < 25_000.0)
         flow_due = self.p.flow_exit and adverse >= limit and not p['breathing']
         against = self.flow.get('buy_ok' if p['side'] == 'SELL' else 'sell_ok')
         if gate and against and self.p.hurdle_concordance_override:

@@ -1084,3 +1084,39 @@ Files at run time: `data/carry_sim_state.json` (git-ignored by `data/*.json`; `.
 - The kill switch and the basis freeze are restored: a restart is not a way around them.
 - The new fetcher sends a neutral User-Agent, not the project name.
 - Rollback: `carry_sim_persist=False` on the profile (fresh book every process, as before), or `git revert` the commit.
+
+## Handoff 6C — 2026-11-13 (alpha re-engineering directive: autopsy, net-EV gate, 2-loss session stop, SMC-Fibo study FAIL; DEMO untouched, nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner directive (pasted 2026-11-13): Phase 1 autopsy of the Demo loss (fees / adverse selection / noise stops / over-filtering, report `docs/research_upgrade/AUTOPSY_REPORT_2026.md`); Phase 2 redesign (retire the TP 0.15 / SL 0.15 chop scalp, Fibo-discount SMC sweep + OFI/CVD at R:R 1.5-2, no order with net EV <= 0, 2 losses in a row stop the session, micro-Kelly, 5 U -> +10 U/h); Phase 3 code + tests; Phase 4 benchmark (Sharpe, MDD, win rate, net / hour) and harness docs. Done = report, tools, gates and tests green, docs updated, target feasibility stated with numbers.
+
+### 2. Ràng buộc (Constraints)
+No engine start / restart, no live, no capital or leverage raise (CLAUDE.md section 5); invariants I1-I8 untouched (0.768 quorum, 0.70 RUNE veto, AuthToken, 0.05 U loss at the stop, 0.15 U daily kill, I6 3.85 U). Local data only (no download). No commit / push (not asked; when asked: no AI attribution). The owner's uncommitted edits (AGENTS.md, docs/architecture/*, prompts/*, tools/funding_spread_replay.py, .gitignore) untouched; feature_list.json, experiment_register.md and trial_log.jsonl only appended. 1-3 skills per CLAUDE.md section 5, not the whole list of the paste.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, HEAD `6a621f8`, all work uncommitted on top. New: `tools/autopsy_2026.py`, `tools/micro_growth_sim.py`, `core/net_expectancy.py`, `core/smc_fibo.py`, `research/smc_fibo_backtest.py`, `tests/test_autopsy_2026.py`, `tests/test_net_expectancy.py`, `tests/test_smc_fibo.py`, `tests/test_session_breaker_kelly.py`, `docs/research_upgrade/AUTOPSY_REPORT_2026.md`, `docs/harness/plan_alpha_reengineering_2026_11_13.md`, `docs/harness/checks.md`.
+Changed: `core/engine.py` (Profile `micro_session_losses` 2, `micro_net_ev_gate` 'shadow', `net_ev_min_n` 30, `net_ev_window` 100; `micro_session_halt_until`, `net_ev_verdict`, gate in `entry_edge_block` + risk-gate line `MICRO SESSION STOP`, `edge_shadow_arm(..., why)`, 11-11 knife shield micro-only), `core/position_sizer.py` (`confluence_scale`, `fractional_kelly_risk`), `config/settings.py` (`MICRO_NET_EV_GATE`; `MICRO_HARVESTER=on` refused), `run.bat` (`MICRO_NET_EV_GATE=on` in :MICRO), `tests/test_micro_dual.py` + `tests/test_sniper_runner_carry_2026_11_10.py` (re-pinned), `docs/harness/plan.md` (appended), CLAUDE.md (one paragraph). Git-ignored outputs: `data/autopsy_2026.json`, `data/smc_fibo_backtest.json` / `.log`, `data/micro_growth_sim.json` / `.log`. Bot and recorder stopped since 2026-11-10 19:28 (recordings: 11-10 02-12 UTC only).
+
+### 4. Bằng chứng (Evidence)
+- First full run after the gate edits: `python -m pytest -q tests/` 2173 passed, 2 failed; both traced to HEAD `6a621f8` by code reading (25 k knife shield applied to every mode broke `tests/test_anti_churn.py`; two `run.bat` lines missing from the launcher pin), fixed / re-pinned. Final: `python -m pytest -q tests/` 2231 passed, 0 failed, 248.2 s (2175 + 56 new); the 5 test files that read `run.bat`, re-run after its last comment edit: 202 passed.
+- New tests: 56 passed (`test_smc_fibo` + `test_net_expectancy` + `test_session_breaker_kelly` 49, `test_autopsy_2026` 7).
+- `python tools/autopsy_2026.py`: 131 AUTO trades net -4.0924 U = gross +1.1973 - fees 5.2897 (maker 3.87 / taker 1.42); per trade gross +0.62 +- 1.15, fees 4.57, net -3.95 +- 1.16 bps; 30 s fill markout +1.26 +- 0.53 bps; early-exit post-move vs placebo inside 1 SE (USDT CI90 contains 0 at 5 / 15 / 30 min); 747 deduped refusals -5.02 +- 0.94 bps under the micro bracket. Demo fee per leg: maker 2.0, taker 4.0 bps.
+- `python -m research.smc_fibo_backtest` (83 s, 11 symbols): HOLDOUT chosen R2 / BE-off n 187, -14.11 +- 3.26 bps, win 0.262, PF 0.50, vs placebo -4.69 [-11.77, +2.39], 1/11 symbols -> acceptance FAIL; TRAIN -3.06 +- 4.60 (n 222); 5 U account at 0.05 U risk -2.99 U in 273 days; Kelly on virtual evidence 0-1 trades.
+- `python tools/micro_growth_sim.py`: +10 U/h at 0.05 U risk and R 1.9 needs 105 trades/h at a 100 % win rate (270 at 60 %); ledger bootstrap -0.004 U/h, SMC-Fibo bootstrap -0.0034 U/h.
+- Gate on the current evidence: UNPROVEN (21 real micro trades -5.51 +- 3.37 bps, 0 virtual) -> with `run.bat micro` no Demo micro AUTO order is sent.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: keep `MICRO_NET_EV_GATE=on` (no Demo micro order until a lane shows LCB95 > 0 over >= 30 trades; virtual trades accrue) or delete the line for shadow (real Demo fills keep coming, the verdict is only logged).
+2. Owner: `MICRO_OFI_MIN=0.45` from `6a621f8` has no trade behind it; the 10 deduped MICRO ALIGN refusals (OFI < 0.65) moved -36 +- 21 bps against the signal in 60 min (small n).
+3. Restart `tools/record_market.py --light` if the depth / OFI work goes on (plan_micro_adverse_selection.md needs >= 1 week; 11 h exist).
+4. Polymarket 15 m arb and flash-liquidation sniping: no data on disk (no forceOrder tape, no Polymarket fills); a liquidation recorder first, then a pre-registered study.
+5. Commit on the owner's request (no AI attribution).
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The loss is fees on a zero gross edge: fees 129 % of the net loss; adverse selection on fills 0 % at 30 s; premature exits and over-filtering not demonstrable (the filters avoided -5.0 bps per signal).
+- R:R does not create edge: on a driftless price any bracket nets -(c_win SL + c_loss TP)/(TP + SL) (test pinned); the 0.705-0.886 discount entry was tested as stated and failed its pre-registered holdout; the OFI L10 part is untested (klines carry no depth).
+- The net-EV gate reads only the micro lane (micro-flagged AUTO rows + this symbol's virtual rows); proven-negative real evidence overrides virtual; no evidence = refuse (UNKNOWN is never zero edge).
+- The 0.05 U cap was not raised to the directive's 0.15 U (one 0.15 U loss = the whole daily kill; research may not raise risk). `fractional_kelly_risk` is not wired to the live sizer: the gate refuses first.
+- A Kelly sizer fed only by the trades it takes never trades; the simulation feeds it virtual outcomes (as edge_shadow does in the engine).
+- Rejected: wiring the SMC-Fibo lane (failed), deleting the harvester shadow (its markout log is data), a separate MICRO_SESSION_LOSSES env flag (YAGNI; Profile field).
+- Rollback: Profile `micro_net_ev_gate='off'`, `micro_session_losses=0`; delete `MICRO_NET_EV_GATE` in `run.bat`; the harvester refusal is one `if` in `config/settings.py`; knife shield back to all modes = revert one line in `Engine` flow management.

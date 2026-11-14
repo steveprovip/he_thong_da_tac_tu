@@ -57,7 +57,15 @@ def micro_capital_env(env):
     if harvester:
         if harvester not in ('off', 'shadow', 'on'):
             raise ValueError('MICRO_HARVESTER must be off, shadow or on')
+        if harvester == 'on':                 # 11-13: TP 0.15 / SL 0.15 needs 67.6 % wins; mainnet tape gave 45-47.5 %
+            raise ValueError('MICRO_HARVESTER=on is retired (2026-11-13): the TP 0.15 / SL 0.15 % chop lane failed its '
+                             'holdout (0 of 40 brackets positive); use shadow (markout logging) or off')
         out['micro_harvester'] = harvester
+    gate = str(env.get('MICRO_NET_EV_GATE', '')).strip().lower()          # 11-13 net-expectancy entry gate
+    if gate:
+        if gate not in ('off', 'shadow', 'on'):
+            raise ValueError('MICRO_NET_EV_GATE must be off, shadow or on')
+        out['micro_net_ev_gate'] = gate
     runner = str(env.get('MICRO_SNIPER_RUNNER', '')).strip().lower()      # 11-10 (e) runner exits of high-conviction trend entries
     if runner:
         if runner not in ('off', 'on'):

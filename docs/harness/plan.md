@@ -50,3 +50,14 @@ Every behavioural change is a Profile field: `be_offset_pct=0.02`, `eject_guard=
 
 ## Result (2026-11-09)
 `python -m pytest -q`: 1881 passed, 0 failed (baseline 1834 + 47 new). 12 tests re-pinned to the new fee-aware levels, 4 opted out with a comment (legacy 360 s EJECT timer x2, sizing mechanics x2). Handoff: docs/harness/session-handoff.md "2026-11-09". Not run: demo, replay, live. Economic effect unmeasured.
+
+---
+# 2026-11-13 — Alpha re-engineering directive (autopsy, net-EV gate, session stop, SMC-Fibo study)
+Design + pre-registration: [plan_alpha_reengineering_2026_11_13.md](plan_alpha_reengineering_2026_11_13.md) (frozen before the first run).
+Autopsy: [../research_upgrade/AUTOPSY_REPORT_2026.md](../research_upgrade/AUTOPSY_REPORT_2026.md). Checks run: [checks.md](checks.md).
+Baseline before edits: HEAD `6a621f8` had 2 failing tests of its own (`tests/test_anti_churn.py` breathing, launcher pin in
+`tests/test_sniper_runner_carry_2026_11_10.py`); both fixed / re-pinned here.
+Result: loss = fees (4.57 bps/trade) on a zero gross edge (+0.62 +- 1.15 bps); SMC-Fibo HOLDOUT -14.1 +- 3.3 bps (REJECT, not
+wired); the net-EV gate (on in `run.bat micro`) refuses every micro AUTO entry on the current ledger. Nothing started.
+Rollback: Profile `micro_net_ev_gate='off'`, `micro_session_losses=0`; delete `MICRO_NET_EV_GATE` in `run.bat`; the
+`MICRO_HARVESTER=on` refusal is one `if` in `config/settings.py`.

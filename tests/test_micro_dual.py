@@ -283,7 +283,9 @@ def test_the_harvester_is_a_demo_rehearsal_live_refuses_it_on():
 
 
 def test_env_flag_parses_and_a_typo_raises():
-    assert micro_capital_env({'MICRO_HARVESTER': ' ON '}) == {'micro_harvester': 'on'}
+    assert micro_capital_env({'MICRO_HARVESTER': ' Shadow '}) == {'micro_harvester': 'shadow'}
+    with pytest.raises(ValueError, match='retired'):                    # 11-13: the TP 0.15 / SL 0.15 % lane failed its holdout
+        micro_capital_env({'MICRO_HARVESTER': ' ON '})
     assert micro_capital_env({}) == {}
     with pytest.raises(ValueError, match='MICRO_HARVESTER'):
         micro_capital_env({'MICRO_HARVESTER': 'yes'})

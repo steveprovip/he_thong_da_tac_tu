@@ -316,12 +316,15 @@ def test_the_micro_launcher_arms_shadow_harvest_the_runner_and_a_15_u_bankroll_o
     micro = text[text.index('\n:MICRO'):text.index('\n:LIVE')]
     rest = text.replace(micro, '')
     sets = dict(re.findall(r'^set "(MICRO_[A-Z_]+)=([^"]*)"', micro, flags=re.M))
+    # 11-11 (6a621f8) added MICRO_OFI_MIN / MICRO_MIN_EDGE_BPS without updating this pin; 11-13 adds MICRO_NET_EV_GATE=on
     assert sets == {'MICRO_CAPITAL_MODE': 'on', 'MICRO_IOC': 'on', 'MICRO_HARVESTER': 'shadow', 'MICRO_SNIPER_RUNNER': 'on',
-                    'MICRO_CAPITAL_BANKROLL': '15', 'MICRO_EXIT_POLICY': 'patient'}
+                    'MICRO_CAPITAL_BANKROLL': '15', 'MICRO_EXIT_POLICY': 'patient', 'MICRO_OFI_MIN': '0.45',
+                    'MICRO_MIN_EDGE_BPS': '7.0', 'MICRO_NET_EV_GATE': 'on'}
     assert '--mode demo' in micro and '--mode live' not in micro
     assert not re.findall(r'^set "MICRO_', rest, flags=re.M)                                 # demo / live / test set none of them
     env = micro_capital_env(sets)                                                            # the launcher's values parse
     assert env['micro_harvester'] == 'shadow' and env['micro_sniper_runner'] == 'on' and env['micro_bankroll'] == 15.0
+    assert env['micro_net_ev_gate'] == 'on'
 
 
 def test_a_15_u_rehearsal_sizes_from_15_u_and_the_loss_at_the_stop_stays_under_5_cents(tmp_path):

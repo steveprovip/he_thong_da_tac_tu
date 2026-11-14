@@ -443,6 +443,46 @@
       "dependencies": ["scalp-trend-lock-bracket-20261108"],
       "status": "done",
       "evidence": "2026-11-08. Full suite 1834 passed, 0 failed; tests/test_scalp_trend_lock.py 15 passed. Behaviour tests only; equal loss under the repo fee model. No restart, order or commit."
+    },
+    {
+      "id": "autopsy-tool-20261113",
+      "name": "Ledger loss autopsy on the mainnet tape",
+      "description": "tools/autopsy_2026.py: exact additive split net = fill markout (30 s) + body - fees per AUTO trade, Demo fee split (maker 2 / taker 4 bps), post-exit drift vs a same-side placebo, refused-signal counterfactuals (micro bracket 0.22 / 0.46 %). Report docs/research_upgrade/AUTOPSY_REPORT_2026.md.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-13. 131 AUTO trades: gross +0.62 +- 1.15 bps, fees 4.57, net -3.95 +- 1.16; fees 129 % of the -4.09 U loss; refused signals -5.0 +- 0.9 bps. tests/test_autopsy_2026.py 7 passed. Read-only."
+    },
+    {
+      "id": "net-ev-gate-20261113",
+      "name": "Micro AUTO entries need proven net expectancy",
+      "description": "core/net_expectancy.py + Engine.net_ev_verdict: LCB95 of the micro lane's NET bps per trade > 0 over >= 30 real (ledger) or virtual (edge_shadow) trades, proven-negative real evidence overrides virtual, no evidence = driftless EV (-costs) = refused; a refusal arms one virtual trade. Profile micro_net_ev_gate 'shadow', run.bat micro sets MICRO_NET_EV_GATE=on.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-13. tests/test_net_expectancy.py passed; full suite 2231 passed, 0 failed. Current evidence UNPROVEN (21 real micro trades -5.51 +- 3.37 bps, 0 virtual): with the launcher setting the Demo micro bot sends no AUTO order. No restart, order or commit."
+    },
+    {
+      "id": "micro-session-stop-20261113",
+      "name": "Two micro losses in a row stop the trading day",
+      "description": "Profile micro_session_losses 2: two micro AUTO net losses in a row inside today's trading day (local date of the engine clock) -> gate MICRO SESSION STOP until the next day; ledger-derived (restart-proof), winner resets, other tags skipped; the 3-loss / 24 h halt is unchanged.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-13. tests/test_session_breaker_kelly.py passed. A tightening: on a zero edge it cuts fee drag, it adds no edge."
+    },
+    {
+      "id": "harvester-on-retired-20261113",
+      "name": "MICRO_HARVESTER=on refused",
+      "description": "config/settings.py refuses MICRO_HARVESTER=on (TP 0.15 / SL 0.15 %, break-even win rate 67.6 %, mainnet tape 45-47.5 %, 0 of 40 brackets positive); shadow (markout logging) and off still parse. 11-11 knife shield (adverse >= 25 k ends the breathing room) scoped to micro: it had broken tests/test_anti_churn.py.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-13. tests/test_micro_dual.py re-pinned; tests/test_anti_churn.py passes again."
+    },
+    {
+      "id": "smc-fibo-study-20261113",
+      "name": "SMC Fibo-discount liquidity-sweep study (pre-registered)",
+      "description": "core/smc_fibo.py (causal detector: H4 SMC trend, H1 leg >= 2 ATR, 5 m sweep in the 0.705-1.0 zone, taker-delta absorption) + research/smc_fibo_backtest.py (1m klines, conservative fills, placebo x5, micro portfolio, Kelly on virtual evidence) + core/position_sizer.fractional_kelly_risk / confluence_scale + tools/micro_growth_sim.py.",
+      "dependencies": [],
+      "status": "rejected",
+      "evidence": "2026-11-13. HOLDOUT 2026-01..09, 11 symbols, chosen R2/BE-off: n 187, -14.1 +- 3.3 bps, win 0.262, vs placebo -4.7 [-11.8, +2.4], 1/11 symbols: FAIL, not wired. tests/test_smc_fibo.py passed."
     }
   ]
 }

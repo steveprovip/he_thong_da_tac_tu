@@ -59,6 +59,10 @@ rem 11-10 (b): set back to shadow - the mainnet-tape study (plan_micro_adverse_s
 rem MICRO_EXIT_POLICY below only acts on harvest positions, so it is dormant while this is shadow. Use "on" only to rehearse the plumbing.
 rem 11-10 (e): shadow. No harvest order is sent; every would-be harvest still writes its quote markouts to data\harvest_markouts.jsonl.
 set "MICRO_HARVESTER=shadow"
+rem 11-13: MICRO_NET_EV_GATE=on = a micro AUTO entry is sent only when the micro lane's NET bps per trade has LCB95 > 0 over
+rem >= 30 settled real (or virtual edge_shadow) trades. Micro ledger 2026-11-07..10: 21 trades, -5.5 +- 3.4 bps (< 30 = UNPROVEN),
+rem so it refuses and runs virtual trades instead (docs/research_upgrade/AUTOPSY_REPORT_2026.md). Delete this line for shadow (log only).
+set "MICRO_NET_EV_GATE=on"
 rem 11-10 (e): MICRO_SNIPER_RUNNER=on = a swarm trend / override entry with raw score and consensus >= 80 %% is managed as a runner:
 rem TP order at +2.5 %% (a cap), no 120 s / 180 s time-decay eject, trail max(0.20 %%, 2 x ATR 1m) behind the peak from +0.50 %%.
 rem Entry gates, exchange stop, RATCHET / RATCHET2 and the 0.05 U loss cap are unchanged. Unvalidated: no ledger trade has reached

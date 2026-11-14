@@ -293,3 +293,36 @@ class DrawdownBrake:
             self.losses = self.losses+1 if pnl < 0 else 0
         self.halted = self.halted or (1-equity/self.peak >= self.max_drawdown) or self.losses >= self.max_losses
         return self.halted
+
+
+def confluence_scale(confluence: int, n_max: int = 3, ofi=None, ofi_full: float = 0.75) -> float:
+    """Size multiplier in [0, 1]: full size only at confluence n_max / n_max with |OFI| >= ofi_full (2026-11-13
+    directive); an unknown OFI never earns the full size. It only ever scales DOWN the Kelly risk."""
+    if n_max <= 0:
+        raise ValueError('n_max must be > 0')
+    s = max(0.0, min(1.0, confluence / n_max))
+    if ofi is None or not math.isfinite(ofi) or abs(ofi) < ofi_full:
+        s *= 0.5
+    return s
+
+
+def fractional_kelly_risk(equity, wins, losses, payoff_b, cap_usdt, lam=0.25, z=1.645, conf_scale=1.0,
+                          prior=(1.0, 1.0), max_frac=0.03) -> float:
+    """USDT to lose at the stop for the next bracket trade (2026-11-13 micro-Kelly).
+
+    Win rate = LOWER bound of the Beta(prior + wins, prior + losses) posterior (normal approximation, z one-sided),
+    f* = p_lcb - (1 - p_lcb) / b with b = average net win / average net loss; risk = lam * f* * conf_scale * equity,
+    capped by cap_usdt (the 0.05 U micro budget) and max_frac * equity (3 %). No edge (f* <= 0), an unknown payoff or
+    no equity -> 0.0: the caller must not trade (UNKNOWN is never sized as zero edge with a minimum lot).
+    A winning streak raises the size only through the posterior: evidence, not the streak itself."""
+    if not equity or equity <= 0 or payoff_b is None or not payoff_b > 0 or cap_usdt <= 0:
+        return 0.0
+    a, b = prior[0] + max(0, wins), prior[1] + max(0, losses)
+    mean = a / (a + b)
+    sd = math.sqrt(a * b / ((a + b) ** 2 * (a + b + 1.0)))
+    p = max(0.0, min(1.0, mean - z * sd))
+    f_star = p - (1.0 - p) / payoff_b
+    if f_star <= 0:
+        return 0.0
+    risk = lam * f_star * max(0.0, min(1.0, conf_scale)) * equity
+    return max(0.0, min(risk, cap_usdt, max_frac * equity))
