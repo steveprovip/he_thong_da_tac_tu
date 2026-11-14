@@ -1,0 +1,232 @@
+{
+ "source": "F:/factory-quant-opt/data/autoresearch_trade_gpt6_report.json",
+ "source_sha256": "1c704a5b9cf2db181d0a02973f9dbd77957f1607b40076be6c4b13c96867461f",
+ "note": "Agent configs and survivor weights of the factory maker run (200 rounds, prior 1203 trials, fill maker, 8.5 bps). Copied so research/hrp_alpha_sleeves.py is reproducible from this repo.",
+ "fill": "maker",
+ "costs_bps": {
+  "maker": 8.5,
+  "ioc": 13.0
+ },
+ "split_ms": {
+  "train": [
+   1733184000000,
+   1773524160000
+  ],
+  "holdout": [
+   1773538560000,
+   1790812800000
+  ]
+ },
+ "dsr_trials": 1406,
+ "agents": {
+  "NORO-15": {
+   "config": {
+    "name": "NORO-15",
+    "family": "NORO",
+    "lookback": 735,
+    "signal": 267,
+    "coef": -0.09404028260017949,
+    "hurdle": 1.1254648512171992,
+    "horizon": 28
+   },
+   "weight": 2.5,
+   "claimed_holdout": {
+    "trades": 2,
+    "mean_net_bps": 510.3694285779083,
+    "sharpe_ann": 1.3509256086106296,
+    "trades_per_day": 0.01,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 212,
+    "mean_net_bps": 76.7924843216859,
+    "sharpe_ann": 1.070283705499268
+   },
+   "claimed_dsr_holdout_null": null
+  },
+  "NORO-60": {
+   "config": {
+    "name": "NORO-60",
+    "family": "NORO",
+    "lookback": 2714,
+    "signal": 1528,
+    "coef": -0.2400078425341015,
+    "hurdle": 1.9321818274564575,
+    "horizon": 85
+   },
+   "weight": 2.5,
+   "claimed_holdout": {
+    "trades": 282,
+    "mean_net_bps": 7.012449424055718,
+    "sharpe_ann": 0.9412256602887266,
+    "trades_per_day": 1.41,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 2668,
+    "mean_net_bps": -6.036698356194782,
+    "sharpe_ann": -1.3170221169472018
+   },
+   "claimed_dsr_holdout_null": 0.0019835043931968888
+  },
+  "NORO-240": {
+   "config": {
+    "name": "NORO-240",
+    "family": "NORO",
+    "lookback": 1516,
+    "signal": 1516,
+    "coef": -0.04331239552890612,
+    "hurdle": 1.3163170265686237,
+    "horizon": 240
+   },
+   "weight": 1.5760043907406451,
+   "claimed_holdout": {
+    "trades": 0,
+    "mean_net_bps": null,
+    "sharpe_ann": 0.0,
+    "trades_per_day": 0.0,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 62,
+    "mean_net_bps": 71.18414487445773,
+    "sharpe_ann": 1.15533539151199
+   },
+   "claimed_dsr_holdout_null": null
+  },
+  "LUMEN-15": {
+   "config": {
+    "name": "LUMEN-15",
+    "family": "LUMEN",
+    "lookback": 1440,
+    "signal": 22,
+    "coef": 0.6027978052920959,
+    "hurdle": 1.0054019001570949,
+    "horizon": 20
+   },
+   "weight": 0.3,
+   "claimed_holdout": {
+    "trades": 134,
+    "mean_net_bps": -6.746788813180928,
+    "sharpe_ann": -1.8282654569947474,
+    "trades_per_day": 0.67,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 907,
+    "mean_net_bps": -22.52381393093925,
+    "sharpe_ann": -1.5289176965769835
+   },
+   "claimed_dsr_holdout_null": 2.0615888440822516e-09
+  },
+  "LUMEN-60": {
+   "config": {
+    "name": "LUMEN-60",
+    "family": "LUMEN",
+    "lookback": 1483,
+    "signal": 60,
+    "coef": 0.49088741155513455,
+    "hurdle": 1.0160389717490592,
+    "horizon": 34
+   },
+   "weight": 0.3,
+   "claimed_holdout": {
+    "trades": 10,
+    "mean_net_bps": -25.13737721626068,
+    "sharpe_ann": -1.3215243004142616,
+    "trades_per_day": 0.05,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 134,
+    "mean_net_bps": -38.56562846443711,
+    "sharpe_ann": -1.9552276560506483
+   },
+   "claimed_dsr_holdout_null": null
+  },
+  "LUMEN-240": {
+   "config": {
+    "name": "LUMEN-240",
+    "family": "LUMEN",
+    "lookback": 2880,
+    "signal": 240,
+    "coef": 1.0,
+    "hurdle": 1.0,
+    "horizon": 240
+   },
+   "weight": 2.5,
+   "claimed_holdout": {
+    "trades": 297,
+    "mean_net_bps": -21.00849665882117,
+    "sharpe_ann": -3.650576246344093,
+    "trades_per_day": 1.485,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 1088,
+    "mean_net_bps": -16.536298720076182,
+    "sharpe_ann": -1.7516776505975151
+   },
+   "claimed_dsr_holdout_null": 2.2160606683030437e-10
+  },
+  "TIDAL-60": {
+   "config": {
+    "name": "TIDAL-60",
+    "family": "TIDAL",
+    "lookback": 2880,
+    "signal": 211,
+    "coef": -0.1515432846229953,
+    "hurdle": 1.2459498292917908,
+    "horizon": 44
+   },
+   "weight": 0.3,
+   "claimed_holdout": {
+    "trades": 316,
+    "mean_net_bps": 8.334708590722723,
+    "sharpe_ann": 1.7276040909791166,
+    "trades_per_day": 1.58,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 3849,
+    "mean_net_bps": -6.307306918492685,
+    "sharpe_ann": -2.104061360958033
+   },
+   "claimed_dsr_holdout_null": 0.0027456975125884076
+  },
+  "TIDAL-240": {
+   "config": {
+    "name": "TIDAL-240",
+    "family": "TIDAL",
+    "lookback": 1977,
+    "signal": 897,
+    "coef": 0.4562156807321608,
+    "hurdle": 1.0404804714003921,
+    "horizon": 240
+   },
+   "weight": 0.3,
+   "claimed_holdout": {
+    "trades": 3152,
+    "mean_net_bps": -5.069116723525402,
+    "sharpe_ann": -2.1849732675848883,
+    "trades_per_day": 15.76,
+    "days": 200
+   },
+   "claimed_train": {
+    "trades": 8523,
+    "mean_net_bps": -6.271408330546043,
+    "sharpe_ann": -2.1065158264062425
+   },
+   "claimed_dsr_holdout_null": 7.470210452442672e-07
+  }
+ },
+ "claimed_portfolio_holdout_daily": {
+  "days": 200,
+  "daily_bps": -1.5148208085200252,
+  "sr_day": -0.08137012675529776,
+  "sharpe_ann": -1.5545740888691109,
+  "skew": 3.7285485437494126,
+  "kurt": 46.805092239930374,
+  "psr0": 0.16418357146742268
+ }
+}

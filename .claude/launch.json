@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cockpit-ui",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["core/web_ui_server.py", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

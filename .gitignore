@@ -103,3 +103,8 @@ config/dynamic_state.json
 config/dynamic_state.json.tmp
 data/klines_1m/
 data/funding_cache/
+
+# Binance public tick/depth-band downloads (tools/download_public_l2.py; checksums and summaries stay local)
+data/ticks/
+data/public_depth/
+data/.public_l2_cache/

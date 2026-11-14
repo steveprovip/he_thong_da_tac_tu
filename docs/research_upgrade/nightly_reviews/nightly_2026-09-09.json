@@ -1,0 +1,377 @@
+{
+ "schema": "nightly_audit/1",
+ "window_utc": [
+  "2026-09-09 00:00",
+  "2026-09-10 00:00"
+ ],
+ "day": "2026-09-09",
+ "generated_utc": "2026-11-07T08:48:46Z",
+ "ledger": "F:\\he_thong_da_tac_tu_2\\data\\engine_trades.jsonl",
+ "slippage": {
+  "rows": 0,
+  "modes": {},
+  "venues": {},
+  "model_bps": {
+   "all_in": 8.5,
+   "fees": 7.0,
+   "slippage": 1.5
+  },
+  "all_in_bps": {
+   "n": 0,
+   "unknown": 0
+  },
+  "fee_bps": {
+   "n": 0,
+   "unknown": 0
+  },
+  "entry_slip_bps": {
+   "n": 0,
+   "unknown": 0
+  },
+  "exit_slip_bps": {
+   "n": 0,
+   "unknown": 0
+  },
+  "slippage_bps": {
+   "n": 0,
+   "unknown": 0
+  },
+  "by_entry_type": {},
+  "verdict": "UNKNOWN: no round trip closed in the window"
+ },
+ "regime": {
+  "source": "ticks",
+  "dir": "F:\\factory-quant-opt\\data\\ticks",
+  "symbols": {
+   "BNBUSDT": {
+    "files": 3,
+    "seconds_with_price": 67485,
+    "price_field": "aggTrade",
+    "eval_points": 1440,
+    "labelled": 1440,
+    "covered": 1440,
+    "coverage": 1.0,
+    "accuracy": 0.58125,
+    "majority_baseline": 0.8645833333333334,
+    "truth_counts": {
+     "CALM_TREND": 119,
+     "SIDEWAYS": 1245,
+     "JUMPY": 76
+    },
+    "pred_counts": {
+     "SIDEWAYS": 924,
+     "CALM_TREND": 56,
+     "JUMPY": 460
+    },
+    "confusion": {
+     "CALM_TREND": {
+      "SIDEWAYS": 56
+     },
+     "SIDEWAYS": {
+      "CALM_TREND": 93,
+      "SIDEWAYS": 796,
+      "JUMPY": 35
+     },
+     "JUMPY": {
+      "SIDEWAYS": 393,
+      "CALM_TREND": 26,
+      "JUMPY": 41
+     },
+     "CRASH": {}
+    },
+    "state_updates": {
+     "UNKNOWN": 285,
+     "JUMPY": 23654,
+     "CALM_TREND": 2563,
+     "SIDEWAYS": 43708
+    },
+    "transitions": 140,
+    "crash": {
+     "realized_crash_starts": 0,
+     "classifier_crash_episodes": 0,
+     "detected": 0,
+     "latency_s": [],
+     "false_episodes": 0
+    },
+    "guard": {
+     "danger_points": 76,
+     "calm_points": 1364,
+     "protection_recall": 0.5394736842105263,
+     "false_restriction": 0.30718475073313783,
+     "recall": {
+      "CALM_TREND": 0.0,
+      "SIDEWAYS": 0.6393574297188755,
+      "JUMPY": 0.5394736842105263,
+      "CRASH": null
+     },
+     "precision": {
+      "CALM_TREND": 0.0,
+      "SIDEWAYS": 0.8614718614718615,
+      "JUMPY": 0.0891304347826087,
+      "CRASH": null
+     }
+    }
+   },
+   "BTCUSDT": {
+    "files": 3,
+    "seconds_with_price": 82096,
+    "price_field": "aggTrade",
+    "eval_points": 1440,
+    "labelled": 1440,
+    "covered": 1440,
+    "coverage": 1.0,
+    "accuracy": 0.6486111111111111,
+    "majority_baseline": 0.8347222222222223,
+    "truth_counts": {
+     "CALM_TREND": 103,
+     "SIDEWAYS": 1202,
+     "JUMPY": 135
+    },
+    "pred_counts": {
+     "SIDEWAYS": 1009,
+     "CALM_TREND": 50,
+     "JUMPY": 381
+    },
+    "confusion": {
+     "CALM_TREND": {
+      "SIDEWAYS": 47,
+      "CALM_TREND": 3
+     },
+     "SIDEWAYS": {
+      "CALM_TREND": 79,
+      "SIDEWAYS": 863,
+      "JUMPY": 67
+     },
+     "JUMPY": {
+      "SIDEWAYS": 292,
+      "JUMPY": 68,
+      "CALM_TREND": 21
+     },
+     "CRASH": {}
+    },
+    "state_updates": {
+     "UNKNOWN": 326,
+     "JUMPY": 22563,
+     "SIDEWAYS": 60069,
+     "CALM_TREND": 2612
+    },
+    "transitions": 142,
+    "crash": {
+     "realized_crash_starts": 0,
+     "classifier_crash_episodes": 0,
+     "detected": 0,
+     "latency_s": [],
+     "false_episodes": 0
+    },
+    "guard": {
+     "danger_points": 135,
+     "calm_points": 1305,
+     "protection_recall": 0.5037037037037037,
+     "false_restriction": 0.23984674329501915,
+     "recall": {
+      "CALM_TREND": 0.02912621359223301,
+      "SIDEWAYS": 0.7179700499168054,
+      "JUMPY": 0.5037037037037037,
+      "CRASH": null
+     },
+     "precision": {
+      "CALM_TREND": 0.06,
+      "SIDEWAYS": 0.8553022794846382,
+      "JUMPY": 0.1784776902887139,
+      "CRASH": null
+     }
+    }
+   },
+   "DOGEUSDT": {
+    "files": 3,
+    "seconds_with_price": 72387,
+    "price_field": "aggTrade",
+    "eval_points": 1440,
+    "labelled": 1440,
+    "covered": 1440,
+    "coverage": 1.0,
+    "accuracy": 0.37222222222222223,
+    "majority_baseline": 0.8881944444444444,
+    "truth_counts": {
+     "JUMPY": 74,
+     "SIDEWAYS": 1279,
+     "CALM_TREND": 82,
+     "CRASH": 5
+    },
+    "pred_counts": {
+     "JUMPY": 847,
+     "SIDEWAYS": 537,
+     "CALM_TREND": 26,
+     "CRASH": 30
+    },
+    "confusion": {
+     "CALM_TREND": {
+      "SIDEWAYS": 19,
+      "CALM_TREND": 2,
+      "JUMPY": 3,
+      "CRASH": 2
+     },
+     "SIDEWAYS": {
+      "JUMPY": 14,
+      "SIDEWAYS": 477,
+      "CALM_TREND": 46
+     },
+     "JUMPY": {
+      "JUMPY": 57,
+      "SIDEWAYS": 753,
+      "CALM_TREND": 34,
+      "CRASH": 3
+     },
+     "CRASH": {
+      "SIDEWAYS": 30
+     }
+    },
+    "state_updates": {
+     "UNKNOWN": 224,
+     "JUMPY": 44940,
+     "SIDEWAYS": 27719,
+     "CALM_TREND": 1285,
+     "CRASH": 1785
+    },
+    "transitions": 146,
+    "crash": {
+     "realized_crash_starts": 2,
+     "classifier_crash_episodes": 2,
+     "detected": 2,
+     "latency_s": [
+      0,
+      0
+     ],
+     "false_episodes": 0
+    },
+    "guard": {
+     "danger_points": 79,
+     "calm_points": 1361,
+     "protection_recall": 0.759493670886076,
+     "false_restriction": 0.6002939015429831,
+     "recall": {
+      "CALM_TREND": 0.024390243902439025,
+      "SIDEWAYS": 0.37294761532447224,
+      "JUMPY": 0.7702702702702703,
+      "CRASH": 0.0
+     },
+     "precision": {
+      "CALM_TREND": 0.07692307692307693,
+      "SIDEWAYS": 0.888268156424581,
+      "JUMPY": 0.06729634002361275,
+      "CRASH": 0.0
+     }
+    }
+   },
+   "SOLUSDT": {
+    "files": 3,
+    "seconds_with_price": 79071,
+    "price_field": "aggTrade",
+    "eval_points": 1440,
+    "labelled": 1440,
+    "covered": 1440,
+    "coverage": 1.0,
+    "accuracy": 0.4131944444444444,
+    "majority_baseline": 0.8979166666666667,
+    "truth_counts": {
+     "CALM_TREND": 105,
+     "SIDEWAYS": 1293,
+     "JUMPY": 41,
+     "CRASH": 1
+    },
+    "pred_counts": {
+     "JUMPY": 755,
+     "SIDEWAYS": 632,
+     "CALM_TREND": 38,
+     "CRASH": 15
+    },
+    "confusion": {
+     "CALM_TREND": {
+      "SIDEWAYS": 32,
+      "CALM_TREND": 6
+     },
+     "SIDEWAYS": {
+      "SIDEWAYS": 560,
+      "CALM_TREND": 60,
+      "JUMPY": 12
+     },
+     "JUMPY": {
+      "CALM_TREND": 39,
+      "SIDEWAYS": 686,
+      "JUMPY": 29,
+      "CRASH": 1
+     },
+     "CRASH": {
+      "SIDEWAYS": 15
+     }
+    },
+    "state_updates": {
+     "UNKNOWN": 313,
+     "JUMPY": 43203,
+     "SIDEWAYS": 35996,
+     "CALM_TREND": 2232,
+     "CRASH": 907
+    },
+    "transitions": 159,
+    "crash": {
+     "realized_crash_starts": 1,
+     "classifier_crash_episodes": 1,
+     "detected": 1,
+     "latency_s": [
+      0
+     ],
+     "false_episodes": 0
+    },
+    "guard": {
+     "danger_points": 42,
+     "calm_points": 1398,
+     "protection_recall": 0.7142857142857143,
+     "false_restriction": 0.5293276108726752,
+     "recall": {
+      "CALM_TREND": 0.05714285714285714,
+      "SIDEWAYS": 0.43310131477184843,
+      "JUMPY": 0.7073170731707317,
+      "CRASH": 0.0
+     },
+     "precision": {
+      "CALM_TREND": 0.15789473684210525,
+      "SIDEWAYS": 0.8860759493670886,
+      "JUMPY": 0.038410596026490065,
+      "CRASH": 0.0
+     }
+    }
+   }
+  },
+  "definition": "state at t vs ex-post label of (t, t+900s], every 60s",
+  "pooled": {
+   "covered": 5760,
+   "accuracy": 0.5038194444444445,
+   "majority_baseline": 0.8713541666666667,
+   "guard": {
+    "danger_points": 332,
+    "calm_points": 5428,
+    "protection_recall": 0.5993975903614458,
+    "false_restriction": 0.42170228445099484,
+    "recall": {
+     "CALM_TREND": 0.02689486552567237,
+     "SIDEWAYS": 0.5371587965730226,
+     "JUMPY": 0.598159509202454,
+     "CRASH": 0.0
+    },
+    "precision": {
+     "CALM_TREND": 0.06470588235294118,
+     "SIDEWAYS": 0.869116698903933,
+     "JUMPY": 0.07981989357347523,
+     "CRASH": 0.0
+    }
+   }
+  },
+  "verdict": "accuracy 0.504 vs majority baseline 0.871 on 5760 points"
+ },
+ "proposals": [
+  "Slippage sample below 30 round trips: no change to the 8.5 bps model is supported.",
+  "Regime classifier does not beat the majority-class baseline in this window: keep it out of order flow; any threshold change needs pre-registration and a time-separated test.",
+  "The classifier is restrictive on 42% of calm-labelled points (protection recall 0.599). Candidate for a pre-registered change tested on unseen dates (e.g. the 4.5-sigma tail memory), not for tuning on this window."
+ ],
+ "read_only": "report files only; no code, config, profile, tunable or execution parameter is written"
+}

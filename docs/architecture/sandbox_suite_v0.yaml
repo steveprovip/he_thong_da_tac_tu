@@ -71,6 +71,7 @@ families:
     count: 50
     stage: P5
     generator: narrative_shock
+    source: template                  # D7 2026-10-24: internal Monte Carlo templates only, no MiroFish run
     by_type: {seeds_5_x_intensity_2_x_expansion_5: 50}
     seeds: [exchange_hack_rumor, etf_decision, macro_surprise_cpi, token_unlock, regulatory_crackdown]
 

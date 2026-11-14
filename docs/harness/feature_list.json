@@ -294,6 +294,155 @@
       ],
       "status": "done",
       "evidence": "tests red first (ImportError) then 19 passed; python -m pytest -q 1627 passed / 0 failed / 0 errors (124.1 s, junitxml); no runtime module imports core.invariants"
+    },
+    {
+      "id": "invariants-wiring-p0b-20261024",
+      "name": "P0b: invariants wired into Engine.__init__ and core.runtime (D1), JEV-lift labels on every entry (D4), L2 recorder launcher (D5), template sandbox decision (D7)",
+      "description": "core/engine.py (jev_lift, Engine.__init__ checks, consensus/jev_lift on order log + positions + ledger, VESKA JEV-LIFT label), core/runtime.py (mainnet refusal), tools/ledger_audit.py (by_jev_lift), scripts/GHI_BANG_L2.bat, tests/test_invariants_lock.py (+13)",
+      "dependencies": [
+        "invariants-lock-p0a-20261024"
+      ],
+      "status": "done",
+      "evidence": "13 new tests red first then 32 passed; python -m pytest -q 1640 passed / 0 failed / 0 errors (125.2 s, junitxml); engine_replay SOL agg 6 h identical to 91ad6ff (93,003 msgs, 0 positions); not committed (waits for approval)"
+    },
+    {
+      "id": "demo-active-micro-lane-20261024",
+      "name": "DEMO ACTIVE: micro lane SOL/DOGE + chop scalper on (also under router CHOP), score floors at the 0.768 quorum, fixed MR bracket, Kelly window 20 (owner decision, data collection)",
+      "description": "core/engine.py (Profile scalp_min_score / kelly_window / chop_router_scalp / scalp_only, chop_scalp side+score check, _tick SCALP_ONLY stage, radar label, demo block), core/autonomy.py (router CHOP -> scalp only), core/exec_funnel.py, tests/conftest.py (micro tests keep their gates), tests/test_demo_active_2026_10_24.py (+8), 3 assertions on the shipped demo updated",
+      "dependencies": [
+        "invariants-wiring-p0b-20261024"
+      ],
+      "status": "done",
+      "evidence": "pytest full suite: see docs/harness/session-handoff.md 6C 2026-10-24 (d); replay AB-44 SOL agg 3 d: A 0 positions, B 325 SCALP -6.71 bps/trade CI95 [-7.87, -5.57], gross -1.78 bps before fees, paired B WORSE (significant after deflation) -> continuous fills, no positive expectancy; not committed"
+    },
+    {
+      "id": "autoresearch-smc-20261106",
+      "name": "Karpathy/ATLAS autoresearch loop (8 forecasters, pinball walk-forward, git-gated mutations) + SMC detectors in the NORO/TIDAL feature pipeline",
+      "description": "scripts/autoresearch_agent_swarm.py, core/smc.py, research/smc_backtest.py, tests/test_autoresearch_swarm.py, tests/test_smc.py; core/real_alpha_engine.py (Features.smc_*, AlphaEngine.smc); core/groktopus_swarm.py (smc_noro / smc_tidal default 0.0). Consensus integration is veto-only (tunables swarm_weights -> Autonomy.demote); WEIGHTS, 0.768 / 0.70, RUNE veto and TokenAuthority unchanged.",
+      "dependencies": ["invariants-lock-p0a-20261024"],
+      "status": "done",
+      "evidence": "2026-11-06. python -m pytest -q 1669 passed, 0 failed (baseline 1651, 18 new). Autoresearch dry run on real L2 2026-09-08 (BTC/SOL/BNB/LINK, 666 train / 286 holdout points, 40 rounds): 21 kept, train 4.759 -> 4.493 bps, holdout 6.224 -> 6.480 bps, zero-signal baseline 5.925 beats every agent -> overfit, proposal not publishable. SMC event study, 6 months of 1m klines per symbol in 3.4-3.5 s: holdout |gross| <= 0.97 / 2.56 / 3.98 bps (BTC / ETH / SOL) vs 8.5 bps cost -> no edge, weights stay 0. Not committed; engine not started; no order."
+    },
+    {
+      "id": "autoresearch-net-ev-klines-20261106",
+      "name": "Net-EV autoresearch on 22 months of 1m klines (BTC/SOL/DOGE/BNB): maker trade-through / IOC / dynamic fills, holdout scored once, PSR/DSR",
+      "description": "scripts/autoresearch_agent_swarm.py --source klines (TradeAgent, trade_eval, portfolio, perf, run_trade); tests/test_autoresearch_swarm.py (+5). Reports data/autoresearch_trade_report_{maker,ideal,dynamic,ioc}.json (git-ignored).",
+      "dependencies": ["autoresearch-smc-20261106"],
+      "status": "done",
+      "evidence": "2026-11-06. python -m pytest -q 1674 passed, 0 failed. 1203 configs over 4 fill pivots x 300 rounds; train 467 d, holdout 200 d after a 240-min embargo. No config meets net > 0 + Sharpe >= 1.8 + PSR >= 0.95 + DSR >= 0.95; best DSR (null variance) 0.061. Holdout portfolio Sharpe maker 0.74, ideal -1.67, dynamic -6.15, ioc -2.50. Same agent across fills (1698 holdout trades): ideal -11.47, maker -13.13, dynamic -14.86, IOC -19.82 bps/trade. Targets not met; limits documented in the 6C handoff 2026-11-06b. Not committed; engine not started; no order."
+    },
+    {
+      "id": "tick-replay-pyarrow-port-20261107",
+      "name": "PyArrow tick replay loader ported from F:/factory-quant-opt (24.8M aggTrades, maker trade-through fills)",
+      "description": "tools/replay_tick_alpha.py and tests/test_replay_tick_alpha.py, byte-identical ports. Data is not in this checkout: run with --data-dir F:/factory-quant-opt/data/ticks (this repo does not git-ignore data/ticks/).",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-07. 9 tests pass. Re-measured here, three runs: 24,835,929 ticks in 17.91 / 17.87 / 18.00 s in-tool (load 7.18-7.38 s, analysis 10.63-10.73 s), 18.30-18.45 s process wall; claimed 17.685 s. Ledger identical to the factory JSON (11 rows, all net-negative after 8.5 bps). Not committed; engine not started; no order."
+    },
+    {
+      "id": "regime-classifier-4state-20261107",
+      "name": "4-state market regime classifier (CALM_TREND / SIDEWAYS / JUMPY / CRASH + UNKNOWN) wired into regime_permit and market_risk; tighten-only",
+      "description": "core/regime_classifier.py: causal state machine (GARCH(1,1) from core/market_risk.py over a 6 h EWMA baseline, 15-min efficiency ratio with the 0.38/0.42 KER band, 5-min crash move 150/300 bps). A stricter state applies at once; a looser one waits 60 s; CRASH has a 15-min cooldown. Policies: JUMPY size x0.5 / stop x1.5 / edge x1.5; SIDEWAYS mean-reversion only, stop/TP x0.75; CRASH no directional entry, flatten, carry only. UNKNOWN stays fail-closed except a clean demo cold-start WARMUP for an eligible SWARM_OVERRIDE; DATA_GAP and INVALID_INPUT remain blocked. The demo profile uses a 60 s trend window, 5 s ER buckets and a 45 s ER span; the first clean known state activates when its windows fill. core/regime_permit.fast_hands_permit(market_regime=None, style=None) is opt-in and checked after CARRY. core/market_risk.escalate / assess(regime=): CRASH makes it TOXIC and blocked. Not consumed by the engine. tests/test_regime_classifier.py (21).",
+      "dependencies": [
+        "invariants-lock-p0a-20261024"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. With market_regime=None the permit is identical to HEAD on 378,000 input combinations; escalate never clears a block (exhaustive test); check_consensus / check_token_authority = []. Backfill 2026-09-01..14 (public aggTrades, 4 symbols, 80,537 points): accuracy 0.535 vs majority baseline 0.878. JUMPY over-triggers (38.8% predicted vs 5.4% labelled; 4.5-sigma tail memory). Guard view: protection recall 0.559 at false restriction 0.385; CRASH 29/29 caught, 0 false. Not time-separated (these days were used to develop v0). Keep it out of order flow; v1 must be pre-registered. 2026-11-08 regression: demo first known regime at 45 s in the configured clean-start simulation; fault recovery remains confirmed. Clean WARMUP override, DATA_GAP, INVALID_INPUT and crash cases are covered by tests/test_swarm_override.py. No new replay or live order."
+    },
+    {
+      "id": "hrp-alpha-sleeves-20261107",
+      "name": "HRP port (core/portfolio_hrp.py, + hrp_allocate) and TIDAL-60 maker vs XV carry allocation study with re-derived claims",
+      "description": "core/portfolio_hrp.py: the factory hrp_proposal (alpha-agent budget 0.60, 10-30 %) plus a general hrp_allocate (N >= 2 sleeves). research/hrp_alpha_sleeves.py: offline reproduction of TIDAL-60 (autoresearch klines, maker), XV HEDGE|H28|k2 (tools/funding_spread_replay.py), and the 8-agent meta-portfolio; daily sleeve series (XV daily mark-to-market); HRP fitted on 2025-01-01..2026-03-14 and applied to 2026-03-15..09-30. tests/test_portfolio_hrp.py (10). Snapshot: docs/research_upgrade/snapshot_2026-11-07_hrp_sleeves/.",
+      "dependencies": [
+        "autoresearch-net-ev-klines-20261106"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. hrp_proposal identical to the factory version on 285 random cases. Claims reproduced as arithmetic, not as edge: TIDAL-60 316 trades +8.3347 bps (train 3,849 trades at -6.31 bps; picked after 1,406 trials, OOS DSR 0.0027; contrarian config coef -0.15, 44 bars); XV 153 rounds +14.59 bps per 28-day round (1.90 %/yr on notional; refreshed cache 165 / +16.01); -1.5148 bps/day is the 8-agent meta-portfolio (LUMEN-240 alone -1.897). HRP weights TIDAL 0.05 % / XV 99.95 %; evaluation +0.611 bps/day, Sharpe 5.07, max DD 8.6 bps, about XV alone. No weight or size applied. Not committed."
+    },
+    {
+      "id": "nightly-audit-20261107",
+      "name": "Read-only nightly audit at 00:00 UTC: realized slippage vs the 8.5 bps model and regime-classifier accuracy over the last 24 h",
+      "description": "tools/nightly_audit.py writes only docs/research_upgrade/nightly_reviews/nightly_<day>.{json,md}. Slippage per round trip from data/engine_trades.jsonl (entry vs venue_mid, exit vs exit_ref, fee_bps; missing fields are UNKNOWN). Regime accuracy compares the causal state with ex-post 15-min labels on per-second prices (data/recordings, data/l2 or --ticks-dir), against the majority baseline, plus protection recall / false restriction and CRASH latency. Text proposals are never applied. tests/test_nightly_audit.py (9).",
+      "dependencies": [
+        "regime-classifier-4state-20261107"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. Window 2026-11-06: UNKNOWN for both sections (no ledger rows since 2026-10-24 12:41; no data/recordings). Backfill 2026-10-09: 15 DEMO round trips, all-in +8.20 bps (n 14, CI95 +5.94..+11.57) vs 8.5; fees +4.14 vs 7.0, slippage +4.20 vs 1.5; n < 30, so no inference. No OS scheduled task registered (owner decision). Not committed."
+    },
+    {
+      "id": "carry-lane-bn-hl-pillar1-20261107",
+      "name": "Pillar 1: delta-neutral funding-carry lane Binance USD-M <-> Hyperliquid (shadow / paper only)",
+      "description": "research/carry_lane.py: per-interval funding normalization and real-time gross/net APR; entry_signal (the replay's XV H28|k2 rule with the 8.5 bps hurdle); KillSwitch before every risk-increasing order (15 % drawdown, sticky); LiquidationGuard (pair-level OK/BLOCK_ENTRY/DERISK/CLOSE, L <= 2, UNKNOWN fails closed); FundingLedger; DualLegExecutor (post-only maker leg, IOC limit hedge per fill increment, reduce-only unwind, BROKEN halts); CarryLane shadow/paper ('live' raises). core/venues/paper.py: in-memory perp venue. core/funding_executor.py: the 4 h Binance interval fix in quotes_from / fetch_quotes. tests/test_carry_lane.py (17).",
+      "dependencies": [
+        "hrp-alpha-sleeves-20261107"
+      ],
+      "status": "in_progress",
+      "evidence": "2026-11-07. Baseline 1723 passed. The 18-35 % APR claim is the instantaneous spread annualized; on 2026-01..09 the median instantaneous spread was 5.5 % APR and realized net XV carry 1.90 %/yr. The 4 h bug (ENA/HYPE/TAO) flipped the short venue on 37-44 % of prints in the shadow telemetry. entry_signal reproduces the replay's entries exactly on BTC/TAO/WLD. Executor tested on paper venues: hedged, partial, starved hedge -> unwind, BROKEN -> halt, kill switch before every order. Not wired into the engine; no Hyperliquid client; no live mode. Not committed."
+    },
+    {
+      "id": "toxicity-guard-pillar3-20261107",
+      "name": "Pillar 3: GTX quote toxicity guard (VPIN > 0.65 halt, 1/5/30 s tape and own-fill markouts -> hold / skew / pull)",
+      "description": "core/toxicity_guard.py (TapeMarkouts, ToxPolicy, decide); MicroFeed features maker_markout; core/engine.py _execute TOX HOLD / SKEW / PULL (before any token), Profile tox_* (demo 'on', live 'off'); exec_funnel TOX_HOLD / TOX_PULL; tests/test_toxicity_guard.py (10).",
+      "dependencies": [
+        "invariants-lock-p0a-20261024"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. 10 tests: hold spends no token, skew rests 1 tick behind, pull while resting, shadow/off unchanged. Oct 1-14: VPIN > 0.65 time share SOL 19.7 % / BNB 18.0 % / BTC 10.6 % / DOGE 4.4 %; tape markout triggers <= 2 %. Takes effect on the owner's next demo restart. Not committed."
+    },
+    {
+      "id": "regime-gate-rc1-pillar2-20261107",
+      "name": "Pillar 2: RC-1 tuned classifier v1 (pre-registered, PASS on unseen days) wired into core/engine.py as an entry gate + CRASH flatten",
+      "description": "core/regime_classifier.py tail_z / tail_count / crash_tail_* (CRASH decoupled), JUMPY size x0.3; research/regime_v1_eval.py; tools/download_public_l2.py; core/engine.py regime_check / regime_crash / _tick update / CRASH close, Profile regime_* (demo 'on' with v1, live 'off'); core/trend_executor.py CRASH guard; tests/test_regime_gate.py (21).",
+      "dependencies": [
+        "regime-classifier-4state-20261107"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. RC-1 pre-registered 11:50:06 UTC; one run on 2026-10-01..14: v1 JUMPY false alarm 1.0 % (v0 17.2 %), CRASH 18/18 false 0, protection recall 0.085 > false restriction 0.013; limits: JUMPY recall 0.049, accuracy 0.814 < majority 0.858. Takes effect on the owner's next demo restart. Not committed."
+    },
+    {
+      "id": "cockpit-ui-carry-sim-20261107",
+      "name": "Single-screen 100vh cockpit (web_ui) + 10 bps demo-only scalp edge floor + simulated BN/HL carry book in the demo funding loop",
+      "description": "web_ui/index.html, style.css, app.js rewritten (3 columns 24/46/30, no page scroll, CSP-clean; scanner radar, quant chips, SCAN counters and the 09 analytics kept); web_ui/terminal.js gauge radius clamp + resilient frame loop; core/engine.py Profile scalp_min_edge_bps 10 in demo and 18 in live (EDGE_LOW, 'EDGE TOO LOW FOR FEES') and carry_sim (demo on, live off) stepping research/carry_lane.CarrySim in Runner.funding_loop (telemetry carry_lane); core/venues/paper.py auto_fill; tests/test_cockpit_carry.py. The edge floor is a modeled filter and does not establish positive expected realized post-fee payoff without calibration.",
+      "dependencies": [
+        "carry-lane-bn-hl-pillar1-20261107",
+        "toxicity-guard-pillar3-20261107"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. Browser 1920x1080: no page scroll, 0 cards overflowing, no JS exception. Full pytest: 1790 passed, 0 failed, 0 errors, 0 skipped, 130.7 s (1780 before + 10 new; no previous test name missing). A one-line terminal.js fix made after that run (an inline comment had swallowed the OBI arc colour) was re-checked with the 87 UI-related tests (pass) and in the browser (emerald arc at 0.55 alpha). Prior 18 bps floor results were not calibrated: 3 of 6 losing demo scalps were blocked and the 3 at or above 18 bps also lost. CarrySim uses the unvalidated RFC rule (replay 1.90 %/yr). 2026-11-08: demo scalp floor is 10 bps; live remains 18 bps. The 10 bps setting is only a modeled threshold and does not guarantee positive expected realized payoff after fees. Cockpit preview at 1920x1080 measured 1920x1080 document bounds with no scroll; sample warmup telemetry rendered WARMUP 35s/45s. Full suite: 1819 passed, 0 failed. Takes effect on the owner's next demo restart. Not committed."
+    },
+    {
+      "id": "scalp-net-rr-gate-20261107",
+      "name": "SCALP entries pass the ZEPHR net-RR gate (no exemption)",
+      "description": "core/engine.py Profile scalp_net_rr (demo/live True): chop_scalp refuses 'on' scalps whose bracket rr_net < net_rr_min (RR_LOW, rate-limited ZEPHR event); order-path ZEPHR check without the SCALP exemption; gated SCALP row in lane_feasibility; tests/test_scalp_net_rr_gate.py (6); experiment register SCALP-RR-1.",
+      "dependencies": [
+        "cockpit-ui-carry-sim-20261107"
+      ],
+      "status": "done",
+      "evidence": "2026-11-07. Shipped bracket TP 0.08 / SL 0.12 % -> rr_net 0.20 < 1.30: every 'on' scalp refused (scalper inert). Prior AB-44 DEMO ACTIVE worse (-0.111 U/h). Full pytest: 1796 passed, 0 failed, 0 errors, 0 skipped, 132.6 s (1790 before + 6 new; no previous test name missing). The 10-minute event rate limit landed while that run was starting; the 6 gate tests were re-run after it (pass). Takes effect on the owner's next demo restart. Not committed."
+    },
+    {
+      "id": "swarm-chop-override-carry-rotation-20261108",
+      "name": "Demo high-consensus CHOP override, RR-qualified scalps, hourly carry rotation and basis eject",
+      "description": "core/engine.py + core/exec_funnel.py: demo-only SWARM_OVERRIDE at raw consensus >= 0.80; keeps the 0.768 quorum, all churn/risk checks, RUNE/VESKA and token authorization; skips the regime style match outside CRASH/UNKNOWN. Demo regime window is 300 s (ER span 240 s). SIDEWAYS SCALP TP is floored by (new_sl + 0.08) * net_rr_min + 0.04 so fee-true RR stays >= 1.30. GTX override bracket TP 0.50 % / SL <= 0.25 %. research/carry_lane.CarrySim keeps <= -3 bps basis eject and hourly top-three net-APR rotation with 1000PEPE/WLD tie priority. Cockpit surfaces override radar and rotation state.",
+      "dependencies": ["scalp-net-rr-gate-20261107", "cockpit-ui-carry-sim-20261107"],
+      "status": "done",
+      "evidence": "2026-11-08. Full repository suite via Git Bash ./init.sh: 1813 passed, 0 failed in 132.07 s. The four execution blockers have regression coverage, including six directional votes at 81.1 %, refusal below 80 %, SIDEWAYS override vs CRASH/UNKNOWN, 300 s classifier warmup, and SIDEWAYS scalp RR = 1.30. `git diff --check` and strict 6-section handoff validation pass. The script's second F:/AI_Agent_Toolkit pytest step cannot start because that separate interpreter has no pytest; the project Python collected no tests under its tools directory. No order, restart or commit. Carry thresholds remain unvalidated, not expectancy evidence."
+    },
+    {
+      "id": "scalp-trend-lock-bracket-20261108",
+      "name": "SCALP macro / CVD / ALIGN3 lock, 0.15 % stop floor, net RR 1.35, 45 s EJECT-BE",
+      "description": "Chop scalps may not fight the 5 m macro, the CVD regime or CVD 3 m (+-$50k); 'on' scalps need every ALIGN3 layer; the scalp SL is floored at 0.15 % after regime scaling with TP lifted to fee-true net RR 1.35; EJECT-BE at 45 s.",
+      "dependencies": ["scalp-net-rr-gate-20261107", "swarm-chop-override-carry-rotation-20261108"],
+      "status": "done",
+      "evidence": "2026-11-08. Full suite 1832 passed, 0 failed (baseline 1819); 13 new tests including the two 11-08 SOL SCALP entries refused on CVD 3 m. Behaviour tests only; no replay or P&L claim. No restart, order or commit."
+    },
+    {
+      "id": "scalp-floor-resize-20261108",
+      "name": "SCALP size shrinks with the 0.15 % stop floor",
+      "description": "When scalp_sl_min_pct widens the scalp stop, size x (unfloored stop + fees) / (floored stop + fees) so the loss at the stop stays at the pre-floor level (SIDEWAYS x0.739); below the venue minimum the scalp is refused; ledger field scalp_risk_mult.",
+      "dependencies": ["scalp-trend-lock-bracket-20261108"],
+      "status": "done",
+      "evidence": "2026-11-08. Full suite 1834 passed, 0 failed; tests/test_scalp_trend_lock.py 15 passed. Behaviour tests only; equal loss under the repo fee model. No restart, order or commit."
     }
   ]
 }

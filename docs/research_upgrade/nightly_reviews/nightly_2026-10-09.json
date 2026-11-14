@@ -1,0 +1,106 @@
+{
+ "schema": "nightly_audit/1",
+ "window_utc": [
+  "2026-10-09 00:00",
+  "2026-10-10 00:00"
+ ],
+ "day": "2026-10-09",
+ "generated_utc": "2026-11-07T08:44:32Z",
+ "ledger": "F:\\he_thong_da_tac_tu_2\\data\\engine_trades.jsonl",
+ "slippage": {
+  "rows": 15,
+  "modes": {
+   "demo": 15
+  },
+  "venues": {
+   "BINANCE DEMO": 15
+  },
+  "model_bps": {
+   "all_in": 8.5,
+   "fees": 7.0,
+   "slippage": 1.5
+  },
+  "all_in_bps": {
+   "n": 14,
+   "unknown": 1,
+   "mean": 8.197164678456776,
+   "median": 7.173735534426074,
+   "p90": 10.272278863851618,
+   "ci95_mean": [
+    5.942438886778318,
+    11.57339957297853
+   ]
+  },
+  "fee_bps": {
+   "n": 15,
+   "unknown": 0,
+   "mean": 4.1352885462846904,
+   "median": 4.000486542443064,
+   "p90": 4.003042371230597,
+   "ci95_mean": [
+    4.000400173523881,
+    4.404358939588223
+   ]
+  },
+  "entry_slip_bps": {
+   "n": 15,
+   "unknown": 0,
+   "mean": 0.9097373995600062,
+   "median": 0.45287803994343123,
+   "p90": 1.9061848172397697,
+   "ci95_mean": [
+    0.24219753348926834,
+    1.8217344941157596
+   ]
+  },
+  "exit_slip_bps": {
+   "n": 14,
+   "unknown": 1,
+   "mean": 3.1888768826911402,
+   "median": 2.391432175443054,
+   "p90": 6.135840204371456,
+   "ci95_mean": [
+    1.323134694939656,
+    5.767035025475185
+   ]
+  },
+  "slippage_bps": {
+   "n": 14,
+   "unknown": 1,
+   "mean": 4.196299417494107,
+   "median": 3.1723761552049483,
+   "p90": 6.271642114650634,
+   "ci95_mean": [
+    1.9412447740326746,
+    7.572249430449413
+   ]
+  },
+  "by_entry_type": {
+   "GTX": {
+    "n": 14,
+    "unknown": 1,
+    "mean": 8.197164678456776,
+    "median": 7.173735534426074,
+    "p90": 10.272278863851618,
+    "ci95_mean": [
+     5.942438886778318,
+     11.57339957297853
+    ]
+   }
+  },
+  "verdict": "UNKNOWN: n=14 < 30, no inference"
+ },
+ "regime": {
+  "source": null,
+  "dir": null,
+  "symbols": {},
+  "definition": "state at t vs ex-post label of (t, t+900s], every 60s",
+  "verdict": "UNKNOWN: no price source (data/recordings, data/l2 or --ticks-dir) for the window"
+ },
+ "proposals": [
+  "Slippage sample below 30 round trips: no change to the 8.5 bps model is supported.",
+  "1 round trip(s) have no exit_ref (exchange stop/TP exits); recording the trigger price would make their exit slippage measurable.",
+  "No prices were recorded for the window: run scripts\\GHI_BANG_L2.bat (public streams, no keys) so the next audit can score the classifier."
+ ],
+ "read_only": "report files only; no code, config, profile, tunable or execution parameter is written"
+}

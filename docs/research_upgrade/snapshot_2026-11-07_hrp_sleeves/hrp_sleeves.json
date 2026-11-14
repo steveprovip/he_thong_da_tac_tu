@@ -1,0 +1,359 @@
+{
+ "generated_utc": "2026-11-07T08:27:22Z",
+ "inputs": {
+  "agents_json": "F:\\he_thong_da_tac_tu_2\\docs\\research_upgrade\\snapshot_2026-11-07_hrp_sleeves\\factory_maker_agents.json",
+  "agents_json_sha256": "36c193e4190ed4c26e8a7336d173139ad242a7859e458e5f73808eebbf388cfd",
+  "klines_dir": "F:\\he_thong_da_tac_tu_2\\data\\klines_1m",
+  "symbols": [
+   "BTCUSDT",
+   "SOLUSDT",
+   "DOGEUSDT",
+   "BNBUSDT"
+  ],
+  "months": [
+   "2024-12",
+   "2025-01",
+   "2025-02",
+   "2025-03",
+   "2025-04",
+   "2025-05",
+   "2025-06",
+   "2025-07",
+   "2025-08",
+   "2025-09",
+   "2025-10",
+   "2025-11",
+   "2025-12",
+   "2026-01",
+   "2026-02",
+   "2026-03",
+   "2026-04",
+   "2026-05",
+   "2026-06",
+   "2026-07",
+   "2026-08",
+   "2026-09"
+  ],
+  "funding_cache": "F:\\he_thong_da_tac_tu_2\\data\\funding_cache",
+  "xv_variant": {
+   "kind": "XV",
+   "h_days": 28,
+   "k": 2.0,
+   "mode": "HEDGE"
+  },
+  "xv_slots": 18
+ },
+ "split_ms": {
+  "train": [
+   1733184000000,
+   1773524160000
+  ],
+  "holdout": [
+   1773538560000,
+   1790812800000
+  ],
+  "matches_factory_report": true
+ },
+ "reproduced": {
+  "TIDAL-60": {
+   "claimed": {
+    "trades": 316,
+    "mean_net_bps": 8.33
+   },
+   "derived": {
+    "trades": 316,
+    "mean_net_bps": 8.334708590722723,
+    "sharpe_ann": 1.7276040909791166,
+    "trades_per_day": 1.58,
+    "days": 200
+   },
+   "train_trades": 3849,
+   "train_mean_net_bps": -6.307306918492685,
+   "config": {
+    "name": "TIDAL-60",
+    "family": "TIDAL",
+    "lookback": 2880,
+    "signal": 211,
+    "coef": -0.1515432846229953,
+    "hurdle": 1.2459498292917908,
+    "horizon": 44
+   },
+   "dsr_holdout_null_claimed": 0.0027456975125884076,
+   "dsr_trials": 1406,
+   "status": "REPRODUCED (arithmetic only; not evidence of edge)"
+  },
+  "XV": {
+   "claimed": {
+    "n": 153,
+    "mean_net_bps": 14.6
+   },
+   "unit": "bps per 28-day round on notional per leg",
+   "derived_original_end": {
+    "n": 153,
+    "mean_net_bps": 14.589851978418233,
+    "ci95_day": [
+     9.167398940722578,
+     19.924020364206633
+    ],
+    "ci95_month": [
+     9.670893011130365,
+     20.421953636109066
+    ],
+    "win_rate": 0.7058823529411765,
+    "funding_bps": 29.32194156862745,
+    "basis_bps": 0.2679104097907823,
+    "basis_sd_bps": 6.608997762091832,
+    "cost_bps": 15.0,
+    "apr_on_notional_pct": 1.901891418615234,
+    "coins": 18
+   },
+   "derived_refreshed_cache": {
+    "holdout": {
+     "n": 165,
+     "mean_net_bps": 16.011197207653005,
+     "ci95_day": [
+      10.895012123738613,
+      21.19509934272219
+     ],
+     "ci95_month": [
+      9.991729080270428,
+      22.837448342488084
+     ],
+     "win_rate": 0.7272727272727273,
+     "funding_bps": 30.605610115151517,
+     "basis_bps": 0.4055870925014879,
+     "basis_sd_bps": 6.684511253640521,
+     "cost_bps": 15.0,
+     "apr_on_notional_pct": 2.0871739217119094,
+     "coins": 18
+    },
+    "dev": {
+     "n": 196,
+     "mean_net_bps": 28.763887003143413,
+     "ci95_day": [
+      20.095190859921843,
+      38.39364161436395
+     ],
+     "ci95_month": [
+      15.734275804054525,
+      44.99544308170025
+     ],
+     "win_rate": 0.7704081632653061,
+     "funding_bps": 42.14907994897959,
+     "basis_bps": 1.6148070541638153,
+     "basis_sd_bps": 8.542643880661073,
+     "cost_bps": 15.0,
+     "apr_on_notional_pct": 3.749578127195481,
+     "coins": 18
+    },
+    "holdout2": {
+     "n": 1,
+     "mean_net_bps": 20.65192208779807,
+     "ci95_day": [
+      20.65192208779807,
+      20.65192208779807
+     ],
+     "ci95_month": [
+      20.65192208779807,
+      20.65192208779807
+     ],
+     "win_rate": 1.0,
+     "funding_bps": 31.684067000000006,
+     "basis_bps": 3.9678550877980667,
+     "basis_sd_bps": 0.0,
+     "cost_bps": 15.0,
+     "apr_on_notional_pct": 2.692125557873677,
+     "coins": 1
+    }
+   },
+   "status": "REPRODUCED (arithmetic only; not evidence of edge)"
+  },
+  "meta_portfolio": {
+   "claimed_daily_bps": -1.51,
+   "derived": {
+    "days": 200,
+    "mean_bps_day": -1.5148208085200252,
+    "sd_bps_day": 18.616424342996368,
+    "sharpe_ann": -1.5545740888691109,
+    "lag1_autocorr": -0.24481706101112236,
+    "total_bps": -302.964161704005,
+    "max_drawdown_bps": 339.43528888533996,
+    "worst_day_bps": -87.13480100998538,
+    "active_days": 200
+   },
+   "contribution_bps_day_by_agent": {
+    "NORO-15": 0.3104133481575927,
+    "NORO-60": 0.6013739212215048,
+    "NORO-240": 0.0,
+    "LUMEN-15": -0.03299201956042627,
+    "LUMEN-60": -0.009173328560069192,
+    "LUMEN-240": -1.8974798199811822,
+    "TIDAL-60": 0.0961135214082423,
+    "TIDAL-240": -0.5830764312056869
+   },
+   "weights": {
+    "NORO-15": 2.5,
+    "NORO-60": 2.5,
+    "NORO-240": 1.5760043907406451,
+    "LUMEN-15": 0.3,
+    "LUMEN-60": 0.3,
+    "LUMEN-240": 2.5,
+    "TIDAL-60": 0.3,
+    "TIDAL-240": 0.3
+   },
+   "status": "REPRODUCED (arithmetic only; not evidence of edge)"
+  }
+ },
+ "xv_mtm_max_abs_gap_bps": 9.947598300641403e-14,
+ "hrp": {
+  "estimation_window": [
+   "2025-01-01",
+   "2026-03-14"
+  ],
+  "evaluation_window": [
+   "2026-03-15",
+   "2026-09-30"
+  ],
+  "weights": {
+   "TIDAL-60": 0.0005177818009094448,
+   "XV": 0.9994822181990906
+  },
+  "observations": 438,
+  "order": [
+   "TIDAL-60",
+   "XV"
+  ],
+  "estimation_stats": {
+   "TIDAL-60": {
+    "days": 438,
+    "mean_bps_day": -16.38079039882873,
+    "sd_bps_day": 122.81191790091522,
+    "sharpe_ann": -2.548242601340394,
+    "lag1_autocorr": -0.06337061801683727,
+    "total_bps": -7174.786194686985,
+    "max_drawdown_bps": 7286.90883170278,
+    "worst_day_bps": -1190.08376438967,
+    "active_days": 266
+   },
+   "XV": {
+    "days": 438,
+    "mean_bps_day": 0.8251025401847386,
+    "sd_bps_day": 2.7952867664723486,
+    "sharpe_ann": 5.639336216072802,
+    "lag1_autocorr": -0.0016646939310466867,
+    "total_bps": 361.3949126009156,
+    "max_drawdown_bps": 12.578053381130857,
+    "worst_day_bps": -7.769062151843677,
+    "active_days": 438
+   }
+  },
+  "estimation_correlation": -0.07969102557415116,
+  "walk_forward_weights_by_month": {
+   "2026-03": {
+    "TIDAL-60": 0.0005177818009094448,
+    "XV": 0.9994822181990906
+   },
+   "2026-04": {
+    "TIDAL-60": 0.0005239993343311156,
+    "XV": 0.9994760006656689
+   },
+   "2026-05": {
+    "TIDAL-60": 0.0005375055949690122,
+    "XV": 0.999462494405031
+   },
+   "2026-06": {
+    "TIDAL-60": 0.0005667916116361971,
+    "XV": 0.9994332083883638
+   },
+   "2026-07": {
+    "TIDAL-60": 0.0005629610866916268,
+    "XV": 0.9994370389133084
+   },
+   "2026-08": {
+    "TIDAL-60": 0.0005700476355139372,
+    "XV": 0.9994299523644861
+   },
+   "2026-09": {
+    "TIDAL-60": 0.0005984611511630211,
+    "XV": 0.999401538848837
+   }
+  }
+ },
+ "evaluation": {
+  "TIDAL-60 only": {
+   "days": 200,
+   "mean_bps_day": 3.2922098933354764,
+   "sd_bps_day": 36.40740492892188,
+   "sharpe_ann": 1.7276040909791166,
+   "lag1_autocorr": 0.17494051163964353,
+   "total_bps": 658.4419786670953,
+   "max_drawdown_bps": 193.81798957053184,
+   "worst_day_bps": -98.13834965661329,
+   "active_days": 40
+  },
+  "XV only": {
+   "days": 200,
+   "mean_bps_day": 0.6091425800122653,
+   "sd_bps_day": 2.3009076569154034,
+   "sharpe_ann": 5.057852980596168,
+   "lag1_autocorr": -0.12296478365653529,
+   "total_bps": 121.828516002453,
+   "max_drawdown_bps": 8.608892921393021,
+   "worst_day_bps": -5.383305458609257,
+   "active_days": 200
+  },
+  "equal 50/50": {
+   "days": 200,
+   "mean_bps_day": 1.9506762366738706,
+   "sd_bps_day": 18.271371064498087,
+   "sharpe_ann": 2.0396727230987435,
+   "lag1_autocorr": 0.17690564484556914,
+   "total_bps": 390.1352473347744,
+   "max_drawdown_bps": 88.41670935281667,
+   "worst_day_bps": -47.70366982612383,
+   "active_days": 200
+  },
+  "HRP static (est. window)": {
+   "days": 200,
+   "mean_bps_day": 0.610531823437719,
+   "sd_bps_day": 2.300308655119221,
+   "sharpe_ann": 5.0707082647471005,
+   "lag1_autocorr": -0.12240141121972245,
+   "total_bps": 122.10636468754383,
+   "max_drawdown_bps": 8.603424089799347,
+   "worst_day_bps": -5.354134446237144,
+   "active_days": 200
+  },
+  "HRP monthly walk-forward": {
+   "days": 200,
+   "mean_bps_day": 0.61066957289465,
+   "sd_bps_day": 2.3002506135007987,
+   "sharpe_ann": 5.071980305183275,
+   "lag1_autocorr": -0.12230778944919789,
+   "total_bps": 122.13391457892989,
+   "max_drawdown_bps": 8.602872056014007,
+   "worst_day_bps": -5.349589098524484,
+   "active_days": 200
+  },
+  "8-agent meta-portfolio (claimed drag)": {
+   "days": 200,
+   "mean_bps_day": -1.5148208085200252,
+   "sd_bps_day": 18.616424342996368,
+   "sharpe_ann": -1.5545740888691109,
+   "lag1_autocorr": -0.24481706101112236,
+   "total_bps": -302.964161704005,
+   "max_drawdown_bps": 339.43528888533996,
+   "worst_day_bps": -87.13480100998538,
+   "active_days": 200
+  }
+ },
+ "limits": [
+  "TIDAL-60 holdout was inspected and the agent chosen after 1,406 trials (OOS DSR 0.0027); its train P&L is negative, so its holdout result is a selection artefact until new dates confirm it.",
+  "The TIDAL-60 config has coef < 0 and a 44-bar horizon: a contrarian rule, not 60-minute momentum.",
+  "The XV holdout (2026-01..09) was already used to judge the sleeve; the HO2 segment is too small.",
+  "XV daily marks use 4 h opens as marks, not fills; capital = notional assumes leverage 2 per venue.",
+  "With two sleeves HRP is inverse variance: it ignores correlation and expected return.",
+  "The -1.51 bps/day figure is the 8-agent survivor-weighted portfolio, not a TIDAL-60 + XV mix; dropping its losing agents after seeing the holdout is selection, not a fix."
+ ],
+ "seconds": 6.27
+}

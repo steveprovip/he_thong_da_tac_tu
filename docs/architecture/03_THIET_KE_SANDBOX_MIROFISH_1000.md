@@ -141,6 +141,8 @@ flowchart LR
 
 ### 4.6 N: cú sốc tường thuật (dùng MiroFish đúng chỗ)
 
+> **D7 đã chốt 2026-10-24:** family N chỉ dùng **template Monte Carlo nội bộ** (bước 6 bên dưới), không chạy MiroFish. Các bước 1–5 giữ lại làm phương án tương lai và chưa được duyệt.
+
 1. **Seed chỉ là văn bản công khai** (tin, báo cáo công khai). Bộ kiểm `public_seed_check` từ chối seed nếu: chứa chuỗi khóa trong `.env.local`, tên file ledger, tên field Profile, con số trùng ngưỡng của ta, hoặc dài hơn 50 KB.
 2. **Chạy MiroFish nguyên bản như dịch vụ riêng** (`docker compose` trong `third_party/MiroFish`):
    - dùng `.env` riêng của MiroFish (khóa LLM/Zep do chủ sở hữu cấp), **không bao giờ** dùng `.env.local` giao dịch;

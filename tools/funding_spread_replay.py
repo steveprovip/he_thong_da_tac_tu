@@ -53,9 +53,14 @@ SLIP = 1.0
 H_DAYS, K_MULT = (7, 14, 28), (1.0, 2.0)
 LOOKBACK_MS = 72 * 3600_000
 H8 = 8 * 3600_000
-START, END = '2024-12-20', '2026-10-09'
+START, END = '2024-12-20', '2026-11-04'
 DEV = ('2025-01-01', '2025-12-31')
 HOLD = ('2026-01-01', '2026-09-30')
+# 10-24/11-05 persistence check: data that did not exist when the DEV-best variant was first selected (2026-10-10).
+# Evaluated on the ALREADY-CHOSEN config only - no new variant search, so it does not inflate the trial count the
+# way trying a new (mode, h, k) combination would.  Not part of the formal eligible() gate (MIN_N would not be met
+# on one month alone); reported beside HOLDOUT the same way the month-level bootstrap already is.
+HOLD2 = ('2026-10-01', '2026-11-04')
 MIN_N = 100
 
 
@@ -299,7 +304,8 @@ def main(argv=None):
                     trades = [t for t in trades if t['t'] * 1000 + t['days'] * 86400_000 <= ms(END)]
                     dev = [t for t in trades if t['t'] * 1000 + t['days'] * 86400_000 <= ms(HOLD[0])]
                     res['variants'][f'{mode}|H{h}|k{k:g}'] = {'DEV': summarize(dev, *DEV),
-                                                              'HOLDOUT': summarize(trades, *HOLD)}
+                                                              'HOLDOUT': summarize(trades, *HOLD),
+                                                              'HOLDOUT2': summarize(trades, *HOLD2)}
         c = [v for v in res['variants'] if v.startswith('HEDGE') and res['variants'][v]['DEV'].get('n', 0) >= 30]
         if c:
             b = max(c, key=lambda v: res['variants'][v]['DEV']['mean_net_bps'])
@@ -316,7 +322,7 @@ def main(argv=None):
     for kind, res in out['pairs'].items():
         print(f'\n{kind}  DEV-best {res["best"]}')
         for v, r in res['variants'].items():
-            print(f'  {v:<14} DEV {fmt(r["DEV"])}\n  {"":<14} HO  {fmt(r["HOLDOUT"])}')
+            print(f'  {v:<14} DEV {fmt(r["DEV"])}\n  {"":<14} HO  {fmt(r["HOLDOUT"])}\n  {"":<14} HO2 {fmt(r["HOLDOUT2"])}')
     if a.json:
         a.json.parent.mkdir(parents=True, exist_ok=True)
         a.json.write_text(json.dumps(out, indent=1, default=float))

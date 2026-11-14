@@ -40,6 +40,8 @@ Read `docs/AI_TOOLKIT.md` when using the installed MCP servers or AI tools. Pres
 
 At startup, read docs/harness/feature_list.json and docs/harness/progress.md and run ./init.sh from Git Bash. Work on one feature at a time within the user's authorized scope. Before ending, record checks and unresolved issues in docs/harness/progress.md and docs/harness/session-handoff.md; require passing checks before marking new work done. Leave a clean restart path and preserve unrelated local changes.
 
+Handoffs follow docs/harness/HANDOFF_PROTOCOL.md (6 components; template docs/harness/templates/handoff_6c.md). Validate each new entry with `F:/1tr_AI_agent/.venv/Scripts/python F:/1tr_AI_agent/tools/harness/check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — <date>"` (exit 0). Memory: Engram MCP server `engram` in .mcp.json (project he_thong_da_tac_tu_2); `engram sync` exports to .engram/.
+
 
 ## Repository layout (2026-10-06)
 ```

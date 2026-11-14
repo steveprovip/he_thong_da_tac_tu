@@ -18,8 +18,13 @@ ARCH-2026-10-24 · baseline: `main@91ad6ff`, `python -m pytest -q` = 1608 passed
 ### P0 — Khóa bất biến (C1) · ~1 ngày · không phụ thuộc
 
 **Trạng thái 2026-10-24:**
-- **P0a XONG:** `core/invariants.py` + `tests/test_invariants_lock.py` (19 test), chưa nối vào runtime nào.
-- **P0b CHỜ D1/D2:** nối vào Engine start-up, `core.runtime` và hard gate của sandbox.
+- **P0a XONG** (commit `2398e92`): `core/invariants.py` + `tests/test_invariants_lock.py`.
+- **P0b XONG:**
+  - `Engine.__init__` từ chối quorum/token sai ở mọi mode, và từ chối Profile sai khi live đã arm; demo/replay chỉ phát `INVARIANT WARN`.
+  - `core.runtime.arguments` chặn cứng hạ ngưỡng ở mainnet (D1).
+  - Nhãn `consensus` + `jev_lift` có trên order log và ledger (D4).
+  - 32 test.
+- Hard gate của sandbox nối ở P3.
 
 | Mục | Nội dung |
 |---|---|
@@ -154,6 +159,14 @@ Tổng khoảng 23–27 ngày công. Đường găng là **dữ liệu** (≥ 14
 | D8 | TTL của playbook và người duyệt | 7 ngày; chủ sở hữu duyệt |
 | D9 | Có cho live tự giảm rủi ro (mở rộng autonomy live chỉ với tunables risk-down)? | **không** ở giai đoạn này |
 | D10 | Cổng sandbox lúc khởi động live: WARN hay ENFORCE? | WARN cho đến khi qua P7 |
+
+**Đã chốt 2026-10-24** (chủ sở hữu):
+- **D1:** chặn cứng ở mainnet. Đã nối trong P0b.
+- **D4:** giữ JEV FAST như hiện tại. Mọi lệnh ghi `consensus` thô và `jev_lift` trên order log và ledger; event VESKA có nhãn `JEV-LIFT`; `tools/ledger_audit.py` có `by_jev_lift`.
+- **D5:** ghi băng bằng `scripts/GHI_BANG_L2.bat` (gọi `tools/record_market.py`).
+- **D7:** sandbox dùng template Monte Carlo nội bộ, không dùng MiroFish.
+
+D2, D3, D6, D8, D9, D10 còn mở.
 
 ## 6. Định nghĩa hoàn thành (toàn chương trình)
 

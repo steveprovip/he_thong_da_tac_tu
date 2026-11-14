@@ -2,7 +2,14 @@
 
 **Trạng thái:** THIẾT KẾ. Không đổi runtime, không đặt lệnh. Nhánh `docs/h2-regime-sandbox-arch`, gốc `main@91ad6ff`.
 
-**P0a (2026-10-24):** đã thêm `core/invariants.py` và `tests/test_invariants_lock.py`. Hai file này ghim I1–I8 và hành vi JEV FAST hiện tại; chưa được import ở đường runtime nào.
+**P0 (2026-10-24):**
+- P0a: commit `2398e92`.
+- P0b đã nối:
+  - Engine từ chối quorum/token sai, và từ chối Profile sai khi live đã arm.
+  - `core.runtime` chặn hạ ngưỡng ở mainnet (D1).
+  - Mỗi lệnh mang nhãn `consensus` + `jev_lift` (D4).
+- D5: `scripts/GHI_BANG_L2.bat` ghi băng tick L2.
+- D7: sandbox dùng template Monte Carlo nội bộ.
 
 ## Tóm tắt
 
@@ -51,4 +58,4 @@
 
 ## Quyết định cần chủ sở hữu trước khi code
 
-D1 (mainnet từ chối ngưỡng thấp), D4 (cách hiểu veto < 70 % và JEV sizing), D5 (ghi băng liên tục, đường găng), D7 (MiroFish hay template). Danh sách đủ ở doc 04 §5.
+D1, D4, D5, D7 đã chốt ngày 2026-10-24 (doc 04 §5). Còn mở: D2, D3, D6, D8, D9, D10.

@@ -1,0 +1,105 @@
+{
+ "schema": "nightly_audit/1",
+ "window_utc": [
+  "2026-11-07 00:00",
+  "2026-11-08 00:00"
+ ],
+ "day": "2026-11-07",
+ "generated_utc": "2026-11-08T00:05:02Z",
+ "ledger": "F:\\he_thong_da_tac_tu_2\\data\\engine_trades.jsonl",
+ "slippage": {
+  "rows": 6,
+  "modes": {
+   "demo": 6
+  },
+  "venues": {
+   "BINANCE DEMO": 6
+  },
+  "model_bps": {
+   "all_in": 8.5,
+   "fees": 7.0,
+   "slippage": 1.5
+  },
+  "all_in_bps": {
+   "n": 6,
+   "unknown": 0,
+   "mean": 5.181611504222308,
+   "median": 4.624676843891202,
+   "p90": 7.197224089819092,
+   "ci95_mean": [
+    4.000572530961891,
+    6.593584036134189
+   ]
+  },
+  "fee_bps": {
+   "n": 6,
+   "unknown": 0,
+   "mean": 3.999887769187783,
+   "median": 3.9995559003035384,
+   "p90": 4.0007513830018535,
+   "ci95_mean": [
+    3.999422783063047,
+    4.00038116008939
+   ]
+  },
+  "entry_slip_bps": {
+   "n": 6,
+   "unknown": 0,
+   "mean": 0.533445777177782,
+   "median": 0.2772079614123997,
+   "p90": 1.6002144352356844,
+   "ci95_mean": [
+    -0.09236168837157945,
+    1.2516149310987228
+   ]
+  },
+  "exit_slip_bps": {
+   "n": 6,
+   "unknown": 0,
+   "mean": 0.6482779578567426,
+   "median": 0.624764000161509,
+   "p90": 2.4297645252614632,
+   "ci95_mean": [
+    -0.5315417678479935,
+    1.8280976835614788
+   ]
+  },
+  "slippage_bps": {
+   "n": 6,
+   "unknown": 0,
+   "mean": 1.1817237350345247,
+   "median": 0.6247932810385544,
+   "p90": 3.1970295262889743,
+   "ci95_mean": [
+    0.0008215149024635341,
+    2.5934273234278353
+   ]
+  },
+  "by_entry_type": {
+   "GTX": {
+    "n": 6,
+    "unknown": 0,
+    "mean": 5.181611504222308,
+    "median": 4.624676843891202,
+    "p90": 7.197224089819092,
+    "ci95_mean": [
+     4.000572530961891,
+     6.593584036134189
+    ]
+   }
+  },
+  "verdict": "UNKNOWN: n=6 < 30, no inference"
+ },
+ "regime": {
+  "source": null,
+  "dir": null,
+  "symbols": {},
+  "definition": "state at t vs ex-post label of (t, t+900s], every 60s",
+  "verdict": "UNKNOWN: no price source (data/recordings, data/l2 or --ticks-dir) for the window"
+ },
+ "proposals": [
+  "Slippage sample below 30 round trips: no change to the 8.5 bps model is supported.",
+  "No prices were recorded for the window: run scripts\\GHI_BANG_L2.bat (public streams, no keys) so the next audit can score the classifier."
+ ],
+ "read_only": "report files only; no code, config, profile, tunable or execution parameter is written"
+}
