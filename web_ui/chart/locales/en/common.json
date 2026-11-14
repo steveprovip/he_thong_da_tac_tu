@@ -1,0 +1,203 @@
+{
+  "save": "Save",
+  "cancel": "Cancel",
+  "edit": "Edit",
+  "delete": "Delete",
+  "create": "Create",
+  "search": "Search",
+  "loading": "Loading...",
+  "bootstrapping_session": "Loading sign-in session...",
+  "no_data": "No data",
+  "confirm": "Confirm",
+  "close": "Close",
+  "back": "Back",
+  "actions": "Actions",
+  "footer": {
+    "developed_by": "Copyright {{year}} Company NovuTech. All rights reserved."
+  },
+  "cannot_be_undone": "This action cannot be undone.",
+  "deleting": "Deleting...",
+  "filter": "Filter",
+  "reset": "Reset",
+  "status": {
+    "open": "Open",
+    "closed": "Closed",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "page_titles": {
+    "dashboard": "Dashboard",
+    "account": "Account",
+    "account_edit": "Update Account",
+    "account_ea": "EA Bot",
+    "analytics": "Analytics",
+    "trade": "Trading",
+    "trade_create": "Create Trade",
+    "trade_edit": "Edit Trade",
+    "trade_review": "Review Trade",
+    "copier": "Copy Trading",
+    "strategy": "Strategy",
+    "tag": "Tags",
+    "graph": "Graph",
+    "settings": "Settings"
+  },
+  "page_subtitles": {
+    "dashboard": "Main dashboard",
+    "account": "Manage trading accounts",
+    "account_edit": "Edit account details and auto-sync configuration",
+    "account_ea": "Configure API keys and risk controls",
+    "analytics": "Analyze trading data",
+    "trade": "Your trading history",
+    "trade_create": "Enter a new trade",
+    "trade_edit": "Update trade details",
+    "trade_review": "Review chart and risk setup",
+    "copier": "Manage copy trade subscriptions, slippage audit and latency",
+    "strategy": "Manage trading strategies",
+    "tag": "Manage trade classification tags",
+    "graph": "Explore relationships between trade orders",
+    "settings": "Manage profile and personal preferences"
+  },
+  "pagination": {
+    "page": "Page",
+    "of": "of",
+    "prev": "Previous",
+    "next": "Next",
+    "rows_range": "<range>{{start}}–{{end}}</range> of <total>{{total}}</total> records",
+    "page_x_of_y": "Page <current>{{current}}</current> / <total>{{total}}</total>",
+    "show_rows": "Show",
+    "per_page": "per page",
+    "nav_aria": "Pagination",
+    "previous_page_aria": "Previous page",
+    "next_page_aria": "Next page",
+    "page_number_aria": "Page {{page}}"
+  },
+  "user_menu": {
+    "profile": "My Profile",
+    "settings": "Account Settings",
+    "logout": "Log out"
+  },
+  "sidebar": {
+    "logo_alt": "JTrader logo",
+    "main_navigation": "Main navigation",
+    "session_status": "Session status",
+    "online": "Online",
+    "connection_stable": "Connection stable",
+    "sync_realtime": "Data is continuously synchronized, and every change updates in real time.",
+    "menu": {
+      "dashboard": "Dashboard",
+      "chart": "Chart",
+      "analytics": "Analytic",
+      "account": "Account",
+      "trade": "Trading",
+      "copier": "Copy Trading",
+      "graph": "Graph",
+      "strategy": "Strategy",
+      "tag": "Tags",
+      "backtests": "Backtests",
+      "coaching": "AI Coach",
+      "settings": "Setting"
+    },
+    "toast": {
+      "backtests_coming_soon_title": "Coming soon",
+      "backtests_coming_soon_description": "Backtests are still in development. We will let you know when they are ready."
+    },
+    "trading_solutions": {
+      "title": "Trading solutions",
+      "auto": "Auto",
+      "go_to_slide": "Go to slide",
+      "items": {
+        "consistency": {
+          "title": "Consistency beats intensity",
+          "description": "Successful trading comes from disciplined repetition every day, not from one lucky trade."
+        },
+        "risk": {
+          "title": "Risk first, profit second",
+          "description": "Before entering any trade, ask this first: if I am wrong, how much will I lose?"
+        },
+        "plan": {
+          "title": "A plan is your edge",
+          "description": "A clear system for entry, exit, and position sizing outperforms emotional trading over time."
+        }
+      }
+    },
+    "support_contact": {
+      "title": "Support contact information",
+      "status": "Online",
+      "headline": "Quick support via Zalo group",
+      "description": "Get direct guidance and fast responses from our support team.",
+      "open_zalo_group": "Open Zalo group"
+    }
+  },
+  "onboarding": {
+    "mobile_nav_overlay_label": "Close navigation sidebar",
+    "toast": {
+      "demo_success": "Your demo workspace is ready.",
+      "empty_success": "Your empty workspace is ready.",
+      "error": "Unable to initialize onboarding right now."
+    },
+    "dialog": {
+      "badge": "Start with JTrader",
+      "title": "Choose how you want to begin",
+      "description": "You can enter with prefilled demo data to explore the dashboard, trades, and analytics right away, or start with an empty workspace and build your own trading journal from scratch. Both options include a short guided tour right after selection.",
+      "actions": {
+        "demo": {
+          "badge": "Best choice",
+          "title": "Start with demo data",
+          "description": "Preload one account, one strategy, and a sample set of trades so the dashboard feels alive immediately."
+        },
+        "empty": {
+          "title": "Start with an empty workspace",
+          "description": "Begin with a clean app if you prefer to add accounts, trades, and strategies in your own way."
+        }
+      },
+      "status": {
+        "submitting": "Preparing your experience...",
+        "continue": "Continue",
+        "select_mode": "Choose an option to continue"
+      }
+    },
+    "tour": {
+      "progress": "Step __CURRENT__ / __TOTAL__",
+      "buttons": {
+        "next": "Next",
+        "previous": "Back",
+        "done": "Done"
+      },
+      "intro": {
+        "title": "Welcome to JTrader",
+        "description": "Here is a quick introduction to get you oriented. {{modeDescription}}",
+        "mode_demo": "You are entering with demo data, so feel free to click through each area and see how everything works.",
+        "mode_empty": "This workspace is empty, so the tour will focus on the most important places to begin."
+      },
+      "sidebar": {
+        "title": "Navigation sidebar",
+        "description": "All primary areas of the app live here: dashboard, trading, analytics, graph, and settings."
+      },
+      "header": {
+        "title": "Quick actions area",
+        "description": "You can switch theme, change language, and open the account menu without leaving the current page."
+      },
+      "dashboard_header": {
+        "title": "Today at a glance",
+        "description": "This top section helps you understand your current trading state and what to focus on next."
+      },
+      "account_selector": {
+        "title": "Filter by account",
+        "description": "When you manage multiple accounts, this control narrows the dashboard and analytics to the account you want to inspect."
+      },
+      "dashboard_hero": {
+        "title": "Primary insight area",
+        "description": "If you chose demo data, this area is already filled with metrics and heatmaps. In an empty workspace, this is where your own data will grow over time."
+      },
+      "app_content": {
+        "title": "Main workspace",
+        "description": "This is where dashboards, trades, and analytics screens appear. Filling this area with your own trading data is the main goal after onboarding."
+      },
+      "complete": {
+        "title": "You are ready",
+        "demo": "Try opening the dashboard and trade list to explore the sample data before adding real trades.",
+        "empty": "Try creating your first account or importing trades so the dashboard becomes truly yours."
+      }
+    }
+  }
+}

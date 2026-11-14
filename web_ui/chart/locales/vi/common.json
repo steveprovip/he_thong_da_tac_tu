@@ -1,0 +1,203 @@
+{
+  "save": "Lưu",
+  "cancel": "Hủy",
+  "edit": "Sửa",
+  "delete": "Xóa",
+  "create": "Tạo mới",
+  "search": "Tìm kiếm",
+  "loading": "Đang tải...",
+  "bootstrapping_session": "Đang tải phiên đăng nhập...",
+  "no_data": "Không có dữ liệu",
+  "confirm": "Xác nhận",
+  "close": "Đóng",
+  "back": "Quay lại",
+  "actions": "Hành động",
+  "footer": {
+    "developed_by": "Copyright {{year}} Company NovuTech. All rights reserved."
+  },
+  "cannot_be_undone": "Hành động này không thể hoàn tác.",
+  "deleting": "Đang xóa...",
+  "filter": "Bộ lọc",
+  "reset": "Đặt lại",
+  "status": {
+    "open": "Đang mở",
+    "closed": "Đã đóng",
+    "active": "Hoạt động",
+    "inactive": "Ngưng hoạt động"
+  },
+  "page_titles": {
+    "dashboard": "Tổng quan",
+    "account": "Tài khoản",
+    "account_edit": "Cập nhật tài khoản",
+    "account_ea": "EA Bot",
+    "analytics": "Phân tích",
+    "trade": "Giao dịch",
+    "trade_create": "Tạo giao dịch",
+    "trade_edit": "Sửa giao dịch",
+    "trade_review": "Xem lại giao dịch",
+    "copier": "Copy Trading",
+    "strategy": "Chiến lược",
+    "tag": "Nhãn",
+    "graph": "Graph",
+    "settings": "Cài đặt"
+  },
+  "page_subtitles": {
+    "dashboard": "Bảng điều khiển chính",
+    "account": "Quản lý các tài khoản giao dịch",
+    "account_edit": "Chỉnh sửa thông tin và cấu hình auto-sync",
+    "account_ea": "Cấu hình API key và kiểm soát rủi ro",
+    "analytics": "Phân tích dữ liệu giao dịch",
+    "trade": "Lịch sử giao dịch của bạn",
+    "trade_create": "Nhập thông tin giao dịch mới",
+    "trade_edit": "Cập nhật thông tin giao dịch",
+    "trade_review": "Xem lại biểu đồ và thiết lập rủi ro",
+    "copier": "Quản trị liên kết sao chép lệnh, đối soát trượt giá và độ trễ",
+    "strategy": "Quản lý các chiến lược giao dịch",
+    "tag": "Quản lý nhãn phân loại giao dịch",
+    "graph": "Khám phá mối quan hệ giữa các lệnh giao dịch",
+    "settings": "Quản lý hồ sơ và tuỳ chọn cá nhân"
+  },
+  "pagination": {
+    "page": "Trang",
+    "of": "trên",
+    "prev": "Trước",
+    "next": "Tiếp theo",
+    "rows_range": "<range>{{start}}–{{end}}</range> trong <total>{{total}}</total> bản ghi",
+    "page_x_of_y": "Trang <current>{{current}}</current> / <total>{{total}}</total>",
+    "show_rows": "Hiển thị",
+    "per_page": "mỗi trang",
+    "nav_aria": "Phân trang",
+    "previous_page_aria": "Trang trước",
+    "next_page_aria": "Trang sau",
+    "page_number_aria": "Trang {{page}}"
+  },
+  "user_menu": {
+    "profile": "Hồ sơ của tôi",
+    "settings": "Cài đặt tài khoản",
+    "logout": "Đăng xuất"
+  },
+  "sidebar": {
+    "logo_alt": "Logo JTrader",
+    "main_navigation": "Điều hướng chính",
+    "session_status": "Trạng thái phiên",
+    "online": "Trực tuyến",
+    "connection_stable": "Kết nối ổn định",
+    "sync_realtime": "Dữ liệu đang được đồng bộ liên tục, mọi thay đổi sẽ cập nhật theo thời gian thực.",
+    "menu": {
+      "dashboard": "Tổng quan",
+      "chart": "Biểu đồ",
+      "analytics": "Phân tích",
+      "account": "Quản lý tài khoản",
+      "trade": "Giao dịch",
+      "copier": "Copy Trading",
+      "strategy": "Chiến lược",
+      "graph": "Đồ thị",
+      "tag": "Nhãn",
+      "backtests": "Kiểm thử",
+      "coaching": "AI Coach",
+      "settings": "Cài đặt"
+    },
+    "toast": {
+      "backtests_coming_soon_title": "Sắp ra mắt",
+      "backtests_coming_soon_description": "Tính năng Backtest đang được phát triển. Chúng tôi sẽ thông báo khi sẵn sàng."
+    },
+    "trading_solutions": {
+      "title": "Góc nhìn giao dịch",
+      "auto": "Tự động",
+      "go_to_slide": "Đến trang",
+      "items": {
+        "consistency": {
+          "title": "Kỷ luật quan trọng hơn hưng phấn",
+          "description": "Thành công trong giao dịch đến từ việc lặp lại kỷ luật mỗi ngày, không đến từ một lệnh may mắn."
+        },
+        "risk": {
+          "title": "Ưu tiên rủi ro trước lợi nhuận",
+          "description": "Trước mỗi lệnh, hãy hỏi: nếu sai thì mình sẽ mất bao nhiêu?"
+        },
+        "plan": {
+          "title": "Kế hoạch là lợi thế",
+          "description": "Hệ thống rõ ràng cho điểm vào, điểm ra và quản lý vốn luôn hiệu quả hơn giao dịch cảm tính."
+        }
+      }
+    },
+    "support_contact": {
+      "title": "Liên hệ hỗ trợ",
+      "status": "Trực tuyến",
+      "headline": "Hỗ trợ nhanh qua nhóm Zalo",
+      "description": "Nhận phản hồi và hướng dẫn trực tiếp từ đội ngũ hỗ trợ.",
+      "open_zalo_group": "Mở nhóm Zalo"
+    }
+  },
+  "onboarding": {
+    "mobile_nav_overlay_label": "Đóng thanh điều hướng",
+    "toast": {
+      "demo_success": "Đã khởi tạo workspace demo cho bạn.",
+      "empty_success": "Đã sẵn sàng với workspace trống.",
+      "error": "Không thể khởi tạo onboarding lúc này."
+    },
+    "dialog": {
+      "badge": "Bắt đầu cùng JTrader",
+      "title": "Chọn cách bắt đầu để không bị choáng khi vào app",
+      "description": "Bạn có thể vào với bộ dữ liệu demo để xem dashboard, giao dịch và phân tích đã được điền sẵn, hoặc bắt đầu với workspace trống để tự xây dựng nhật ký giao dịch của riêng mình. Cả hai lựa chọn đều sẽ có tour hướng dẫn ngắn ngay sau đó.",
+      "actions": {
+        "demo": {
+          "badge": "Lựa chọn tốt nhất",
+          "title": "Bắt đầu với dữ liệu demo",
+          "description": "Nạp sẵn một account, một strategy và một loạt giao dịch mẫu để bạn nhìn thấy dashboard có đủ dữ liệu ngay lập tức."
+        },
+        "empty": {
+          "title": "Bắt đầu với workspace trống",
+          "description": "Vào app sạch sẽ ngay từ đầu, phù hợp nếu bạn muốn tự thêm account, giao dịch và chiến lược theo cách riêng."
+        }
+      },
+      "status": {
+        "submitting": "Đang khởi tạo trải nghiệm...",
+        "continue": "Tiếp tục",
+        "select_mode": "Chọn một lựa chọn để tiếp tục"
+      }
+    },
+    "tour": {
+      "progress": "Bước __CURRENT__ / __TOTAL__",
+      "buttons": {
+        "next": "Tiếp theo",
+        "previous": "Quay lại",
+        "done": "Hoàn tất"
+      },
+      "intro": {
+        "title": "Chào mừng đến với JTrader",
+        "description": "Đây là vòng giới thiệu ngắn đầu tiên. {{modeDescription}}",
+        "mode_demo": "Bạn đang vào với bộ dữ liệu demo, nên có thể bấm vào từng khu vực để xem cách nó vận hành.",
+        "mode_empty": "Workspace này đang trống, nên tour sẽ chỉ cho bạn những điểm bắt đầu quan trọng nhất."
+      },
+      "sidebar": {
+        "title": "Sidebar điều hướng",
+        "description": "Tất cả khu vực chính của app đều nằm ở đây: dashboard, giao dịch, phân tích, graph và cài đặt."
+      },
+      "header": {
+        "title": "Khu vực thao tác nhanh",
+        "description": "Bạn có thể đổi theme, đổi ngôn ngữ và truy cập menu tài khoản mà không cần rời khỏi trang hiện tại."
+      },
+      "dashboard_header": {
+        "title": "Tổng quan hôm nay",
+        "description": "Phần đầu trang cho bạn biết tình hình giao dịch và mục tiêu tiếp theo cần tập trung."
+      },
+      "account_selector": {
+        "title": "Lọc theo account",
+        "description": "Khi bạn có nhiều tài khoản, ô này giúp thu hẹp dashboard và analytics về đúng account cần xem."
+      },
+      "dashboard_hero": {
+        "title": "Khu vực insight chính",
+        "description": "Nếu chọn demo data, bạn sẽ thấy sẵn các chỉ số và heatmap ở đây. Nếu workspace trống, đây là nơi sẽ đầy lên khi bạn bắt đầu ghi trade."
+      },
+      "app_content": {
+        "title": "Khung làm việc chính",
+        "description": "Đây là nơi dashboard, trades và các màn hình phân tích sẽ hiển thị. Đẩy dữ liệu vào đây là mục tiêu chính sau onboarding."
+      },
+      "complete": {
+        "title": "Bạn đã sẵn sàng",
+        "demo": "Thử click vào dashboard và danh sách giao dịch để xem dữ liệu mẫu trước khi nhập giao dịch thật.",
+        "empty": "Thử tạo account đầu tiên hoặc import giao dịch để biến dashboard thành dữ liệu của riêng bạn."
+      }
+    }
+  }
+}

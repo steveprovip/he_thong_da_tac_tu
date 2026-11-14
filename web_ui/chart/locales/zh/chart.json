@@ -1,0 +1,537 @@
+{
+  "toolbar": {
+    "symbol": "品种",
+    "chartType": "图表类型",
+    "indicators": "指标",
+    "tools": "工具",
+    "settings": "设置",
+    "undo": "撤销 (Ctrl+Z)",
+    "redo": "重做 (Ctrl+Y)",
+    "commandPalette": "命令面板 (Ctrl+K)",
+    "screenshot": "截图",
+    "theme": "主题",
+    "fullscreen": "全屏",
+    "trade": "交易",
+    "tradeMode": "交易模式",
+    "layoutName": "布局名称",
+    "untitled": "未命名",
+    "drawingTools": "绘图工具",
+    "more": "更多",
+    "indicatorsOnChart": "主图",
+    "indicatorsInPanes": "副图",
+    "allIndicators": "全部指标…"
+  },
+  "tools": {
+    "orderLines": "订单线",
+    "alerts": "提醒",
+    "compare": "对比品种",
+    "annotations": "笔记",
+    "measure": "测量",
+    "replay": "回放",
+    "script": "指标编辑器",
+    "layouts": "布局",
+    "timezone": "时区",
+    "exportCsv": "导出 CSV",
+    "exportJson": "导出 JSON"
+  },
+  "cmd": {
+    "title": "命令面板",
+    "placeholder": "命令或品种…",
+    "symbols": "品种",
+    "commands": "命令",
+    "empty": "未找到",
+    "symbolSearch": "品种搜索",
+    "settingsFull": "图表设置",
+    "screenshot": "图表截图",
+    "exportCsvFull": "导出为 CSV",
+    "exportJsonFull": "导出为 JSON",
+    "theme": "切换主题"
+  },
+  "dock": {
+    "watchlist": "自选列表",
+    "info": "品种信息",
+    "orderbook": "订单簿",
+    "closePanels": "关闭面板"
+  },
+  "menu": {
+    "addAlert": "添加提醒",
+    "orderLine": "订单线",
+    "toRealtime": "跳转到最新价"
+  },
+  "ctx": {
+    "settings": "设置…",
+    "delete": "删除",
+    "remove": "移除",
+    "deleteKey": "Del",
+    "lock": "锁定",
+    "unlock": "解锁",
+    "titleIndicator": "指标 · {{name}}",
+    "titleDrawing": "绘图 · {{name}}"
+  },
+  "draw": {
+    "cursor": "光标",
+    "cat": {
+      "singleLine": "线",
+      "moreLine": "通道",
+      "polygon": "形状",
+      "fibonacci": "斐波那契",
+      "wave": "波浪",
+      "measure": "测量",
+      "position": "仓位",
+      "annotation": "标注"
+    },
+    "tool": {
+      "horizontal_straight_line": "水平线",
+      "horizontal_ray_line": "水平射线",
+      "horizontal_segment": "水平线段",
+      "vertical_straight_line": "垂直线",
+      "vertical_ray_line": "垂直射线",
+      "vertical_segment": "垂直线段",
+      "straight_line": "趋势线",
+      "ray_line": "射线",
+      "segment": "线段",
+      "arrow": "箭头",
+      "price_line": "价格线",
+      "price_channel_line": "价格通道",
+      "parallel_straight_line": "平行线",
+      "ray": "射线",
+      "parallel_channel": "平行通道",
+      "circle": "圆形",
+      "rect": "矩形",
+      "parallelogram": "平行四边形",
+      "triangle": "三角形",
+      "fibonacci_line": "斐波那契趋势",
+      "fibonacci_segment": "斐波那契线段",
+      "fibonacci_circle": "斐波那契圆",
+      "fibonacci_spiral": "斐波那契螺旋",
+      "fibonacci_speed_resistance_fan": "斐波那契扇形",
+      "fibonacci_extension": "斐波那契扩展",
+      "fib_retracement": "斐波那契回撤",
+      "gann_box": "江恩箱",
+      "gann_fan": "江恩扇",
+      "xabcd": "XABCD 形态",
+      "abcd": "ABCD 形态",
+      "three_waves": "三浪",
+      "five_waves": "五浪",
+      "eight_waves": "八浪",
+      "any_waves": "艾略特波浪",
+      "elliott_wave": "艾略特推动浪",
+      "measure": "测量",
+      "long_position": "多头仓位",
+      "short_position": "空头仓位",
+      "brush": "画笔",
+      "fixedRangeVolumeProfile": "固定范围成交量分布"
+    },
+    "magnet": "磁吸：{{mode}}",
+    "autoOn": "自动重复：开",
+    "autoOff": "自动重复：关",
+    "lock": "锁定",
+    "unlock": "解锁",
+    "show": "显示绘图",
+    "hide": "隐藏绘图",
+    "removeAll": "删除所有绘图"
+  },
+  "magnet": {
+    "normal": "关",
+    "weak": "弱",
+    "strong": "强"
+  },
+  "ind": {
+    "title": "指标",
+    "desc": "添加指标、编辑参数并切换可见性。",
+    "tabCatalog": "目录",
+    "tabActive": "已启用",
+    "searchPh": "搜索指标…",
+    "onChart": "主图",
+    "inPanes": "副图",
+    "noParams": "无参数",
+    "pane": "副图",
+    "apply": "应用",
+    "cancel": "取消",
+    "editParams": "编辑参数",
+    "paramsOf": "{{name}} 参数",
+    "paramsAria": "{{name}} 参数",
+    "paramLabels": {
+      "params_1": "参数 1",
+      "params_2": "参数 2",
+      "params_3": "参数 3",
+      "params_4": "参数 4",
+      "params_5": "参数 5",
+      "period": "周期",
+      "period_1": "周期 1",
+      "period_2": "周期 2",
+      "period_3": "周期 3",
+      "period_4": "周期 4",
+      "standard_deviation": "标准差",
+      "multiplier": "倍数",
+      "factor": "因子",
+      "tenkan": "转换线",
+      "kijun": "基准线",
+      "senkou_b": "先行带 B",
+      "offset": "偏移",
+      "fast": "快线",
+      "slow": "慢线",
+      "signal": "信号线",
+      "rsi_period": "RSI 周期",
+      "ma_period": "MA 周期",
+      "smooth_k": "K 平滑",
+      "smooth_d": "D 平滑",
+      "MACD": {
+        "params_1": "快线周期",
+        "params_2": "慢线周期",
+        "params_3": "信号平滑"
+      },
+      "KDJ": {
+        "params_1": "RSV 周期",
+        "params_2": "K 平滑",
+        "params_3": "D 平滑"
+      },
+      "SMA": {
+        "params_1": "周期",
+        "params_2": "权重"
+      },
+      "SAR": {
+        "params_1": "步长",
+        "params_2": "最大步长",
+        "params_3": "起始值"
+      },
+      "BBI": {
+        "params_1": "MA 1",
+        "params_2": "MA 2",
+        "params_3": "MA 3",
+        "params_4": "MA 4"
+      },
+      "DMI": {
+        "params_1": "DI 周期",
+        "params_2": "ADX 平滑"
+      },
+      "DMA": {
+        "params_1": "短 MA",
+        "params_2": "长 MA",
+        "params_3": "信号 MA"
+      },
+      "AO": {
+        "params_1": "快周期",
+        "params_2": "慢周期"
+      },
+      "BRAR": { "params_1": "周期" },
+      "CCI": { "params_1": "周期" },
+      "OBV": { "params_1": "MA 周期" },
+      "CR": {
+        "params_1": "周期",
+        "params_2": "MA 1",
+        "params_3": "MA 2",
+        "params_4": "MA 3",
+        "params_5": "MA 4"
+      },
+      "PSY": {
+        "params_1": "周期",
+        "params_2": "MA 周期"
+      },
+      "TRIX": {
+        "params_1": "周期",
+        "params_2": "信号 MA"
+      },
+      "VPVR": {
+        "params_1": "行数",
+        "params_2": "价值区域 %",
+        "params_3": "位置 (0=右, 1=左)",
+        "params_4": "成交量模式 (0=总量, 1=涨跌)"
+      },
+      "VR": {
+        "params_1": "周期",
+        "params_2": "MA 周期"
+      },
+      "MTM": {
+        "params_1": "周期",
+        "params_2": "MA 周期"
+      },
+      "EMV": {
+        "params_1": "周期",
+        "params_2": "MA 周期"
+      },
+      "ROC": {
+        "params_1": "周期",
+        "params_2": "MA 周期"
+      }
+    },
+    "paramOptions": {
+      "VPVR": {
+        "placementRight": "右侧",
+        "placementLeft": "左侧",
+        "volumeTotal": "总成交量",
+        "volumeUpDown": "涨跌分布"
+      }
+    },
+    "show": "显示",
+    "hide": "隐藏",
+    "up": "上移",
+    "down": "下移",
+    "expand": "展开",
+    "collapse": "折叠",
+    "noActive": "无已启用指标",
+    "noResults": "未找到指标",
+    "descriptions": {
+      "MA": "Moving Average — 简单移动平均线",
+      "EMA": "Exponential MA — 指数移动平均线，比 MA 更灵敏",
+      "SMA": "Simple MA — 简单移动平均线",
+      "BOLL": "Bollinger Bands — 价格波动通道",
+      "SAR": "Parabolic SAR — 识别趋势反转",
+      "BBI": "Bull and Bear Index — 多空情绪指标",
+      "BOLL_TV": "Bollinger Bands (TV) — TradingView 风格布林带",
+      "Ichimoku": "Ichimoku Cloud — 日本趋势识别系统",
+      "SuperTrend": "SuperTrend — 趋势方向与进出场信号",
+      "HMA": "Hull MA — 平滑且反应迅速的移动平均线",
+      "VWAP": "VWAP — 当日成交量加权平均价",
+      "VPVR": "可见范围成交量分布 — 按当前可见K线绘制的横向成交量分布，含 POC、VAH、VAL",
+      "PivotPoints": "Pivot Points — 经典 pivot 支撑/阻力位",
+      "MA_Ribbon": "MA Ribbon — 多条移动平均线带状图",
+      "VOL": "Volume — 成交量",
+      "MACD": "MACD — 移动平均收敛/发散，用于判断趋势",
+      "KDJ": "Stochastic KDJ — 超买/超卖振荡指标",
+      "RSI": "Relative Strength Index — 相对强弱指标 (0–100)",
+      "BIAS": "BIAS — 价格相对移动平均的偏离度",
+      "BRAR": "BRAR — 买卖比率与累积成交量",
+      "CCI": "Commodity Channel Index — 围绕均值的振荡指标",
+      "DMI": "Directional Movement Index — 趋势强度",
+      "CR": "CR — 价格相对均值的强度",
+      "PSY": "Psychological Line — 市场情绪（上涨 K 线占比）",
+      "DMA": "DMA — 两条移动平均线的差值",
+      "TRIX": "TRIX — 三重指数移动平均线",
+      "OBV": "On Balance Volume — 按价格方向累积成交量",
+      "VR": "Volume Ratio — 上涨/下跌成交量比率",
+      "WR": "Williams %R — 超买/超卖振荡指标",
+      "MTM": "Momentum — 价格变动动量",
+      "EMV": "Ease of Movement — 价格移动的难易程度",
+      "ROC": "Rate of Change — 价格变动百分比",
+      "PVT": "Price Volume Trend — 结合成交量的价格趋势",
+      "AO": "Awesome Oscillator — 平均价格区间振荡指标",
+      "MACD_TV": "MACD (TV) — TradingView 风格 MACD",
+      "RSI_TV": "RSI (TV) — TradingView 风格 RSI",
+      "CCI_TV": "CCI (TV) — TradingView 风格 CCI",
+      "Stochastic": "Stochastic — 超买/超卖随机振荡指标",
+      "WMA": "Weighted MA — 加权移动平均线",
+      "ATR": "Average True Range — 衡量真实波动幅度",
+      "DPO": "Detrended Price Oscillator — 去除长期趋势",
+      "AVL": "Average Volume — 平均成交量"
+    },
+    "fallbackDesc": "{{name}} — 技术指标",
+    "remove": "移除指标",
+    "ownAxis": "独立 Y 轴"
+  },
+  "settings": {
+    "title": "图表设置",
+    "sec": {
+      "candles": "K线",
+      "priceAxis": "价格轴",
+      "display": "显示"
+    },
+    "language": "语言",
+    "type": "类型",
+    "upColor": "上涨颜色",
+    "downColor": "下跌颜色",
+    "scaleType": "刻度类型",
+    "position": "位置",
+    "axisInside": "轴在内侧",
+    "reverse": "反转刻度",
+    "lastPrice": "最新价",
+    "lastPriceLine": "最新价线",
+    "highLow": "最高/最低",
+    "grid": "网格",
+    "crosshair": "十字光标",
+    "timeAxis": "时间轴",
+    "candleTooltip": "K线提示",
+    "indicatorTooltip": "指标提示",
+    "tooltipRule": "提示规则",
+    "reset": "重置"
+  },
+  "ob": {
+    "price": "价格",
+    "size": "数量",
+    "total": "累计",
+    "unsupported": "数据源不提供订单簿",
+    "spread": "价差"
+  },
+  "ol": {
+    "title": "订单线",
+    "desc": "可拖动的入场/止损价位，直接显示在图上。",
+    "pricePh": "价位",
+    "empty": "无活动线"
+  },
+  "common": {
+    "removeAll": "全部删除",
+    "error": "数据加载失败",
+    "retry": "重试",
+    "clear": "清空",
+    "long": "做多",
+    "short": "做空"
+  },
+  "al": {
+    "title": "价格提醒",
+    "desc": "价格穿越价位时通知并发声。",
+    "crossingUp": "向上穿越",
+    "crossingDown": "向下穿越",
+    "crossing": "穿越",
+    "pricePh": "价格",
+    "msgPh": "消息（可选）",
+    "empty": "无提醒"
+  },
+  "cmp": {
+    "title": "对比品种",
+    "desc": "叠加多个品种，按首根K线归一化为百分比。",
+    "tickerPh": "代码（如 ETHUSDT）",
+    "empty": "无对比"
+  },
+  "an": {
+    "title": "图表笔记",
+    "desc": "在价位上的文字标签。默认价格取自十字光标处。",
+    "textPh": "笔记文本",
+    "priceCursor": "{{price}}（光标处）",
+    "empty": "无笔记"
+  },
+  "lm": {
+    "title": "图表布局",
+    "autosave": "自动保存",
+    "namePh": "布局名称",
+    "save": "保存",
+    "empty": "无已保存布局"
+  },
+  "se": {
+    "title": "指标编辑器",
+    "desc": "自定义 JavaScript 指标。可用：TA、dataList、params。返回对象数组（每根K线一个）。",
+    "namePh": "名称",
+    "paramsPh": "参数：14, 26, 9",
+    "onChart": "主图",
+    "inPane": "副图",
+    "run": "运行",
+    "remove": "移除",
+    "reset": "重置",
+    "export": "导出",
+    "import": "导入"
+  },
+  "ss": {
+    "title": "图表快照",
+    "preparing": "正在准备快照…",
+    "copy": "复制",
+    "copied": "已复制",
+    "download": "下载"
+  },
+  "sy": {
+    "title": "品种搜索",
+    "searchPh": "搜索品种（BTC, ETH, SOL…）",
+    "searching": "搜索中…",
+    "empty": "未找到",
+    "all": "全部",
+    "loadMore": "加载更多",
+    "loadMoreCount": "加载更多（剩余 {{count}}）",
+    "showingCount": "显示 {{shown}} / {{total}}"
+  },
+  "tz": {
+    "title": "时区"
+  },
+  "wl": {
+    "title": "自选列表",
+    "addPh": "添加品种…",
+    "remove": "删除 {{ticker}}"
+  },
+  "si": {
+    "title": "品种信息",
+    "spot": "现货",
+    "keyData": "关键数据",
+    "volBar": "成交量（当前）",
+    "avgVol": "平均成交量（30天）",
+    "turnover": "成交额",
+    "dynamics": "涨跌幅",
+    "techAnalysis": "技术分析",
+    "notEnough": "数据不足",
+    "strongBuy": "强力买入",
+    "buy": "买入",
+    "neutral": "中性",
+    "sell": "卖出",
+    "strongSell": "强力卖出",
+    "sellCount": "{{n}} 卖",
+    "neutralCount": "{{n}} 中性",
+    "buyCount": "{{n}} 买",
+    "w1": "1周",
+    "m1": "1月",
+    "m3": "3月",
+    "m6": "6月",
+    "ytd": "年初至今",
+    "y1": "1年"
+  },
+  "rp": {
+    "back": "后退",
+    "playPause": "播放/暂停",
+    "forward": "前进",
+    "stop": "停止"
+  },
+  "sb": {
+    "measureHint": "测量：点击两个点",
+    "auto": "（自动）",
+    "escHint": "Esc 取消 · Del 删除选中项",
+    "deleteHint": "Del 删除 · Esc 取消选中",
+    "bars": "根"
+  },
+  "trade": {
+    "sell": "卖出",
+    "buy": "买入",
+    "collapse": "收起",
+    "expand": "展开",
+    "lotSize": "手数",
+    "slPrice": "止损价",
+    "tpPrice": "止盈价",
+    "risk": "风险",
+    "reward": "收益",
+    "rrRatio": "盈亏比",
+    "clearLines": "清除 {{count}} 条线",
+    "entry": "入场",
+    "useLivePrice": "使用现价",
+    "drawOnChart": "绘制到图表",
+    "removeLines": "删除线条",
+    "rrTool": "盈亏比工具",
+    "saveToJournal": "保存到日记",
+    "journalTitle": "保存交易到日记",
+    "journalDesc": "根据当前图表设置创建日记记录。",
+    "symbol": "品种",
+    "side": "方向",
+    "account": "账户",
+    "accountPh": "选择账户",
+    "noAccounts": "暂无账户，请先在账户页创建。"
+  },
+  "auth": {
+    "signIn": "登录",
+    "signInForDrawing": "登录以使用绘图工具",
+    "accountMenu": "账户",
+    "eyebrow": "您的工作区",
+    "title": "登录以继续",
+    "subtitle": "同步布局、自选列表和个性化图表设置。",
+    "googleProcessing": "正在通过 Google 登录…",
+    "googleButtonLoading": "正在加载 Google 登录按钮…",
+    "goToLogin": "前往登录页",
+    "profile": "个人资料设置",
+    "signOut": "退出登录"
+  },
+  "candle": {
+    "candle_solid": "实心K线",
+    "candle_stroke": "空心K线",
+    "candle_up_stroke": "上涨空心",
+    "candle_down_stroke": "下跌空心",
+    "ohlc": "美国线 (OHLC)",
+    "area": "面积图",
+    "heikin_ashi": "平均K线"
+  },
+  "axis": {
+    "normal": "普通",
+    "percentage": "百分比",
+    "logarithm": "对数"
+  },
+  "ypos": {
+    "left": "左侧",
+    "right": "右侧"
+  },
+  "trule": {
+    "always": "始终",
+    "follow_cross": "跟随光标",
+    "none": "隐藏"
+  }
+}

@@ -1,0 +1,200 @@
+{
+  "save": "保存",
+  "cancel": "取消",
+  "edit": "编辑",
+  "delete": "删除",
+  "create": "创建",
+  "search": "搜索",
+  "loading": "加载中...",
+  "bootstrapping_session": "正在加载登录会话...",
+  "no_data": "无数据",
+  "confirm": "确认",
+  "close": "关闭",
+  "back": "返回",
+  "actions": "操作",
+  "footer": {
+    "developed_by": "© {{year}} NovuTech 公司。保留所有权利。"
+  },
+  "cannot_be_undone": "此操作无法撤消。",
+  "deleting": "正在删除...",
+  "filter": "筛选",
+  "reset": "重置",
+  "status": {
+    "open": "开放",
+    "closed": "已关闭",
+    "active": "活跃",
+    "inactive": "未活跃"
+  },
+  "page_titles": {
+    "dashboard": "仪表板",
+    "account": "账户",
+    "account_edit": "更新账户",
+    "account_ea": "EA Bot",
+    "analytics": "分析",
+    "trade": "交易",
+    "trade_create": "创建交易",
+    "trade_edit": "编辑交易",
+    "trade_review": "复盘交易",
+    "strategy": "策略",
+    "tag": "标签",
+    "graph": "图表",
+    "settings": "设置"
+  },
+  "page_subtitles": {
+    "dashboard": "主仪表板",
+    "account": "管理交易账户",
+    "account_edit": "编辑账户信息和自动同步配置",
+    "account_ea": "配置 API 密钥和风险控制",
+    "analytics": "分析交易数据",
+    "trade": "你的交易历史",
+    "trade_create": "录入新的交易",
+    "trade_edit": "更新交易信息",
+    "trade_review": "查看图表与风险设置",
+    "strategy": "管理交易策略",
+    "tag": "管理交易分类标签",
+    "graph": "探索交易订单之间的关系",
+    "settings": "管理个人资料和偏好"
+  },
+  "pagination": {
+    "page": "页",
+    "of": "的",
+    "prev": "上一页",
+    "next": "下一个",
+    "rows_range": "<range>{{start}}–{{end}}</range> 共 <total>{{total}}</total> 条记录",
+    "page_x_of_y": "页码<current>{{current}}</current> / <total>{{total}}</total>",
+    "show_rows": "展示",
+    "per_page": "每页",
+    "nav_aria": "分页",
+    "previous_page_aria": "上一页",
+    "next_page_aria": "下一页",
+    "page_number_aria": "第{{page}}页"
+  },
+  "user_menu": {
+    "profile": "我的个人资料",
+    "settings": "账户设置",
+    "logout": "退出"
+  },
+  "sidebar": {
+    "logo_alt": "JTrader 徽标",
+    "main_navigation": "主导航",
+    "session_status": "会话状态",
+    "online": "在线的",
+    "connection_stable": "连接稳定",
+    "sync_realtime": "数据持续同步，每次变化实时更新。",
+    "menu": {
+      "dashboard": "仪表板",
+      "chart": "图表",
+      "analytics": "分析型",
+      "account": "帐户",
+      "trade": "贸易",
+      "graph": "图形",
+      "strategy": "战略",
+      "tag": "标签",
+      "backtests": "回测",
+      "coaching": "人工智能教练",
+      "settings": "环境"
+    },
+    "toast": {
+      "backtests_coming_soon_title": "即将推出",
+      "backtests_coming_soon_description": "回测仍在开发中。当他们准备好时我们会通知您。"
+    },
+    "trading_solutions": {
+      "title": "交易解决方案",
+      "auto": "汽车",
+      "go_to_slide": "转到幻灯片",
+      "items": {
+        "consistency": {
+          "title": "一致性胜过强度",
+          "description": "成功的交易来自每天有纪律的重复，而不是来自一次幸运的交易。"
+        },
+        "risk": {
+          "title": "风险优先，盈利其次",
+          "description": "在进行任何交易之前，请先问自己：如果我错了，我会损失多少？"
+        },
+        "plan": {
+          "title": "计划是你的优势",
+          "description": "随着时间的推移，清晰的进场、出场和仓位调整系统会优于情绪化交易。"
+        }
+      }
+    },
+    "support_contact": {
+      "title": "支持联系方式",
+      "status": "在线",
+      "headline": "通过 Zalo 群快速支持",
+      "description": "直接获得支持团队的响应与使用指导。",
+      "open_zalo_group": "打开 Zalo 群"
+    }
+  },
+  "onboarding": {
+    "mobile_nav_overlay_label": "关闭导航侧边栏",
+    "toast": {
+      "demo_success": "您的演示工作区已准备就绪。",
+      "empty_success": "您的空工作区已准备就绪。",
+      "error": "目前无法初始化入职。"
+    },
+    "dialog": {
+      "badge": "从 JTrader 开始",
+      "title": "选择您想如何开始",
+      "description": "您可以输入预填充的演示数据，立即探索仪表板、交易和分析，或者从空工作区开始，从头开始构建您自己的交易日志。这两种选择都包括选择后的简短导游。",
+      "actions": {
+        "demo": {
+          "badge": "最佳选择",
+          "title": "从演示数据开始",
+          "description": "预加载一个账户、一个策略和一组交易样本，让仪表板立即焕发活力。"
+        },
+        "empty": {
+          "title": "从空工作区开始",
+          "description": "如果您喜欢以自己的方式添加账户、交易和策略，请从干净的应用程序开始。"
+        }
+      },
+      "status": {
+        "submitting": "正在准备您的经验...",
+        "continue": "继续",
+        "select_mode": "选择一个选项继续"
+      }
+    },
+    "tour": {
+      "progress": "步骤 __CURRENT__ / __TOTAL__",
+      "buttons": {
+        "next": "下一个",
+        "previous": "后退",
+        "done": "完毕"
+      },
+      "intro": {
+        "title": "欢迎来到 JTrader",
+        "description": "这里有一个快速介绍，可以帮助您了解方向。 {{modeDescription}}",
+        "mode_demo": "您正在输入演示数据，因此请随意单击每个区域并查看一切如何工作。",
+        "mode_empty": "该工作区是空的，因此游览将集中在最重要的地方开始。"
+      },
+      "sidebar": {
+        "title": "导航侧边栏",
+        "description": "应用程序的所有主要区域都在这里：仪表板、交易、分析、图表和设置。"
+      },
+      "header": {
+        "title": "快速行动区",
+        "description": "您无需离开当前页面即可切换主题、更改语言以及打开帐户菜单。"
+      },
+      "dashboard_header": {
+        "title": "今天一目了然",
+        "description": "顶部部分可帮助您了解当前的交易状态以及下一步要关注的内容。"
+      },
+      "account_selector": {
+        "title": "按帐户过滤",
+        "description": "当您管理多个帐户时，此控件会将仪表板和分析范围缩小到您要检查的帐户。"
+      },
+      "dashboard_hero": {
+        "title": "主要洞察领域",
+        "description": "如果您选择演示数据，则该区域已经充满了指标和热图。在空的工作空间中，您自己的数据将随着时间的推移而增长。"
+      },
+      "app_content": {
+        "title": "主工作区",
+        "description": "这是仪表板、交易和分析屏幕出现的地方。使用您自己的交易数据填充此区域是入职后的主要目标。"
+      },
+      "complete": {
+        "title": "你准备好了",
+        "demo": "在添加真实交易之前，尝试打开仪表板和交易列表来探索示例数据。",
+        "empty": "尝试创建您的第一个帐户或导入交易，以便仪表板真正成为您的。"
+      }
+    }
+  }
+}

@@ -1,0 +1,537 @@
+{
+  "toolbar": {
+    "symbol": "Mã",
+    "chartType": "Loại biểu đồ",
+    "indicators": "Chỉ báo",
+    "tools": "Công cụ",
+    "settings": "Cài đặt",
+    "undo": "Hoàn tác (Ctrl+Z)",
+    "redo": "Làm lại (Ctrl+Y)",
+    "commandPalette": "Bảng lệnh (Ctrl+K)",
+    "screenshot": "Ảnh chụp",
+    "theme": "Giao diện",
+    "fullscreen": "Toàn màn hình",
+    "trade": "Giao dịch",
+    "tradeMode": "Chế độ giao dịch",
+    "layoutName": "Tên bố cục",
+    "untitled": "Không tên",
+    "drawingTools": "Công cụ vẽ",
+    "more": "Thêm",
+    "indicatorsOnChart": "Trên biểu đồ",
+    "indicatorsInPanes": "Trong khung",
+    "allIndicators": "Tất cả chỉ báo…"
+  },
+  "tools": {
+    "orderLines": "Đường lệnh",
+    "alerts": "Cảnh báo",
+    "compare": "So sánh mã",
+    "annotations": "Ghi chú",
+    "measure": "Đo",
+    "replay": "Phát lại nến",
+    "script": "Trình sửa chỉ báo",
+    "layouts": "Bố cục",
+    "timezone": "Múi giờ",
+    "exportCsv": "Xuất CSV",
+    "exportJson": "Xuất JSON"
+  },
+  "cmd": {
+    "title": "Bảng lệnh",
+    "placeholder": "Lệnh hoặc mã…",
+    "symbols": "Mã",
+    "commands": "Lệnh",
+    "empty": "Không tìm thấy",
+    "symbolSearch": "Tìm mã",
+    "settingsFull": "Cài đặt biểu đồ",
+    "screenshot": "Ảnh chụp biểu đồ",
+    "exportCsvFull": "Xuất ra CSV",
+    "exportJsonFull": "Xuất ra JSON",
+    "theme": "Đổi giao diện"
+  },
+  "dock": {
+    "watchlist": "Danh sách theo dõi",
+    "info": "Thông tin mã",
+    "orderbook": "Sổ lệnh",
+    "closePanels": "Đóng bảng"
+  },
+  "menu": {
+    "addAlert": "Thêm cảnh báo",
+    "orderLine": "Đường lệnh",
+    "toRealtime": "Đến giá mới nhất"
+  },
+  "ctx": {
+    "settings": "Cài đặt…",
+    "delete": "Xóa",
+    "remove": "Loại bỏ",
+    "deleteKey": "Del",
+    "lock": "Khóa",
+    "unlock": "Mở khóa",
+    "titleIndicator": "Chỉ báo · {{name}}",
+    "titleDrawing": "Hình vẽ · {{name}}"
+  },
+  "draw": {
+    "cursor": "Con trỏ",
+    "cat": {
+      "singleLine": "Đường",
+      "moreLine": "Kênh",
+      "polygon": "Hình",
+      "fibonacci": "Fibonacci",
+      "wave": "Sóng",
+      "measure": "Đo lường",
+      "position": "Vị thế",
+      "annotation": "Chú thích"
+    },
+    "tool": {
+      "horizontal_straight_line": "Đường ngang",
+      "horizontal_ray_line": "Tia ngang",
+      "horizontal_segment": "Đoạn ngang",
+      "vertical_straight_line": "Đường dọc",
+      "vertical_ray_line": "Tia dọc",
+      "vertical_segment": "Đoạn dọc",
+      "straight_line": "Đường xu hướng",
+      "ray_line": "Tia",
+      "segment": "Đoạn thẳng",
+      "arrow": "Mũi tên",
+      "price_line": "Đường giá",
+      "price_channel_line": "Kênh giá",
+      "parallel_straight_line": "Đường song song",
+      "ray": "Tia",
+      "parallel_channel": "Kênh song song",
+      "circle": "Hình tròn",
+      "rect": "Hình chữ nhật",
+      "parallelogram": "Hình bình hành",
+      "triangle": "Tam giác",
+      "fibonacci_line": "Fibonacci xu hướng",
+      "fibonacci_segment": "Đoạn Fibonacci",
+      "fibonacci_circle": "Vòng tròn Fibonacci",
+      "fibonacci_spiral": "Xoắn ốc Fibonacci",
+      "fibonacci_speed_resistance_fan": "Quạt Fibonacci S/R",
+      "fibonacci_extension": "Mở rộng Fibonacci",
+      "fib_retracement": "Hồi quy Fibonacci",
+      "gann_box": "Hộp Gann",
+      "gann_fan": "Quạt Gann",
+      "xabcd": "Mẫu XABCD",
+      "abcd": "Mẫu ABCD",
+      "three_waves": "Ba sóng",
+      "five_waves": "Năm sóng",
+      "eight_waves": "Tám sóng",
+      "any_waves": "Sóng Elliott",
+      "elliott_wave": "Sóng xung Elliott",
+      "measure": "Đo lường",
+      "long_position": "Vị thế Long",
+      "short_position": "Vị thế Short",
+      "brush": "Cọ vẽ",
+      "fixedRangeVolumeProfile": "Volume profile vùng cố định"
+    },
+    "magnet": "Nam châm: {{mode}}",
+    "autoOn": "Tự lặp: bật",
+    "autoOff": "Tự lặp: tắt",
+    "lock": "Khóa",
+    "unlock": "Mở khóa",
+    "show": "Hiện bản vẽ",
+    "hide": "Ẩn bản vẽ",
+    "removeAll": "Xóa tất cả bản vẽ"
+  },
+  "magnet": {
+    "normal": "tắt",
+    "weak": "yếu",
+    "strong": "mạnh"
+  },
+  "ind": {
+    "title": "Chỉ báo",
+    "desc": "Thêm chỉ báo, chỉnh tham số và bật/tắt hiển thị.",
+    "tabCatalog": "Danh mục",
+    "tabActive": "Đang dùng",
+    "searchPh": "Tìm chỉ báo…",
+    "onChart": "Trên biểu đồ",
+    "inPanes": "Trong khung",
+    "noParams": "Không có tham số",
+    "pane": "khung",
+    "apply": "Áp dụng",
+    "cancel": "Hủy",
+    "editParams": "Chỉnh sửa tham số",
+    "paramsOf": "Tham số {{name}}",
+    "paramsAria": "Tham số {{name}}",
+    "paramLabels": {
+      "params_1": "Tham số 1",
+      "params_2": "Tham số 2",
+      "params_3": "Tham số 3",
+      "params_4": "Tham số 4",
+      "params_5": "Tham số 5",
+      "period": "Chu kỳ",
+      "period_1": "Chu kỳ 1",
+      "period_2": "Chu kỳ 2",
+      "period_3": "Chu kỳ 3",
+      "period_4": "Chu kỳ 4",
+      "standard_deviation": "Độ lệch chuẩn",
+      "multiplier": "Hệ số nhân",
+      "factor": "Hệ số",
+      "tenkan": "Tenkan",
+      "kijun": "Kijun",
+      "senkou_b": "Senkou B",
+      "offset": "Độ lệch",
+      "fast": "Nhanh",
+      "slow": "Chậm",
+      "signal": "Tín hiệu",
+      "rsi_period": "Chu kỳ RSI",
+      "ma_period": "Chu kỳ MA",
+      "smooth_k": "Làm mượt K",
+      "smooth_d": "Làm mượt D",
+      "MACD": {
+        "params_1": "Chu kỳ nhanh",
+        "params_2": "Chu kỳ chậm",
+        "params_3": "Làm mượt tín hiệu"
+      },
+      "KDJ": {
+        "params_1": "Chu kỳ RSV",
+        "params_2": "Làm mượt K",
+        "params_3": "Làm mượt D"
+      },
+      "SMA": {
+        "params_1": "Chu kỳ",
+        "params_2": "Trọng số"
+      },
+      "SAR": {
+        "params_1": "Bước nhảy",
+        "params_2": "Bước nhảy tối đa",
+        "params_3": "Khởi điểm"
+      },
+      "BBI": {
+        "params_1": "MA 1",
+        "params_2": "MA 2",
+        "params_3": "MA 3",
+        "params_4": "MA 4"
+      },
+      "DMI": {
+        "params_1": "Chu kỳ DI",
+        "params_2": "Làm mượt ADX"
+      },
+      "DMA": {
+        "params_1": "MA ngắn",
+        "params_2": "MA dài",
+        "params_3": "MA tín hiệu"
+      },
+      "AO": {
+        "params_1": "Chu kỳ nhanh",
+        "params_2": "Chu kỳ chậm"
+      },
+      "BRAR": { "params_1": "Chu kỳ" },
+      "CCI": { "params_1": "Chu kỳ" },
+      "OBV": { "params_1": "Chu kỳ MA" },
+      "CR": {
+        "params_1": "Chu kỳ",
+        "params_2": "MA 1",
+        "params_3": "MA 2",
+        "params_4": "MA 3",
+        "params_5": "MA 4"
+      },
+      "PSY": {
+        "params_1": "Chu kỳ",
+        "params_2": "Chu kỳ MA"
+      },
+      "TRIX": {
+        "params_1": "Chu kỳ",
+        "params_2": "MA tín hiệu"
+      },
+      "VPVR": {
+        "params_1": "Số hàng",
+        "params_2": "Vùng giá trị %",
+        "params_3": "Vị trí (0=phải, 1=trái)",
+        "params_4": "Chế độ volume (0=tổng, 1=lên/xuống)"
+      },
+      "VR": {
+        "params_1": "Chu kỳ",
+        "params_2": "Chu kỳ MA"
+      },
+      "MTM": {
+        "params_1": "Chu kỳ",
+        "params_2": "Chu kỳ MA"
+      },
+      "EMV": {
+        "params_1": "Chu kỳ",
+        "params_2": "Chu kỳ MA"
+      },
+      "ROC": {
+        "params_1": "Chu kỳ",
+        "params_2": "Chu kỳ MA"
+      }
+    },
+    "paramOptions": {
+      "VPVR": {
+        "placementRight": "Phải",
+        "placementLeft": "Trái",
+        "volumeTotal": "Tổng volume",
+        "volumeUpDown": "Lên / Xuống"
+      }
+    },
+    "show": "Hiện",
+    "hide": "Ẩn",
+    "up": "Lên",
+    "down": "Xuống",
+    "expand": "Mở rộng",
+    "collapse": "Thu gọn",
+    "noActive": "Không có chỉ báo đang dùng",
+    "noResults": "Không tìm thấy chỉ báo",
+    "descriptions": {
+      "MA": "Moving Average — trung bình động giản đơn",
+      "EMA": "Exponential MA — trung bình động hàm mũ, nhạy hơn MA",
+      "SMA": "Simple MA — trung bình động giản đơn",
+      "BOLL": "Bollinger Bands — dải biến động giá",
+      "SAR": "Parabolic SAR — xác định xu hướng đảo chiều",
+      "BBI": "Bull and Bear Index — chỉ số bầy đầu và bầy gấu",
+      "BOLL_TV": "Bollinger Bands (TV) — dải Bollinger kiểu TradingView",
+      "Ichimoku": "Ichimoku Cloud — hệ thống xác định xu hướng Nhật Bản",
+      "SuperTrend": "SuperTrend — xác định xu hướng và tín hiệu vào/ra",
+      "HMA": "Hull MA — trung bình động Hull, mượt và phản ứng nhanh",
+      "VWAP": "VWAP — giá trung bình theo khối lượng trong ngày",
+      "VPVR": "Volume Profile Visible Range — histogram volume ngang theo vùng đang nhìn, kèm POC, VAH và VAL",
+      "PivotPoints": "Pivot Points — mức hỗ trợ/kháng cự pivot cổ điển",
+      "MA_Ribbon": "MA Ribbon — dải nhiều đường trung bình động",
+      "VOL": "Volume — khối lượng giao dịch",
+      "MACD": "MACD — giao cắt trung bình động để tìm xu hướng",
+      "KDJ": "Stochastic KDJ — dao động theo vùng quá mua/bán",
+      "RSI": "Relative Strength Index — chỉ số sức mạnh tương đối (0–100)",
+      "BIAS": "BIAS — độ lệch giá so với trung bình động",
+      "BRAR": "BRAR — tỷ lệ mua/bán và khối lượng tích lũy",
+      "CCI": "Commodity Channel Index — dao động quanh mức trung bình",
+      "DMI": "Directional Movement Index — sức mạnh xu hướng",
+      "CR": "CR — sức mạnh giá so với trung bình",
+      "PSY": "Psychological Line — tâm lý thị trường (% nến tăng)",
+      "DMA": "DMA — hiệu hai đường trung bình động",
+      "TRIX": "TRIX — trung bình động hàm mũ ba lần",
+      "OBV": "On Balance Volume — tích lũy khối lượng theo hướng giá",
+      "VR": "Volume Ratio — tỷ lệ khối lượng tăng/giảm",
+      "WR": "Williams %R — vùng quá mua / quá bán",
+      "MTM": "Momentum — xung lượng thay đổi giá",
+      "EMV": "Ease of Movement — mức dễ di chuyển của giá",
+      "ROC": "Rate of Change — tốc độ thay đổi giá theo %",
+      "PVT": "Price Volume Trend — xu hướng giá kết hợp khối lượng",
+      "AO": "Awesome Oscillator — dao động khoảng cách giá trung bình",
+      "MACD_TV": "MACD (TV) — MACD kiểu TradingView",
+      "RSI_TV": "RSI (TV) — RSI kiểu TradingView",
+      "CCI_TV": "CCI (TV) — CCI kiểu TradingView",
+      "Stochastic": "Stochastic — dao động ngẫu nhiên, vùng quá mua/bán",
+      "WMA": "Weighted MA — trung bình động có trọng số",
+      "ATR": "Average True Range — đo độ biến động thực",
+      "DPO": "Detrended Price Oscillator — loại bỏ xu hướng dài hạn",
+      "AVL": "Average Volume — khối lượng giao dịch trung bình"
+    },
+    "fallbackDesc": "{{name}} — chỉ báo kỹ thuật",
+    "remove": "Gỡ chỉ báo",
+    "ownAxis": "Trục Y riêng"
+  },
+  "settings": {
+    "title": "Cài đặt biểu đồ",
+    "sec": {
+      "candles": "Nến",
+      "priceAxis": "Trục giá",
+      "display": "Hiển thị"
+    },
+    "language": "Ngôn ngữ",
+    "type": "Loại",
+    "upColor": "Màu tăng",
+    "downColor": "Màu giảm",
+    "scaleType": "Loại thang",
+    "position": "Vị trí",
+    "axisInside": "Trục bên trong",
+    "reverse": "Đảo thang",
+    "lastPrice": "Giá cuối",
+    "lastPriceLine": "Đường giá cuối",
+    "highLow": "Cao / thấp",
+    "grid": "Lưới",
+    "crosshair": "Chữ thập",
+    "timeAxis": "Trục thời gian",
+    "candleTooltip": "Chú giải nến",
+    "indicatorTooltip": "Chú giải chỉ báo",
+    "tooltipRule": "Quy tắc chú giải",
+    "reset": "Đặt lại"
+  },
+  "ob": {
+    "price": "Giá",
+    "size": "Khối lượng",
+    "total": "Tổng",
+    "unsupported": "Nguồn không có sổ lệnh",
+    "spread": "chênh lệch"
+  },
+  "ol": {
+    "title": "Đường lệnh",
+    "desc": "Mức vào / cắt lỗ kéo thả ngay trên biểu đồ.",
+    "pricePh": "Giá mức",
+    "empty": "Không có đường nào"
+  },
+  "common": {
+    "removeAll": "Xóa tất cả",
+    "error": "Tải dữ liệu thất bại",
+    "retry": "Thử lại",
+    "clear": "Xóa",
+    "long": "Long",
+    "short": "Short"
+  },
+  "al": {
+    "title": "Cảnh báo giá",
+    "desc": "Thông báo và âm thanh khi giá cắt qua một mức.",
+    "crossingUp": "Cắt lên",
+    "crossingDown": "Cắt xuống",
+    "crossing": "Cắt",
+    "pricePh": "Giá",
+    "msgPh": "Tin nhắn (tùy chọn)",
+    "empty": "Không có cảnh báo"
+  },
+  "cmp": {
+    "title": "So sánh mã",
+    "desc": "Phủ nhiều mã, chuẩn hóa theo % từ nến đầu tiên.",
+    "tickerPh": "Mã (vd ETHUSDT)",
+    "empty": "Không có so sánh"
+  },
+  "an": {
+    "title": "Ghi chú biểu đồ",
+    "desc": "Nhãn văn bản tại các mức giá. Giá mặc định ở dưới chữ thập.",
+    "textPh": "Nội dung ghi chú",
+    "priceCursor": "{{price}} (dưới con trỏ)",
+    "empty": "Không có ghi chú"
+  },
+  "lm": {
+    "title": "Bố cục biểu đồ",
+    "autosave": "Tự động lưu",
+    "namePh": "Tên bố cục",
+    "save": "Lưu",
+    "empty": "Chưa có bố cục đã lưu"
+  },
+  "se": {
+    "title": "Trình sửa chỉ báo",
+    "desc": "Chỉ báo JavaScript tùy chỉnh. Có sẵn: TA, dataList, params. Trả về mảng đối tượng (một cho mỗi nến).",
+    "namePh": "Tên",
+    "paramsPh": "Tham số: 14, 26, 9",
+    "onChart": "Trên biểu đồ",
+    "inPane": "Trong khung",
+    "run": "Chạy",
+    "remove": "Gỡ",
+    "reset": "Đặt lại",
+    "export": "Xuất",
+    "import": "Nhập"
+  },
+  "ss": {
+    "title": "Ảnh nhanh biểu đồ",
+    "preparing": "Đang chuẩn bị ảnh…",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "download": "Tải xuống"
+  },
+  "sy": {
+    "title": "Tìm mã",
+    "searchPh": "Tìm mã (BTC, ETH, SOL…)",
+    "searching": "Đang tìm…",
+    "empty": "Không tìm thấy",
+    "all": "Tất cả",
+    "loadMore": "Tải thêm",
+    "loadMoreCount": "Tải thêm (còn {{count}})",
+    "showingCount": "Hiển thị {{shown}} / {{total}}"
+  },
+  "tz": {
+    "title": "Múi giờ"
+  },
+  "wl": {
+    "title": "Danh sách theo dõi",
+    "addPh": "Thêm mã…",
+    "remove": "Xóa {{ticker}}"
+  },
+  "si": {
+    "title": "Thông tin",
+    "spot": "Spot",
+    "keyData": "Dữ liệu chính",
+    "volBar": "Khối lượng (nến)",
+    "avgVol": "KL trung bình (30n)",
+    "turnover": "Giá trị giao dịch",
+    "dynamics": "Hiệu suất",
+    "techAnalysis": "Phân tích kỹ thuật",
+    "notEnough": "Không đủ dữ liệu",
+    "strongBuy": "Mua mạnh",
+    "buy": "Mua",
+    "neutral": "Trung lập",
+    "sell": "Bán",
+    "strongSell": "Bán mạnh",
+    "sellCount": "{{n}} bán",
+    "neutralCount": "{{n}} TL",
+    "buyCount": "{{n}} mua",
+    "w1": "1T",
+    "m1": "1Th",
+    "m3": "3Th",
+    "m6": "6Th",
+    "ytd": "Từ đầu năm",
+    "y1": "1N"
+  },
+  "rp": {
+    "back": "Lùi",
+    "playPause": "Phát / tạm dừng",
+    "forward": "Tiến",
+    "stop": "Dừng"
+  },
+  "sb": {
+    "measureHint": "Đo: nhấp hai điểm",
+    "auto": " (tự động)",
+    "escHint": "Esc để hủy · Del để xóa vùng chọn",
+    "deleteHint": "Del để xóa · Esc để bỏ chọn",
+    "bars": "nến"
+  },
+  "trade": {
+    "sell": "Bán",
+    "buy": "Mua",
+    "collapse": "Thu gọn",
+    "expand": "Mở rộng",
+    "lotSize": "Khối lượng",
+    "slPrice": "Giá SL",
+    "tpPrice": "Giá TP",
+    "risk": "Rủi ro",
+    "reward": "Lợi nhuận",
+    "rrRatio": "R:R",
+    "clearLines": "Xóa {{count}} line",
+    "entry": "Entry",
+    "useLivePrice": "Dùng giá hiện tại",
+    "drawOnChart": "Vẽ lên chart",
+    "removeLines": "Xóa lines",
+    "rrTool": "Công cụ R/R",
+    "saveToJournal": "Lưu vào journal",
+    "journalTitle": "Lưu lệnh vào journal",
+    "journalDesc": "Tạo bản ghi journal từ thiết lập chart hiện tại.",
+    "symbol": "Symbol",
+    "side": "Chiều",
+    "account": "Tài khoản",
+    "accountPh": "Chọn tài khoản",
+    "noAccounts": "Chưa có tài khoản. Hãy tạo trong mục Tài khoản trước."
+  },
+  "auth": {
+    "signIn": "Đăng nhập",
+    "signInForDrawing": "Đăng nhập để dùng công cụ vẽ",
+    "accountMenu": "Tài khoản",
+    "eyebrow": "Không gian của bạn",
+    "title": "Đăng nhập để tiếp tục",
+    "subtitle": "Đồng bộ bố cục, watchlist và cài đặt biểu đồ cá nhân với tài khoản của bạn.",
+    "googleProcessing": "Đang đăng nhập Google…",
+    "googleButtonLoading": "Đang tải nút đăng nhập Google…",
+    "goToLogin": "Đến trang đăng nhập",
+    "profile": "Cài đặt hồ sơ",
+    "signOut": "Đăng xuất"
+  },
+  "candle": {
+    "candle_solid": "Nến",
+    "candle_stroke": "Nến rỗng",
+    "candle_up_stroke": "Rỗng tăng",
+    "candle_down_stroke": "Rỗng giảm",
+    "ohlc": "Thanh (OHLC)",
+    "area": "Vùng",
+    "heikin_ashi": "Heikin Ashi"
+  },
+  "axis": {
+    "normal": "Thường",
+    "percentage": "Phần trăm",
+    "logarithm": "Logarit"
+  },
+  "ypos": {
+    "left": "Trái",
+    "right": "Phải"
+  },
+  "trule": {
+    "always": "Luôn luôn",
+    "follow_cross": "Theo chữ thập",
+    "none": "Ẩn"
+  }
+}

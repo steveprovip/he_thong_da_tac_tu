@@ -1,0 +1,537 @@
+{
+  "toolbar": {
+    "symbol": "Symbol",
+    "chartType": "Chart type",
+    "indicators": "Indicators",
+    "tools": "Tools",
+    "settings": "Settings",
+    "undo": "Undo (Ctrl+Z)",
+    "redo": "Redo (Ctrl+Y)",
+    "commandPalette": "Command palette (Ctrl+K)",
+    "screenshot": "Screenshot",
+    "theme": "Theme",
+    "fullscreen": "Fullscreen",
+    "trade": "Trade",
+    "tradeMode": "Trading mode",
+    "layoutName": "Layout name",
+    "untitled": "Untitled",
+    "drawingTools": "Drawing tools",
+    "more": "More",
+    "indicatorsOnChart": "On chart",
+    "indicatorsInPanes": "In panes",
+    "allIndicators": "All indicators…"
+  },
+  "tools": {
+    "orderLines": "Order lines",
+    "alerts": "Alerts",
+    "compare": "Compare symbols",
+    "annotations": "Notes",
+    "measure": "Measure",
+    "replay": "Bar replay",
+    "script": "Indicator editor",
+    "layouts": "Layouts",
+    "timezone": "Timezone",
+    "exportCsv": "Export CSV",
+    "exportJson": "Export JSON"
+  },
+  "cmd": {
+    "title": "Command palette",
+    "placeholder": "Command or symbol…",
+    "symbols": "Symbols",
+    "commands": "Commands",
+    "empty": "Nothing found",
+    "symbolSearch": "Symbol search",
+    "settingsFull": "Chart settings",
+    "screenshot": "Chart screenshot",
+    "exportCsvFull": "Export to CSV",
+    "exportJsonFull": "Export to JSON",
+    "theme": "Toggle theme"
+  },
+  "dock": {
+    "watchlist": "Watchlist",
+    "info": "Symbol info",
+    "orderbook": "Order book",
+    "closePanels": "Close panels"
+  },
+  "menu": {
+    "addAlert": "Add alert",
+    "orderLine": "Order line",
+    "toRealtime": "Go to last price"
+  },
+  "ctx": {
+    "settings": "Settings…",
+    "delete": "Delete",
+    "remove": "Remove",
+    "deleteKey": "Del",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "titleIndicator": "Indicator · {{name}}",
+    "titleDrawing": "Drawing · {{name}}"
+  },
+  "draw": {
+    "cursor": "Cursor",
+    "cat": {
+      "singleLine": "Lines",
+      "moreLine": "Channels",
+      "polygon": "Shapes",
+      "fibonacci": "Fibonacci",
+      "wave": "Waves",
+      "measure": "Measure",
+      "position": "Positions",
+      "annotation": "Annotations"
+    },
+    "tool": {
+      "horizontal_straight_line": "Horizontal line",
+      "horizontal_ray_line": "Horizontal ray",
+      "horizontal_segment": "Horizontal segment",
+      "vertical_straight_line": "Vertical line",
+      "vertical_ray_line": "Vertical ray",
+      "vertical_segment": "Vertical segment",
+      "straight_line": "Trend line",
+      "ray_line": "Ray",
+      "segment": "Segment",
+      "arrow": "Arrow",
+      "price_line": "Price line",
+      "price_channel_line": "Price channel",
+      "parallel_straight_line": "Parallel lines",
+      "ray": "Ray",
+      "parallel_channel": "Parallel channel",
+      "circle": "Circle",
+      "rect": "Rectangle",
+      "parallelogram": "Parallelogram",
+      "triangle": "Triangle",
+      "fibonacci_line": "Fibonacci trend",
+      "fibonacci_segment": "Fibonacci segment",
+      "fibonacci_circle": "Fibonacci circles",
+      "fibonacci_spiral": "Fibonacci spiral",
+      "fibonacci_speed_resistance_fan": "Fib speed/resistance fan",
+      "fibonacci_extension": "Fibonacci extension",
+      "fib_retracement": "Fibonacci retracement",
+      "gann_box": "Gann box",
+      "gann_fan": "Gann fan",
+      "xabcd": "XABCD pattern",
+      "abcd": "ABCD pattern",
+      "three_waves": "Three drives",
+      "five_waves": "Five waves",
+      "eight_waves": "Eight waves",
+      "any_waves": "Elliott wave",
+      "elliott_wave": "Elliott impulse",
+      "measure": "Measure",
+      "long_position": "Long position",
+      "short_position": "Short position",
+      "brush": "Brush",
+      "fixedRangeVolumeProfile": "Fixed range volume profile"
+    },
+    "magnet": "Magnet: {{mode}}",
+    "autoOn": "Auto-repeat: on",
+    "autoOff": "Auto-repeat: off",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "show": "Show drawings",
+    "hide": "Hide drawings",
+    "removeAll": "Remove all drawings"
+  },
+  "magnet": {
+    "normal": "off",
+    "weak": "weak",
+    "strong": "strong"
+  },
+  "ind": {
+    "title": "Indicators",
+    "desc": "Add indicators, edit parameters and toggle visibility.",
+    "tabCatalog": "Catalog",
+    "tabActive": "Active",
+    "searchPh": "Search indicator…",
+    "onChart": "On chart",
+    "inPanes": "In panes",
+    "noParams": "No parameters",
+    "pane": "pane",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "editParams": "Edit parameters",
+    "paramsOf": "{{name}} parameters",
+    "paramsAria": "{{name}} parameters",
+    "paramLabels": {
+      "params_1": "Parameter 1",
+      "params_2": "Parameter 2",
+      "params_3": "Parameter 3",
+      "params_4": "Parameter 4",
+      "params_5": "Parameter 5",
+      "period": "Period",
+      "period_1": "Period 1",
+      "period_2": "Period 2",
+      "period_3": "Period 3",
+      "period_4": "Period 4",
+      "standard_deviation": "Std deviation",
+      "multiplier": "Multiplier",
+      "factor": "Factor",
+      "tenkan": "Tenkan",
+      "kijun": "Kijun",
+      "senkou_b": "Senkou B",
+      "offset": "Offset",
+      "fast": "Fast",
+      "slow": "Slow",
+      "signal": "Signal",
+      "rsi_period": "RSI period",
+      "ma_period": "MA period",
+      "smooth_k": "Smooth K",
+      "smooth_d": "Smooth D",
+      "MACD": {
+        "params_1": "Fast length",
+        "params_2": "Slow length",
+        "params_3": "Signal smoothing"
+      },
+      "KDJ": {
+        "params_1": "RSV period",
+        "params_2": "K smoothing",
+        "params_3": "D smoothing"
+      },
+      "SMA": {
+        "params_1": "Period",
+        "params_2": "Weight"
+      },
+      "SAR": {
+        "params_1": "Step",
+        "params_2": "Max step",
+        "params_3": "Start"
+      },
+      "BBI": {
+        "params_1": "MA 1",
+        "params_2": "MA 2",
+        "params_3": "MA 3",
+        "params_4": "MA 4"
+      },
+      "DMI": {
+        "params_1": "DI length",
+        "params_2": "ADX smoothing"
+      },
+      "DMA": {
+        "params_1": "Short MA",
+        "params_2": "Long MA",
+        "params_3": "Signal MA"
+      },
+      "AO": {
+        "params_1": "Fast period",
+        "params_2": "Slow period"
+      },
+      "BRAR": { "params_1": "Period" },
+      "CCI": { "params_1": "Period" },
+      "OBV": { "params_1": "MA period" },
+      "CR": {
+        "params_1": "Period",
+        "params_2": "MA 1",
+        "params_3": "MA 2",
+        "params_4": "MA 3",
+        "params_5": "MA 4"
+      },
+      "PSY": {
+        "params_1": "Period",
+        "params_2": "MA period"
+      },
+      "TRIX": {
+        "params_1": "Period",
+        "params_2": "Signal MA"
+      },
+      "VPVR": {
+        "params_1": "Rows",
+        "params_2": "Value area %",
+        "params_3": "Placement (0=right, 1=left)",
+        "params_4": "Volume mode (0=total, 1=up/down)"
+      },
+      "VR": {
+        "params_1": "Period",
+        "params_2": "MA period"
+      },
+      "MTM": {
+        "params_1": "Period",
+        "params_2": "MA period"
+      },
+      "EMV": {
+        "params_1": "Period",
+        "params_2": "MA period"
+      },
+      "ROC": {
+        "params_1": "Period",
+        "params_2": "MA period"
+      }
+    },
+    "paramOptions": {
+      "VPVR": {
+        "placementRight": "Right",
+        "placementLeft": "Left",
+        "volumeTotal": "Total volume",
+        "volumeUpDown": "Up / Down"
+      }
+    },
+    "show": "Show",
+    "hide": "Hide",
+    "up": "Up",
+    "down": "Down",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "noActive": "No active indicators",
+    "noResults": "No indicators found",
+    "descriptions": {
+      "MA": "Moving Average — simple moving average",
+      "EMA": "Exponential MA — exponential moving average, more responsive than MA",
+      "SMA": "Simple MA — simple moving average",
+      "BOLL": "Bollinger Bands — price volatility bands",
+      "SAR": "Parabolic SAR — identifies trend reversals",
+      "BBI": "Bull and Bear Index — bull/bear sentiment index",
+      "BOLL_TV": "Bollinger Bands (TV) — TradingView-style Bollinger Bands",
+      "Ichimoku": "Ichimoku Cloud — Japanese trend identification system",
+      "SuperTrend": "SuperTrend — trend direction and entry/exit signals",
+      "HMA": "Hull MA — smooth, fast-reacting moving average",
+      "VWAP": "VWAP — volume-weighted average price for the session",
+      "VPVR": "Volume Profile Visible Range — horizontal volume histogram for visible bars with POC, VAH, and VAL",
+      "PivotPoints": "Pivot Points — classic pivot support/resistance levels",
+      "MA_Ribbon": "MA Ribbon — multiple moving average ribbon",
+      "VOL": "Volume — trading volume",
+      "MACD": "MACD — moving average convergence/divergence for trends",
+      "KDJ": "Stochastic KDJ — overbought/oversold oscillator",
+      "RSI": "Relative Strength Index — momentum oscillator (0–100)",
+      "BIAS": "BIAS — price deviation from moving average",
+      "BRAR": "BRAR — buy/sell ratio and accumulated volume",
+      "CCI": "Commodity Channel Index — deviation from average price",
+      "DMI": "Directional Movement Index — trend strength",
+      "CR": "CR — price strength vs. average",
+      "PSY": "Psychological Line — market sentiment (% up bars)",
+      "DMA": "DMA — difference between two moving averages",
+      "TRIX": "TRIX — triple exponential moving average",
+      "OBV": "On Balance Volume — cumulative volume by price direction",
+      "VR": "Volume Ratio — ratio of up/down volume",
+      "WR": "Williams %R — overbought/oversold oscillator",
+      "MTM": "Momentum — rate of price change",
+      "EMV": "Ease of Movement — how easily price moves",
+      "ROC": "Rate of Change — percentage rate of price change",
+      "PVT": "Price Volume Trend — price trend combined with volume",
+      "AO": "Awesome Oscillator — average price range oscillator",
+      "MACD_TV": "MACD (TV) — TradingView-style MACD",
+      "RSI_TV": "RSI (TV) — TradingView-style RSI",
+      "CCI_TV": "CCI (TV) — TradingView-style CCI",
+      "Stochastic": "Stochastic — overbought/oversold oscillator",
+      "WMA": "Weighted MA — weighted moving average",
+      "ATR": "Average True Range — measures true volatility",
+      "DPO": "Detrended Price Oscillator — removes long-term trend",
+      "AVL": "Average Volume — average trading volume"
+    },
+    "fallbackDesc": "{{name}} — technical indicator",
+    "remove": "Remove indicator",
+    "ownAxis": "Own Y-axis"
+  },
+  "settings": {
+    "title": "Chart settings",
+    "sec": {
+      "candles": "Candles",
+      "priceAxis": "Price axis",
+      "display": "Display"
+    },
+    "language": "Language",
+    "type": "Type",
+    "upColor": "Up color",
+    "downColor": "Down color",
+    "scaleType": "Scale type",
+    "position": "Position",
+    "axisInside": "Axis inside",
+    "reverse": "Reverse scale",
+    "lastPrice": "Last price",
+    "lastPriceLine": "Last price line",
+    "highLow": "High / low",
+    "grid": "Grid",
+    "crosshair": "Crosshair",
+    "timeAxis": "Time axis",
+    "candleTooltip": "Candle tooltip",
+    "indicatorTooltip": "Indicator tooltip",
+    "tooltipRule": "Tooltip rule",
+    "reset": "Reset"
+  },
+  "ob": {
+    "price": "Price",
+    "size": "Size",
+    "total": "Total",
+    "unsupported": "Source has no order book",
+    "spread": "spread"
+  },
+  "ol": {
+    "title": "Order lines",
+    "desc": "Draggable entry / stop levels right on the chart.",
+    "pricePh": "Level price",
+    "empty": "No active lines"
+  },
+  "common": {
+    "removeAll": "Remove all",
+    "error": "Failed to load data",
+    "retry": "Retry",
+    "clear": "Clear",
+    "long": "Long",
+    "short": "Short"
+  },
+  "al": {
+    "title": "Price alerts",
+    "desc": "Notification and sound when price crosses a level.",
+    "crossingUp": "Crossing up",
+    "crossingDown": "Crossing down",
+    "crossing": "Crossing",
+    "pricePh": "Price",
+    "msgPh": "Message (optional)",
+    "empty": "No alerts"
+  },
+  "cmp": {
+    "title": "Compare symbols",
+    "desc": "Overlay several symbols, normalized to % from the first bar.",
+    "tickerPh": "Ticker (e.g. ETHUSDT)",
+    "empty": "No comparisons"
+  },
+  "an": {
+    "title": "Chart notes",
+    "desc": "Text labels at price levels. Default price is under the crosshair.",
+    "textPh": "Note text",
+    "priceCursor": "{{price}} (under cursor)",
+    "empty": "No notes"
+  },
+  "lm": {
+    "title": "Chart layouts",
+    "autosave": "Auto-save",
+    "namePh": "Layout name",
+    "save": "Save",
+    "empty": "No saved layouts"
+  },
+  "se": {
+    "title": "Indicator editor",
+    "desc": "Custom JavaScript indicator. Available: TA, dataList, params. Return an array of objects (one per candle).",
+    "namePh": "Name",
+    "paramsPh": "Params: 14, 26, 9",
+    "onChart": "On chart",
+    "inPane": "In pane",
+    "run": "Run",
+    "remove": "Remove",
+    "reset": "Reset",
+    "export": "Export",
+    "import": "Import"
+  },
+  "ss": {
+    "title": "Chart snapshot",
+    "preparing": "Preparing snapshot…",
+    "copy": "Copy",
+    "copied": "Copied",
+    "download": "Download"
+  },
+  "sy": {
+    "title": "Symbol search",
+    "searchPh": "Search symbol (BTC, ETH, SOL…)",
+    "searching": "Searching…",
+    "empty": "Nothing found",
+    "all": "All",
+    "loadMore": "Load more",
+    "loadMoreCount": "Load more ({{count}} remaining)",
+    "showingCount": "Showing {{shown}} of {{total}}"
+  },
+  "tz": {
+    "title": "Timezone"
+  },
+  "wl": {
+    "title": "Watchlist",
+    "addPh": "Add symbol…",
+    "remove": "Remove {{ticker}}"
+  },
+  "si": {
+    "title": "Symbol info",
+    "spot": "Spot",
+    "keyData": "Key data",
+    "volBar": "Volume (bar)",
+    "avgVol": "Avg volume (30d)",
+    "turnover": "Turnover",
+    "dynamics": "Performance",
+    "techAnalysis": "Technicals",
+    "notEnough": "Not enough data",
+    "strongBuy": "Strong buy",
+    "buy": "Buy",
+    "neutral": "Neutral",
+    "sell": "Sell",
+    "strongSell": "Strong sell",
+    "sellCount": "{{n}} sell",
+    "neutralCount": "{{n}} neutral",
+    "buyCount": "{{n}} buy",
+    "w1": "1W",
+    "m1": "1M",
+    "m3": "3M",
+    "m6": "6M",
+    "ytd": "YTD",
+    "y1": "1Y"
+  },
+  "rp": {
+    "back": "Back",
+    "playPause": "Play / pause",
+    "forward": "Forward",
+    "stop": "Stop"
+  },
+  "sb": {
+    "measureHint": "Measure: click two points",
+    "auto": " (auto)",
+    "escHint": "Esc to cancel · Del to remove selection",
+    "deleteHint": "Del to remove · Esc to deselect",
+    "bars": "bars"
+  },
+  "trade": {
+    "sell": "Sell",
+    "buy": "Buy",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "lotSize": "Lot size",
+    "slPrice": "SL price",
+    "tpPrice": "TP price",
+    "risk": "Risk",
+    "reward": "Reward",
+    "rrRatio": "R:R",
+    "clearLines": "Clear {{count}} lines",
+    "entry": "Entry",
+    "useLivePrice": "Use live price",
+    "drawOnChart": "Draw on chart",
+    "removeLines": "Remove lines",
+    "rrTool": "R/R Tool",
+    "saveToJournal": "Save to journal",
+    "journalTitle": "Save trade to journal",
+    "journalDesc": "Create a journal entry from the current chart setup.",
+    "symbol": "Symbol",
+    "side": "Side",
+    "account": "Account",
+    "accountPh": "Select account",
+    "noAccounts": "No accounts found. Create one in Accounts first."
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signInForDrawing": "Sign in to use drawing tools",
+    "accountMenu": "Account",
+    "eyebrow": "Your workspace",
+    "title": "Sign in to continue",
+    "subtitle": "Sync layouts, watchlists and personalized chart settings with your account.",
+    "googleProcessing": "Signing in with Google…",
+    "googleButtonLoading": "Loading Google sign-in…",
+    "goToLogin": "Go to sign-in page",
+    "profile": "Profile settings",
+    "signOut": "Sign out"
+  },
+  "candle": {
+    "candle_solid": "Candles",
+    "candle_stroke": "Hollow candles",
+    "candle_up_stroke": "Hollow up",
+    "candle_down_stroke": "Hollow down",
+    "ohlc": "Bars (OHLC)",
+    "area": "Area",
+    "heikin_ashi": "Heikin Ashi"
+  },
+  "axis": {
+    "normal": "Normal",
+    "percentage": "Percentage",
+    "logarithm": "Logarithmic"
+  },
+  "ypos": {
+    "left": "Left",
+    "right": "Right"
+  },
+  "trule": {
+    "always": "Always",
+    "follow_cross": "On crosshair",
+    "none": "Hide"
+  }
+}
