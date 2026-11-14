@@ -7,15 +7,18 @@ from tests.test_micro_noise import align_engine
 
 
 def test_micro_settings_env_parses_ofi_and_edge_knobs():
-    env = {'MICRO_OFI_MIN': '0.45', 'MICRO_MIN_EDGE_BPS': '7.0'}
+    env = {'MICRO_OFI_MIN': '0.70', 'MICRO_MIN_EDGE_BPS': '7.0'}         # 11-13: the floor may only be raised
     out = cs.micro_capital_env(env)
-    assert out['micro_ofi_min'] == 0.45
+    assert out['micro_ofi_min'] == 0.70
     assert out['scalp_min_edge_bps'] == 7.0
 
 
 def test_micro_settings_env_rejects_invalid_values():
     with pytest.raises(ValueError, match='MICRO_OFI_MIN must be in'):
         cs.micro_capital_env({'MICRO_OFI_MIN': '1.5'})
+    with pytest.raises(ValueError, match='rejected'):                     # 11-13 owner decision: 0.45 is refused
+        cs.micro_capital_env({'MICRO_OFI_MIN': '0.45'})
+    assert cs.micro_capital_env({'MICRO_OFI_MIN': '0.65'}) == {'micro_ofi_min': 0.65}
     with pytest.raises(ValueError, match='MICRO_MIN_EDGE_BPS must be in'):
         cs.micro_capital_env({'MICRO_MIN_EDGE_BPS': '-5'})
 

@@ -114,8 +114,8 @@ def micro_capital_env(env):
             ofi_floor = float(raw)
         except ValueError:
             raise ValueError('MICRO_OFI_MIN must be a number') from None
-        if not 0.0 <= ofi_floor <= 1.0:
-            raise ValueError('MICRO_OFI_MIN must be in [0, 1]')
+        if not 0.65 <= ofi_floor <= 1.0:      # 11-13 owner decision: the 0.65 floor may be raised, never loosened
+            raise ValueError('MICRO_OFI_MIN must be in [0.65, 1]: loosening the OFI floor was rejected (2026-11-13)')
         out['micro_ofi_min'] = ofi_floor
     raw = str(env.get('MICRO_MIN_EDGE_BPS', '')).strip()            # 11-11: fee-gate edge floor for micro mode
     if raw:

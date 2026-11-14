@@ -317,8 +317,9 @@ def test_the_micro_launcher_arms_shadow_harvest_the_runner_and_a_15_u_bankroll_o
     rest = text.replace(micro, '')
     sets = dict(re.findall(r'^set "(MICRO_[A-Z_]+)=([^"]*)"', micro, flags=re.M))
     # 11-11 (6a621f8) added MICRO_OFI_MIN / MICRO_MIN_EDGE_BPS without updating this pin; 11-13 adds MICRO_NET_EV_GATE=on
+    # and the owner rejected MICRO_OFI_MIN=0.45 (the profile floor 0.65 stays)
     assert sets == {'MICRO_CAPITAL_MODE': 'on', 'MICRO_IOC': 'on', 'MICRO_HARVESTER': 'shadow', 'MICRO_SNIPER_RUNNER': 'on',
-                    'MICRO_CAPITAL_BANKROLL': '15', 'MICRO_EXIT_POLICY': 'patient', 'MICRO_OFI_MIN': '0.45',
+                    'MICRO_CAPITAL_BANKROLL': '15', 'MICRO_EXIT_POLICY': 'patient',
                     'MICRO_MIN_EDGE_BPS': '7.0', 'MICRO_NET_EV_GATE': 'on'}
     assert '--mode demo' in micro and '--mode live' not in micro
     assert not re.findall(r'^set "MICRO_', rest, flags=re.M)                                 # demo / live / test set none of them

@@ -76,7 +76,8 @@ rem 11-10: MICRO_EXIT_POLICY=patient = harvest positions keep their TP (BE timer
 rem touch only on toxic flow); unvalidated (docs/harness/plan_micro_asymmetry_cure.md). Delete this line to go back to the 45 s scratch.
 set "MICRO_EXIT_POLICY=patient"
 rem 11-11: liberate entry gates; prevent 90-min turnover freeze while keeping flow alignment
-set "MICRO_OFI_MIN=0.45"
+rem 11-13 owner decision: MICRO_OFI_MIN=0.45 rejected, the profile floor OFI >= 0.65 stays (the parser now refuses values under 0.65;
+rem the 10 MICRO ALIGN refusals under 0.65 moved -36 +- 21 bps against the signal in 60 min, AUTOPSY_REPORT_2026.md).
 set "MICRO_MIN_EDGE_BPS=7.0"
 call scripts\TAT_GIAO_DIEN.bat >nul 2>&1
 start "" "http://127.0.0.1:8765"
