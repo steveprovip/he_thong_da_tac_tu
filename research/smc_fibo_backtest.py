@@ -48,6 +48,13 @@ def ms(day: str) -> int:
 # ----------------------------------------------------------------------------------------------------- data
 def load_1m(symbol: str, root: Path = KLINES) -> dict:
     files = sorted(root.glob(f'{symbol}-1m-*.zip'))
+    if not files:
+        raise FileNotFoundError(f'no 1m klines for {symbol} in {root}')
+    return load_zips(files)
+
+
+def load_zips(files: list) -> dict:
+    """1 m bars of the given kline zips (monthly or daily, any folders), de-duplicated and sorted by open time."""
     frames = []
     for p in files:
         with zipfile.ZipFile(p) as z:
@@ -56,8 +63,6 @@ def load_1m(symbol: str, root: Path = KLINES) -> dict:
             df = pd.read_csv(z.open(name), header=0 if not head[:1].isdigit() else None, usecols=[0, 1, 2, 3, 4, 5, 9])
         df.columns = ['t', 'o', 'h', 'l', 'c', 'v', 'tb']
         frames.append(df)
-    if not frames:
-        raise FileNotFoundError(f'no 1m klines for {symbol} in {root}')
     df = pd.concat(frames, ignore_index=True).drop_duplicates('t').sort_values('t').reset_index(drop=True)
     out = {k: df[k].to_numpy(np.int64 if k == 't' else np.float64) for k in df.columns}
     out['files'] = [p.name for p in files]

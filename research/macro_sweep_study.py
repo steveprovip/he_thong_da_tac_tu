@@ -193,7 +193,10 @@ def net_of(gross_bps, why, maker: float = MAKER_BPS, taker: float = TAKER_BPS):
 
 # ------------------------------------------------------------------------------------------------- one config
 def load_symbol(symbol: str, root: Path = KLINES) -> dict:
-    m1 = load_1m(symbol, root)
+    return symbol_data(symbol, load_1m(symbol, root))
+
+
+def symbol_data(symbol: str, m1: dict) -> dict:
     return {'symbol': symbol, 'm1': m1, 'tick': tick_of(m1['c']), 't5': resample(m1, 5)['t'],
             'cands': detect(m1, MacroSweep())}
 

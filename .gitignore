@@ -114,3 +114,5 @@ tmp_test/
 data/aggtrades_20261110/
 data/replay_overnight_20261110/
 data/phase2_*.csv.gz
+# 11-14 (e) fresh 1m klines after the monthly archive (tools/fetch_klines_fresh.py)
+data/klines/

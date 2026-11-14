@@ -210,10 +210,13 @@ class MicroCapitalSizer:
         t = self.compound_target(equity, leverage, pnl)
         return self.notional_max if t is None else max(self.notional_max, t)
 
-    def risk_notional(self, sl_pct, fees_pct):
-        """Largest notional whose loss at the stop (stop distance + fees, percent) stays inside max_loss_usdt."""
+    def risk_notional(self, sl_pct, fees_pct, max_loss_usdt=None):
+        """Largest notional whose loss at the stop (stop distance + fees, percent) stays inside max_loss_usdt.
+        `max_loss_usdt` (11-14 e, opt-in): a budget for this one call, e.g. profit_funded_risk(); None, a non-finite or
+        a non-positive value keeps the micro cap. No engine call site passes it."""
         d = sl_pct + fees_pct
-        return self.max_loss_usdt / (d / 100.0) if d > 0 else None
+        ok = max_loss_usdt is not None and math.isfinite(max_loss_usdt) and max_loss_usdt > 0
+        return (max_loss_usdt if ok else self.max_loss_usdt) / (d / 100.0) if d > 0 else None
 
     def qty(self, price, step, min_qty, min_notional, equity=None, leverage=5.0, risk_notional=None, pnl=None):
         """-> (qty, '') or (None, why).  Without a known equity above the venue floor: the smallest lot inside the
@@ -315,14 +318,39 @@ def fractional_kelly_risk(equity, wins, losses, payoff_b, cap_usdt, lam=0.25, z=
     capped by cap_usdt (the 0.05 U micro budget) and max_frac * equity (3 %). No edge (f* <= 0), an unknown payoff or
     no equity -> 0.0: the caller must not trade (UNKNOWN is never sized as zero edge with a minimum lot).
     A winning streak raises the size only through the posterior: evidence, not the streak itself."""
-    if not equity or equity <= 0 or payoff_b is None or not payoff_b > 0 or cap_usdt <= 0:
+    if not equity or equity <= 0 or cap_usdt <= 0:
+        return 0.0
+    f_star = kelly_lcb(wins, losses, payoff_b, z, prior)
+    if f_star <= 0:
+        return 0.0
+    risk = lam * f_star * max(0.0, min(1.0, conf_scale)) * equity
+    return max(0.0, min(risk, cap_usdt, max_frac * equity))
+
+
+def kelly_lcb(wins, losses, payoff_b, z=1.645, prior=(1.0, 1.0)) -> float:
+    """Kelly fraction p - (1 - p) / b at the LOWER bound of the Beta(prior + wins, prior + losses) win rate (normal
+    approximation, z one-sided). <= 0 = no proven edge; an unknown or non-positive payoff counts as none (0.0)."""
+    if payoff_b is None or not payoff_b > 0:
         return 0.0
     a, b = prior[0] + max(0, wins), prior[1] + max(0, losses)
     mean = a / (a + b)
     sd = math.sqrt(a * b / ((a + b) ** 2 * (a + b + 1.0)))
     p = max(0.0, min(1.0, mean - z * sd))
-    f_star = p - (1.0 - p) / payoff_b
-    if f_star <= 0:
+    return p - (1.0 - p) / payoff_b
+
+
+def profit_funded_risk(equity, bankroll, wins, losses, payoff_b, base_cap_usdt=0.05, lam=0.25, z=1.645,
+                       prior=(1.0, 1.0), max_frac=0.03) -> float:
+    """USDT to lose at the stop when size may grow ONLY out of accumulated profit (2026-11-14 e).
+
+        risk = base_cap_usdt + f x max(0, equity - bankroll),   f = lam x kelly_lcb(...), 0 when the edge is not proven
+    capped at max_frac x equity. The principal (`bankroll`, the money put in) never carries more than base_cap_usdt per
+    trade; a drawdown below the bankroll, no profit yet, or evidence whose lower bound shows no edge all give exactly
+    base_cap_usdt. It sizes a trade the caller has already decided to take: whether to trade at all stays with the
+    net-EV gate. Unknown equity or bankroll -> base_cap_usdt (never an invented profit)."""
+    if base_cap_usdt <= 0:
         return 0.0
-    risk = lam * f_star * max(0.0, min(1.0, conf_scale)) * equity
-    return max(0.0, min(risk, cap_usdt, max_frac * equity))
+    if not (equity and bankroll and math.isfinite(equity) and math.isfinite(bankroll) and equity > 0 and bankroll > 0):
+        return base_cap_usdt
+    f = lam * max(0.0, kelly_lcb(wins, losses, payoff_b, z, prior))
+    return max(0.0, min(base_cap_usdt + f * max(0.0, equity - bankroll), max(base_cap_usdt, max_frac * equity)))
