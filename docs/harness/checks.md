@@ -1,5 +1,31 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-14 (f) — ATLAS density forecasters: L2 loop, kline loop (pre-registered), tail trigger, carry + overlay
+| # | Command | Result |
+|---|---|---|
+| 1 | `python tools/rec_to_l2_touch.py --symbol DOGEUSDT` (12 s) | 11 hourly depth files (last one truncated) -> `data/l2/DOGEUSDT/20261110.jsonl`, 321 350 quote lines, 37 235 s, one gap-free segment |
+| 2 | `python scripts/autoresearch_agent_swarm.py --data "data/l2/<SYM>/*.jsonl" --rounds 30 --seed 20261114 ...` x 4 (BTC, SOL, DOGE, pooled) | kept 14 / 12 / 15 / 12 of 30; mean pinball bps train 2.852 -> 2.770, 4.163 -> 4.070, 4.971 -> 4.923, 4.335 -> 4.299; holdout 4.192 -> 4.207, 3.965 -> 3.956, 4.524 -> 4.477, 4.911 -> 4.837 |
+| 3 | `python -m research.atlas_density_study --l2` | ensemble - baseline on the holdouts: -0.087 +- 0.028 (3 windows), -0.040 +- 0.027 (3), -0.064 +- 0.061 (12), -0.121 +- 0.057 (17): descriptive only |
+| 4 | plan freeze (session script) | SHA-256 `d9943d77...e3e5`, 2026-11-14T08:02:49Z, before any kline outcome |
+| 5 | `python -m pytest -q tests/test_atlas_density.py` | 23 passed |
+| 6 | `python -m research.atlas_density_study` (424 s; second run after the reporting fixes, cells and losses bit-identical to the first) | 24 / 60 kept; HOLDOUT pinball E 6.3657 / B0 6.4698 / REF 6.2860 bps; E - B0 -0.1041 +- 0.0089; E - REF +0.0797 +- 0.0088; location -0.00055 +- 0.00065; T1 P85 x MT: 0 decisions in 204 477 points = NO OPPORTUNITY SET; T2 TAIL_0.1 x MT: HOLDOUT -9.31 +- 0.69 bps (n 6 687), FRESH -11.61 +- 2.32 = NO EDGE |
+| 7 | same run, carry + overlay | carry n 165 +16.01 bps / 28 d (2.09 % / yr); gate at 5 U: EQUITY 5.0000 < TWO_LEG_MIN 10.00; 5 U after 365 d: 5.000 (as gated), 5.105 (hypothetical 5 U per leg); overlay T2 -0.0775 U / day, stops after a median 52 days; P(+10 U) 0 |
+| 8 | `python -m pytest -q` (final) | 2356 passed, 0 failed, 251.4 s (2333 + 23 new) |
+| 9 | `check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — 2026-11-14 (f)"` | exit 0, 6 / 6 sections |
+
+Not run: Demo / live engine, recorder, any network call. Not measured: depth-based signals at 1 s beyond 4.6-10.3 h of recordings (the 2026-11-10 recorder died after 10.4 h); a queue model for the maker fill; bracket exits on the density signals (not pre-registered).
+
+## 2026-11-14 (e) — MLS-2 confirmation read (pre-registered), top-40 frequency, profit-funded Kelly (records written after the interrupted session)
+| # | Command | Result |
+|---|---|---|
+| 1 | `python tools/fetch_klines_fresh.py --symbols <11> --start 2026-10-01` (prior session) | `data/klines/fresh/`: 11 symbols x (2026-10 monthly + 2026-11-01..12 daily) zips, SHA-256 checked; common data end 2026-11-13 00:00 UTC (43 days) |
+| 2 | `python -m research.macro_sweep_validation` (prior session, 103 s; numbers re-read from `data/macro_sweep_validation.json`) | NOT CONFIRMED: U = F + X n 117, -6.89 +- 11.67 bps (LCB95 -26.10, UCB95 +12.31), win 27.4 %, PF 0.877, vs placebo -5.63 (LCB95 -25.21), DSR 0.0025; F n 32 -2.95 +- 27.11; X n 85 -8.38 +- 12.62; pooled HOLDOUT + F + X n 214 +1.79 +- 9.17 (LCB95 -13.29) |
+| 3 | same run, frequency / Kelly / trajectory | 0.312 / 0.445 / 0.679 trades per day (11 symbols / top 20 measured / top 40 extrapolated); Kelly on the lower bound -0.0499 -> f 0; 5 U after 365 d median 5.22 / 5.37 / 5.58 U, P(+10 U) 0 |
+| 4 | `python -m pytest -q` (2026-11-14, HEAD `e7b7291`, before any edit of this session) | 2333 passed, 0 failed, 248.0 s (2316 + 17 in `tests/test_macro_sweep_validation.py`) |
+| 5 | `check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — 2026-11-14 (e)"` | exit 0, 6 / 6 sections |
+
+Not run again: the validation itself (its inputs and code are unchanged since the stored JSON was written at 10:52; a re-run would be the same read).
+
 ## 2026-11-14 (d) — ledger audit, FLS-1 fee re-pricing, MLS-1 macro liquidity sweep (pre-registered), funding-extreme scan
 | # | Command | Result |
 |---|---|---|

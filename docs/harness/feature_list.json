@@ -539,6 +539,30 @@
       "dependencies": [],
       "status": "rejected",
       "evidence": "2026-11-14. tests/test_macro_sweep.py 35 passed. Primary FAIL: ABS_STRUCT HOLDOUT +6.79 +- 13.04 bps (n 79, LCB95 -14.66, DSR 0.046). Search final HOLDOUT +12.25 +- 12.48 (n 97, LCB95 -8.28, vs placebo LCB -0.73, DSR 0.109): not significant. 5 U after 30 days: median 5.03-5.10 U."
+    },
+    {
+      "id": "mls2-validation-20261114",
+      "name": "MLS-2: one confirmation read of the MLS-1 search final on unseen data + top-40 frequency + profit-funded Kelly",
+      "description": "research/macro_sweep_validation.py: frozen MLS-1 search final on F (11 symbols, 2026-10-01..11-12, tools/fetch_klines_fresh.py) + X (unseen symbols of the point-in-time top-20 universe), SE clustered by fill day, placebo, 8 fee schedules, frequency / concurrency, top-40 extrapolation (tools/universe_snapshot.py), core/position_sizer.kelly_lcb + profit_funded_risk (opt-in, no engine call site), 2 000-path trajectory. Pre-registered in plan_mls2_validation_2026_11.md.",
+      "dependencies": ["mls1-macro-sweep-20261114"],
+      "status": "rejected",
+      "evidence": "2026-11-14. tests/test_macro_sweep_validation.py 17 passed. NOT CONFIRMED: U = F + X n 117, -6.89 +- 11.67 bps (LCB95 -26.10, UCB95 +12.31), DSR 0.0025; F n 32 -2.95 +- 27.11; X n 85 -8.38 +- 12.62; pooled with the already-read HOLDOUT n 214 +1.79 +- 9.17. Kelly on the lower bound -0.050 -> f 0. Full suite 2333 passed."
+    },
+    {
+      "id": "rec-to-l2-touch-20261114",
+      "name": "Depth recording -> top-of-book quote lines for the ATLAS L2 loop",
+      "description": "tools/rec_to_l2_touch.py: rebuilds the book of a tools/record_market.py --light recording (snapshot, later diffs, diffs received just before the snapshot replayed) and writes bookTicker-style lines that scripts/autoresearch_agent_swarm.py reads; nothing before the first snapshot, while crossed or after a sequence gap; a truncated hourly file is read up to the damage.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-14. tests/test_atlas_density.py (2 converter tests). DOGEUSDT 2026-11-10: 11 files -> 321 350 lines, 37 235 s, 1 152 decision points."
+    },
+    {
+      "id": "atlas-k1-density-20261114",
+      "name": "ATLAS-K1: +15 m density forecasters on 1 m klines, tail trigger, carry overlay",
+      "description": "research/atlas_density_study.py: the 8 ATLAS forecasters ported to bars and vectorised (400 block-bootstrap futures + family drift), 60 TRAIN-only one-parameter mutations, survivor-weighted quantile ensemble, baseline B0, EWMA reference, pinball / calibration / location skill, 20 rules x 2 fills with clustered SE and a random-side placebo, P85 test (T1), TRAIN-best cell (T2), carry one-slot reduction, 5 U trajectory with a margin floor, L2 paired block SE. Pre-registered in plan_atlas_density_2026_11.md; report ATLAS_DENSITY_REPORT_2026_11.md.",
+      "dependencies": ["rec-to-l2-touch-20261114"],
+      "status": "rejected",
+      "evidence": "2026-11-14. tests/test_atlas_density.py 23 passed. Scale skill only: HOLDOUT E / B0 0.9838, REF (EWMA) better by 0.080 +- 0.009 bps, location -0.0006 +- 0.0007 bps. T1 (>= 85 % confidence): 0 decisions in 204 477 points. T2 TAIL_0.1 x MT: HOLDOUT -9.31 +- 0.69 bps (n 6 687), FRESH -11.61 +- 2.32. Carry not fundable at 5 U; overlay is a cost. Full suite 2356 passed."
     }
   ]
 }
