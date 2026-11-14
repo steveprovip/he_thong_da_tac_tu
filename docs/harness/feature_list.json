@@ -531,6 +531,14 @@
       "dependencies": [],
       "status": "done",
       "evidence": "2026-11-14. tests/test_pm15_benchmark.py 9 passed. Brier 0.127 vs 0.25; real signals -0.010 +- 0.092 USDC/share (n 24)."
+    },
+    {
+      "id": "mls1-macro-sweep-20261114",
+      "name": "MLS-1: macro liquidity sweep at the London / NY opens + TRAIN-only search",
+      "description": "research/macro_sweep_study.py: MacroSweep candidates on the SMCFibo state (H4 trend, H1 leg, wide discount zone), Cfg filters (zone 0.705-0.886, session windows, taker-delta absorption, ABS / SWP trigger), TIGHT / STRUCT stops, TP = leg extreme clipped 150-300 bps, 1 m simulator with fee shield and trailing stop, placebos, OFF-session ablation, fee-schedule re-pricing, acceptance with deflated Sharpe, autoresearch (30 mutations, one HOLDOUT read), exit-grid addendum, 5 U growth. Pre-registered in docs/research_upgrade/plan_macro_liquidity_sweep_2026_11.md.",
+      "dependencies": [],
+      "status": "rejected",
+      "evidence": "2026-11-14. tests/test_macro_sweep.py 35 passed. Primary FAIL: ABS_STRUCT HOLDOUT +6.79 +- 13.04 bps (n 79, LCB95 -14.66, DSR 0.046). Search final HOLDOUT +12.25 +- 12.48 (n 97, LCB95 -8.28, vs placebo LCB -0.73, DSR 0.109): not significant. 5 U after 30 days: median 5.03-5.10 U."
     }
   ]
 }

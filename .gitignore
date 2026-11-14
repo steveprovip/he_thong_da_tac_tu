@@ -108,3 +108,9 @@ data/funding_cache/
 data/ticks/
 data/public_depth/
 data/.public_l2_cache/
+
+# 11-14 local scratch and replay/backtest dumps (reproducible, never commit)
+tmp_test/
+data/aggtrades_20261110/
+data/replay_overnight_20261110/
+data/phase2_*.csv.gz
