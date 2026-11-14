@@ -44,7 +44,8 @@ from typing import Deque, Dict, List, Optional, Tuple
 
 from core.jev_gatekeeper import score_from_ratio
 
-WS_FORCE_ORDER = 'wss://fstream.binance.com/ws/!forceOrder@arr'
+# 2026-11-13: the legacy /ws root was retired on 2026-04-23 (core/micro_signals.py); forceOrder lives on /market
+WS_FORCE_ORDER = 'wss://fstream.binance.com/market/stream?streams=!forceOrder@arr'
 WS_STREAMS = '!forceOrder@arr/!markPrice@arr@1s'
 
 

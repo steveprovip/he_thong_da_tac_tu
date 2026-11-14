@@ -1120,3 +1120,69 @@ Changed: `core/engine.py` (Profile `micro_session_losses` 2, `micro_net_ev_gate`
 - A Kelly sizer fed only by the trades it takes never trades; the simulation feeds it virtual outcomes (as edge_shadow does in the engine).
 - Rejected: wiring the SMC-Fibo lane (failed), deleting the harvester shadow (its markout log is data), a separate MICRO_SESSION_LOSSES env flag (YAGNI; Profile field).
 - Rollback: Profile `micro_net_ev_gate='off'`, `micro_session_losses=0`; delete `MICRO_NET_EV_GATE` in `run.bat`; the harvester refusal is one `if` in `config/settings.py`; knife shield back to all modes = revert one line in `Engine` flow management.
+
+## Handoff 6C — 2026-11-13 (b) (owner locks + liquidation tape recorder + FLS-1 pre-registration; nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner directive (pasted 2026-11-13, Phase 5): keep `MICRO_NET_EV_GATE=on`; reject `MICRO_OFI_MIN=0.45` (keep OFI >= 0.65); build a liquidation tape recorder (`!forceOrder@arr` + per-symbol touch and prints, non-blocking writes, `data/recordings/liquidations_YYYYMMDD.jsonl`); pre-register the flash-liquidation sniping study in `docs/research_upgrade/plan_flash_liquidation_sniping_2026_11.md`; tests `tests/test_liquidation_recorder.py`, `tests/test_flash_liquidation_sniper.py`; full regression; 6C handoff; trial log. Done = code + tests green + frozen pre-registration + measured recorder latency / volume.
+
+### 2. Ràng buộc (Constraints)
+No engine start / restart, no live, no order, no risk raise. Public market data only (no keys). A days-long recording is a long-running network process: not started without the owner (disk does not fit, section 5). No commit / push; no AI attribution when asked. Pre-registration frozen before any tape exists; changes after the first data read = a new study id.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, HEAD `6a621f8`, all work uncommitted (on top of entry 2026-11-13). Changed: `run.bat` (`MICRO_OFI_MIN=0.45` removed, reason in rem), `config/settings.py` (`MICRO_OFI_MIN` must be in [0.65, 1]), `tools/record_market.py` (`--liq`, `--stats-every`; `split_frame`, `Router`, `BookState`, `DailyWriter`, `ThreadedSink`, `HourlyWriter.write_line`; every mode now writes on a writer thread), `research/fast_liquidation_sniper.py` (`WS_FORCE_ORDER` off the retired `/ws` root; constant only, the runner already used `/market`), `tests/test_sniper_runner_carry_2026_11_10.py` + `tests/test_micro_gate_liberation_and_knife_guard_2026_11_11.py` (re-pinned). New: `research/flash_liquidation_study.py`, `tests/test_liquidation_recorder.py`, `tests/test_flash_liquidation_sniper.py`, `docs/research_upgrade/plan_flash_liquidation_sniping_2026_11.md`. Appended: `docs/research_upgrade/trial_log.jsonl` (FLS-1 PRE-REGISTERED), `docs/harness/checks.md`, `docs/harness/feature_list.json` (+3), CLAUDE.md. Smoke output only in the session scratchpad (not in `data/`).
+
+### 4. Bằng chứng (Evidence)
+- Launcher / OFI: 23 passed (pin without `MICRO_OFI_MIN`; `MICRO_OFI_MIN=0.45` raises, 0.65 / 0.70 parse).
+- Recorder: `tests/test_liquidation_recorder.py` 14 passed (hourly lines byte-identical to the old recorder, touch attached with `age_ms` or `null`, slow path for other layouts, writer thread survives a failing write, mock-socket reconnect, end-to-end `--liq` run with no REST call); related suites 85 passed.
+- Evaluator: `tests/test_flash_liquidation_sniper.py` 16 passed (5 s half-open trigger window, ATR from complete minutes only, CKS OFI by hand, post-only reject, touch is not a fill, TP maker / gapped SL / E1 / time stop / short mirror, G1 waits for OFI >= 0.65, recorder -> loader round trip, one position per symbol, COLLECTING before 21 days, acceptance logic).
+- Live smoke 60 s (6 symbols): loop cost p50 3.9 us, p99 18.4 us, max 555 us; receive -> written lag p99 ~10 ms; queue 0; 0 write errors; 146 337 bookTicker + 3 571 aggTrade + 16 liquidations; 1.83 MB/min gz = ~2.6 GB/day.
+- Freeze: SHA-256 of the LF-normalised plan `b6d14a2a8b8e56213b6b6300bd82eaabb655d265145997b77d0111f7cb9712d5`, git blob `8a781f84`, 2026-11-13T16:32:32Z (trial_log row).
+- Full suite: `python -m pytest -q tests/` 2261 passed, 0 failed, 243.6 s (2231 + 30 new).
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: storage for 21 days. The frozen 6-symbol set needs ~55 GB (F: 14 GB free, C: 20 GB free). Either free / add disk and start the frozen command (section 2 of the plan), or amend BEFORE any data to drop the BTC / ETH touch (~0.73 GB/day, ~15 GB for 21 days); an amendment needs a new trial_log freeze row.
+2. Start the recorder only after that decision, with `--min-free-gb 8`; check `data/recordings/liquidations_*.jsonl` daily.
+3. After >= 21 full days: `python -m research.flash_liquidation_study --root data/recordings` (prints COLLECTING until then).
+4. Commit on the owner's request (no AI attribution).
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The directive's `wss://fstream.binance.com/ws` is the root Binance retired on 2026-04-23 (core/micro_signals.py); `!forceOrder@arr` / `aggTrade` go to `/market`, `bookTicker` to `/public`.
+- "> $100 k within 500 ms" cannot be observed: the venue pushes one liquidation per symbol per 1000 ms; the trigger is the 5 s same-side sum (a lower bound).
+- "Discard setups with a negative 1 s / 5 s markout" would select the sample on its outcome (look-ahead); it is implemented as E1, a real-time taker exit whose cost stays in the statistics.
+- GTX "zero taker fee" covers the entry only: stops and E1 exits are taker (5 bps + slip).
+- Writes moved to a thread for every recorder mode (lines byte-identical, tested); the loop now only slices frames.
+- Rejected: per-symbol `forceOrder` in `--liq` (duplicates the all-market stream), REST depth snapshots in `--liq` (no depth recorded), a touch-change-only bookTicker filter (L1 OFI needs size-only updates).
+- Rollback: restore the two `run.bat` lines / the parser bound; `--liq` is opt-in; `git revert` for the rest.
+
+## Handoff 6C — 2026-11-14 (c) (FLS-1 on the COIN-M liquidation archive + 30-round search + Polymarket benchmark; nothing started)
+
+### 1. Mục tiêu (Goal)
+Owner directive (pasted, "recursive breakthrough"): do not wait 21 days; download 30 days of USD-M liquidationSnapshot + aggTrades (SOL, DOGE, XRP, 1000PEPE) from data.binance.vision, evaluate FLS-1 now (8 variants, TRAIN and HOLDOUT), run a 20-30 round parameter search, benchmark the Polymarket 15 m latency-impulse idea, report the 5 U growth curve, keep the suite green, log trials. Done = real numbers on real liquidation history with the pre-registration discipline intact.
+
+### 2. Ràng buộc (Constraints)
+Offline research only: no order, no engine start, no live, no risk raise; the owner's locks (net-EV gate on, OFI >= 0.65) untouched. Downloads limited to the public archive the owner named (data.binance.vision), SHA-256 verified; disk floor 8 GB (F: had 14 GB). A search scores TRAIN only; each HOLDOUT read is counted. No commit / push.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, HEAD `6a621f8`, all work uncommitted (on top of entries 2026-11-13 and (b)). New: `tools/fetch_cm_liquidation_tape.py`, `research/pm15_benchmark.py`, `tests/test_fls1_cm_history.py`, `tests/test_pm15_benchmark.py`, `docs/research_upgrade/plan_fls1_cm_history_2026_11.md`, `docs/research_upgrade/FLS1_CM_REPORT_2026_11.md`. Changed: `research/flash_liquidation_study.py` (Params with the frozen FLS-1 defaults, trade-derived touch `trade_touch`, `Window.tfi`, G1 on TFI for book-less tape, `_attempt` / `run_variants` chronological multi-variant sweep, `evaluate_history`, `mutate`, `score_cfg`, `autoresearch`, `run_history`, CLI `--history-split`). Data (git-ignored): `data/recordings/historical/cm/` (1.9 GB: liquidations_*.jsonl + per-symbol hourly gz, manifest.jsonl), `data/fls1_cm_history.json`, `data/fls1_cm_sensitivity.json`, `data/fls1_cm_boundary.json`, `data/fls1_cm_growth.json`, `data/pm15_benchmark.json`. Appended: trial_log.jsonl (FLS-1-CM freeze + 4 result rows), experiment_register.md (FLS1-CM, FLS1-CM-S, PM15-B), feature_list.json (+3), checks.md, CLAUDE.md. F: free 12 GB.
+
+### 4. Bằng chứng (Evidence)
+- Archive listing: USD-M `um/daily` has no liquidationSnapshot; COIN-M `cm/daily` has it 2023-06-25 .. 2024-10-14.
+- `python -m research.flash_liquidation_study --root data/recordings/historical/cm --symbols SOLUSD_PERP,DOGEUSD_PERP,XRPUSD_PERP,ETHUSD_PERP,BTCUSD_PERP --history-split 2024-04-01 --rounds 30`: 2 494 cascades; all 8 variants negative on both partitions (HOLDOUT -9.4 .. -11.2 bps); chosen k0.5 R2 G0 HOLDOUT -10.83 +- 1.24 (n 637, win 12.4 %, PF 0.30, vs placebo -1.62): FAIL. Search: 0/31 TRAIN configs > 0, final HOLDOUT -8.38 +- 1.94 (n 435), DSR 9.6e-6 (39 trials).
+- TRAIN sensitivity (11 configs): threshold 50 k -> 250 k moves TRAIN from -6.6 to +1.4 (E1) / -5.2 to +2.7 (E0), never significant. Boundary HOLDOUT (>= 150 k, E0, defined before the read): -3.79 +- 3.14 (n 336), vs placebo +5.63 (LCB95 +0.37), DSR 0.0006 (50 trials).
+- 5 U growth (bootstrap of HOLDOUT net R, 0.05 U per trade): median 2.77 U (search final) / 3.79 U (boundary) after 30 days; P(>= 15 U) 0.
+- `python -m research.pm15_benchmark`: p_up Brier 0.127 vs 0.25 (766 041 points), 1 m impulse hit 67-76 % = model p; 24 real-ask signals -0.010 +- 0.092 USDC/share.
+- `python -m pytest -q tests/`: 2281 passed, 0 failed, 247.4 s (2261 + 20 new).
+
+### 5. Bước tiếp theo (Next Steps)
+1. Owner: the only USD-M liquidation evidence can come from the live recorder (FLS-1 frozen plan, 21 days); the storage decision of entry (b) is still open. The COIN-M result (timing information, no net edge) argues for a smaller symbol set or none.
+2. If Polymarket stays of interest: record Polymarket books at 1 s around Binance impulses (shadow) before any claim; the historical calibration cannot show a book lag.
+3. The ~1.9 GB COIN-M tape can be deleted (`data/recordings/historical/cm`) once nobody needs a re-run; the manifest lists every file and its SHA-256 source.
+4. Commit on the owner's request (no AI attribution).
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The directive's premise (USD-M liquidation history on data.binance.vision) is false; the COIN-M archive was used as a declared transfer test, frozen before any outcome.
+- The search was kept TRAIN-only with one HOLDOUT read per candidate, and every scored configuration counted for the deflated Sharpe; "iterate until positive" would have been p-hacking. The random one-parameter draw never picked `threshold` or `e1` in 30 rounds; a TRAIN-only sensitivity covered them and its best region got one pre-specified HOLDOUT read.
+- Real finding: larger cascades carry timing information (beat placebo +5.6 bps at >= 150 k) but maker trade-through fills are adversely selected (HOLDOUT markouts -0.9 / -1.1 / -1.4 bps at 1 / 5 / 30 s) and stops pay taker: net stays negative.
+- Engineering: 8 variants x months of tape do not fit a cache; one chronological sweep with per-variant state parses each hour once (~19 min for 1.9 GB). `tail -1 a b` is not valid for several files (it made two healthy download jobs report exit 1).
+- Rollback: the new modules are offline research; `research/flash_liquidation_study.py` defaults reproduce FLS-1 exactly (its 16 tests unchanged).

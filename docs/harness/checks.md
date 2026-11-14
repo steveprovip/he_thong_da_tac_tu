@@ -1,5 +1,29 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-14 (c) — FLS-1-CM on the COIN-M liquidation archive + Polymarket benchmark
+| # | Command | Result |
+|---|---|---|
+| 1 | S3 listing of `data.binance.vision` `data/futures/um/daily/` and `cm/daily/` | USD-M has no `liquidationSnapshot`; COIN-M has it 2023-06-25 .. 2024-10-14 (+ aggTrades, bookTicker) |
+| 2 | `python -I tools/fetch_cm_liquidation_tape.py --liq-only` (5 symbols) + `--no-book --days ...` | SHA-256 checked; 53 398 BTC / 28 092 ETH / 14 540 SOL / 12 016 DOGE / 11 438 XRP liquidation rows; aggTrades 1 040 symbol-days, 24 hour files each, 1.9 GB; no download error (the background jobs' "exit 1" was a `tail -1 a b` syntax error) |
+| 3 | `python -m pytest -q tests/test_fls1_cm_history.py tests/test_flash_liquidation_sniper.py tests/test_pm15_benchmark.py` | 11 + 16 + 9 passed |
+| 4 | `python -m research.flash_liquidation_study --root data/recordings/historical/cm --symbols ... --history-split 2024-04-01 --rounds 30` | primary FAIL (chosen k0.5 R2 G0 HOLDOUT -10.83 +- 1.24 bps, n 637); search final HOLDOUT -8.38 +- 1.94 (n 435), DSR 1e-5; ~19 min |
+| 5 | TRAIN-only sensitivity (11 configs) + one HOLDOUT read of the >= $150k E0 boundary | boundary -3.79 +- 3.14 bps (n 336), vs placebo +5.63 (LCB +0.37), DSR 0.0006 (50 trials) |
+| 6 | `python -m research.pm15_benchmark` (7.5 s) | Brier 0.127 vs 0.25; impulse hit = model p; 24 real signals -0.010 +- 0.092 USDC/share |
+| 7 | `python -m pytest -q tests/` | 2281 passed, 0 failed, 247.4 s (2261 + 20 new) |
+
+Not run: any USD-M liquidation study (no archive), Polymarket book history (not downloaded), live recorder.
+
+## 2026-11-13 (b) — owner locks (net-EV gate on, OFI >= 0.65) + liquidation recorder + FLS-1 pre-registration
+| # | Command | Result |
+|---|---|---|
+| 1 | `python -m pytest -q tests/test_sniper_runner_carry_2026_11_10.py tests/test_micro_gate_liberation_and_knife_guard_2026_11_11.py` | 23 passed (launcher pin without `MICRO_OFI_MIN`; env refuses 0.45) |
+| 2 | `python -m pytest -q tests/test_liquidation_recorder.py tests/test_fast_research_loop.py tests/test_fast_lane.py tests/test_upgrade_2026_10.py` | 99 passed (14 new) |
+| 3 | `python -m pytest -q tests/test_flash_liquidation_sniper.py tests/test_liquidation_recorder.py` | 30 passed (16 + 14 new) |
+| 4 | live smoke, read-only public streams: `python tools/record_market.py --liq --symbols BTCUSDT,ETHUSDT,SOLUSDT,DOGEUSDT,XRPUSDT,1000PEPEUSDT --duration 60 --stats-every 20 --out <scratchpad>` | 60 s: bookTicker 146 337, aggTrade 3 571, forceOrder 16 (all symbols; the one BTC event had its touch, age 0.0 ms); loop cost per frame p50 3.9 / p99 18.4 / max 555 us; receive -> written lag p99 9-10 ms; queue 0; write errors 0; 1.83 MB/min gz = ~2.6 GB/day (BTC 0.59 + ETH 0.73 MB/min) |
+| 5 | `python -m pytest -q tests/` (final) | 2261 passed, 0 failed, 243.6 s (2231 + 30 new) |
+
+Not run: the 21-day recording (2.6 GB/day x 21 = ~55 GB; free: F: 14 GB, C: 20 GB) and any FLS-1 outcome (0 days of tape).
+
 ## 2026-11-13 — alpha re-engineering directive
 | # | Command | Result |
 |---|---|---|
