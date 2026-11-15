@@ -129,3 +129,6 @@ data/af/
 
 # ODH-1 public data caches: Binance perp / spot 4 h klines, Bybit funding and klines (2026-11-15)
 data/odh/
+
+# MCF-1 public snapshots: Meteora DLMM top pools, GeckoTerminal daily closes, model output (2026-11-15)
+data/micro_capital/

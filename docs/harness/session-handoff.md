@@ -1514,3 +1514,42 @@ Branch `feat/janas-autoresearch-smc`, HEAD `b8b7b83` (AF-1 committed by Antigrav
 - Not verified: Bybit fees on the venue (repo constant), mark-price liquidation and cumulative moves since entry, execution inside the 4 h bar, venue eligibility.
 - Rejected: reporting M1's positive HOLDOUT (+1.45 bps/day on 24 rounds, DSR 0.71) as an edge; changing a frozen rule after run 1; any git operation.
 - Rollback: delete the five new files, `data/odh/`, `data/one_dollar_hour_study.json`; `git checkout -- .gitignore docs/ CLAUDE.md`.
+
+## Handoff 6C — 2026-11-15 (d) (MCF-1: four non-CEX frontiers for a 10 USD base: AI-assisted micro-services ranked first, prop challenge not fundable on 10 USD, DLMM cents a day, airdrops a lottery, VTuber 0 donations so far; nothing wired, no git operation)
+
+### 1. Mục tiêu (Goal)
+Owner directive (pasted, 2026-11-15 v3, "comparative feasibility"): rank four non-CEX paths for a 10 USD start (prop-firm micro-challenges on gold / US30, Solana DLMM / CLMM liquidity, scripted airdrop farming on L2s, local-AI income from the AI Linh VTuber and micro-services) on capital ruin, time to first dollar, net hourly velocity, implementation friction and scalability (1-100 each), with payoff formulas and risk bounds, crown one winner with a step-by-step implementation plan, and write `docs/research_upgrade/MICRO_CAPITAL_10U_FEASIBILITY_REPORT_2026_11.md`, this entry and CLAUDE.md. Done = sourced inputs, reproducible models with tests, a matrix whose winner survives its sensitivity, files left for Antigravity.
+
+### 2. Ràng buộc (Constraints)
+Offline research and design only: no account, deposit, challenge purchase, LP position, on-chain transaction, stream or order; nothing wired into the trading engine; no cap, gate or Profile default changed. Git: no `git add`, `git commit` or `git push` by this session (directive + memory); none was run. Network: public read-only APIs (Meteora data API, GeckoTerminal) and web search; no user data sent. The AI Linh project (`E:\AI_Linh_vtuber\...`) was read, not edited. The directive's "simulate organic user behaviour" for airdrops was not designed: it targets sybil filters that the programs use to exclude such wallets; the airdrop frontier was evaluated as transparent single-wallet use.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, HEAD `c834841` (ODH-1 committed by Antigravity), all work of this entry uncommitted. New: `research/micro_capital_frontiers.py`, `tests/test_micro_capital_frontiers.py`, `docs/research_upgrade/MICRO_CAPITAL_10U_FEASIBILITY_REPORT_2026_11.md`. Changed: `.gitignore` (+`data/micro_capital/`), `docs/research_upgrade/trial_log.jsonl` (+1 `mcf1-result`), `docs/research_upgrade/experiment_register.md` (+3 rows), `docs/harness/feature_list.json` (+1 entry), `docs/harness/checks.md`, `docs/harness/session-handoff.md`, `CLAUDE.md`. No file under `core/` or `tools/` changed. Data (git-ignored): `data/micro_capital/dlmm_snapshot.json` (150 pools), `data/micro_capital/micro_capital_frontiers.json`.
+
+### 4. Bằng chứng (Evidence)
+- Sources (links in the report): FTUK Flex 9 USD entry + 56 USD activation after passing, 4 % target, 6 % trailing floor, 5 % daily; FPFX data (Finance Magnates, Sept 2024): 7 % of traders in 300 000+ accounts reached a payout, typical payout about 4 % of plan size; ATFunded 6 % funded (June 2025); 80-100 prop firms closed 2024-2025; Meteora rent 0.057-0.059 SOL refundable + 0.075 SOL per new bin array; Vietnam Region I minimum wage 25 500 VND / h (Decree 293/2025/ND-CP) at 25 600 VND / USD.
+- AI Linh logs: `donations.log` 42 start-up lines and 0 donation events; `tiktok.log` 11 crashes of `services_v2/tiktok_connector.py` (NameError `os`, TypeError unhashable list), last written 2026-11-08.
+- `python -m research.micro_capital_frontiers dlmm`: 150 Meteora pools, 0 errors, 117 with >= 21 daily closes (first attempt stalled on GeckoTerminal HTTP 429; re-run at 6.5 s per call with a 61 s back-off). `python -m research.micro_capital_frontiers run` (57 s, 20 000 paths per prop cell):
+  - FTUK Flex 5k: zero edge P(pass) 0.522 (closed form 0.513), P(any payout) 0.306, EV per year +61.33 USD, Sharpe -0.5 +31.49, Sharpe -1.5 -0.20; first payout median 46 days; not fundable on 10 USD.
+  - Directive bot (0.5 %/day): needs annual Sharpe 15.9 / 7.9 / 4.0 at 0.5 / 1 / 2 % daily volatility.
+  - DLMM: fee yield median 0.31 %/day, sigma median 3.9 %/day; fees above full-range LVR in 91 % of 117 pools, above +-10 % LVR in 40 %; 10 USD deploys 5.68 USD after rent (0.24 with a new bin array), about 0.013 USD/day at the median pool.
+  - Airdrop central EV +0.80 USD over 6 months, P(nothing) 0.686; streaming median 0.08 USD/day, 625 days to a 50 USD payout; services central 5.2 orders / 177 USD in 13 weeks, 3.32 USD per owner hour, reviewed seller 995 USD (7.85 USD/h).
+  - Matrix (equal / capital safety / velocity): F4b 65.8 / 72.2 / 61.8 first, F4a 39.3 / 49.9 / 30.4 second; F4b stays first in all four sensitivity cases (worst 45.2 / 55.1 / 42.7).
+- `python -m pytest -q tests/test_micro_capital_frontiers.py`: 18 passed. `python -m pytest -q` (final): 2552 passed, 0 failed, 284.4 s (2534 + 18 new).
+- `check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — 2026-11-15 (d)"`: exit 0.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Antigravity: stage and commit the three new files and the seven changed ones listed in section 3.
+2. Owner decision: whether to start the winner's plan (report section 7, Phase A: transcribe / scraper / bot kit in its own folder outside this trading repository, then listings, then a funnel ledger with a week-4 gate).
+3. Owner decision before any prop challenge: the 56 USD activation is outside the 10 USD budget; legal eligibility from Vietnam and the firm's current terms are unverified.
+4. Separate repository, if streaming is wanted: the AI Linh TikTok connector crashes logged on 2026-11-08 and the P0s in its own progress notes (producer authentication, durable money-event inbox) come before any live test.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The target is 720 USD a month (1 USD per calendar hour), about 3.5 Region I monthly minimum wages; from 10 USD that is 240 % a day, so no capital frontier can reach it and the ranking is decided by capital safety, speed and labour productivity.
+- A prop challenge is an option on the fee: under the published rules a rule-abiding zero-edge strategy has positive model EV (+61 USD a year on FTUK Flex), and the industry's 7 % payout rate sits below the model's Sharpe -1.5 cell; the firm's margin comes from worse traders, unmodelled terms and closures. On 10 USD it is not fundable.
+- Pool-level fee / TVL against sigma^2 / 8 is an upper bound on LP profitability (concentration, daily closes, one-day fees, survivorship); at 10 USD the rent decides the outcome.
+- A model's free-tier data source can stall a fetch: GeckoTerminal returned HTTP 429 at 2.2 s per call; the fetcher now waits 61 s on 429 and paces at 6.5 s.
+- A first sensitivity script added the variant as a new row next to the original and reported a false second place; replacing the row gave the correct ranks. Check that a sensitivity replaces, not duplicates, the row it varies.
+- Not verified: prop firms' own terms (their sites did not resolve from the fetch service), a DLMM fee time series, real proposal win rates, venue eligibility, tax treatment.
+- Rejected: designing sybil-evasion scripts; counting the zero-edge prop EV as an edge; any git operation.
+- Rollback: delete the three new files and `data/micro_capital/`; `git checkout -- .gitignore docs/ CLAUDE.md`.

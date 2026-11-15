@@ -629,6 +629,16 @@
       ],
       "status": "done",
       "evidence": "2026-11-15. tests/test_one_dollar_hour.py 42 passed. M1 HOLDOUT +1.45 +- 0.64 bps/day (24 rounds, DSR 0.71): NO EDGE; M2 -11.09 +- 7.48: NO EDGE; M3 -6.12 +- 6.82: NO EDGE; M3R -2.18 +- 2.85: NO EDGE. XV reference 1.96 %/yr on capital: C* 447 k USD (527 k at LCB95). Run 1 discarded for M1 / M2 (trailing_sum NaN bug, fixed and tested). Nothing wired. Full suite 2534 passed, 0 failed, 270.9 s."
+    },
+    {
+      "id": "mcf1-micro-capital-frontiers-20261115",
+      "name": "MCF-1: feasibility of four non-CEX frontiers for a 10 USD base (prop challenge, DLMM LP, airdrops, local-AI income)",
+      "description": "research/micro_capital_frontiers.py (dlmm / run): vectorised prop-challenge Monte Carlo (static and trailing floors, daily limit, payout dates, split) with closed-form bounds; LVR of full-range and concentrated positions; 10 USD DLMM budget after rent; Meteora top-pool snapshot with GeckoTerminal daily closes; airdrop, streaming and services funnels; decision matrix with fixed scoring functions and three weightings. Report MICRO_CAPITAL_10U_FEASIBILITY_REPORT_2026_11.md.",
+      "dependencies": [
+        "odh1-one-dollar-hour-20261115"
+      ],
+      "status": "done",
+      "evidence": "2026-11-15. tests/test_micro_capital_frontiers.py 18 passed. Ranking F4b 65.8 > F4a 39.3 > F2 37.7 > F3 26.8 > F1* 19.0 > F1 6.9 (equal weights; same order under capital-safety and velocity weights). FTUK Flex zero-edge P(pass) 0.522 (bound 0.513), EV/yr +61.33 USD but 56 USD activation outside 10 USD. Nothing wired. Full suite 2552 passed, 0 failed, 284.4 s."
     }
   ]
 }

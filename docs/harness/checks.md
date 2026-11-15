@@ -1,5 +1,18 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-15 (d) — MCF-1: four non-CEX frontiers for a 10 USD base (feasibility models, public snapshots)
+| # | Command | Result |
+|---|---|---|
+| 1 | web sources read (prop listings, FPFX / ATFunded / TFT outcomes, Meteora rent FAQ, platform gates and fees, Decree 293/2025, SBV reference rate) | FTUK Flex 9 + 56 USD; 7 % of 300 000 accounts paid; DLMM rent 0.057-0.059 SOL + 0.075 SOL per new bin array; Region I 25 500 VND / h; 25 600 VND / USD |
+| 2 | AI Linh logs read (read-only, `E:\AI_Linh_vtuber\...\logs`) | `donations.log` 42 start-up lines, 0 donation events; `tiktok.log` 11 connector crashes (NameError `os`, TypeError unhashable list) |
+| 3 | `python -m research.micro_capital_frontiers dlmm` (Meteora data API + GeckoTerminal; first try stalled on HTTP 429, re-run at 6.5 s per call) | 150 pools, 0 errors, 117 with >= 21 daily closes, SOL 72.61 USD |
+| 4 | `python -m research.micro_capital_frontiers run` (57 s, 20 000 paths per cell) | ranking F4b 65.8 > F4a 39.3 > F2 37.7 > F3 26.8 > F1* 19.0 > F1 6.9 (equal weights; same order under the other two) |
+| 5 | `python -m pytest -q tests/test_micro_capital_frontiers.py` | 18 passed |
+| 6 | `python -m pytest -q` (final) | 2552 passed, 0 failed, 284.4 s (2534 + 18 new) |
+
+Not run: any order, deposit, account, challenge purchase, LP position, transaction, stream. Not measured: prop firms' own current
+terms (their sites did not resolve from the fetch service), a DLMM fee time series, real proposal win rates, venue eligibility.
+
 ## 2026-11-15 (c) — ODH-1: capital for 1 USD per hour from funding rotation, Binance-Bybit funding, pairs (pre-registered)
 | # | Command | Result |
 |---|---|---|
