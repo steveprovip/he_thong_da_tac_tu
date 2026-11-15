@@ -354,3 +354,26 @@ def profit_funded_risk(equity, bankroll, wins, losses, payoff_b, base_cap_usdt=0
         return base_cap_usdt
     f = lam * max(0.0, kelly_lcb(wins, losses, payoff_b, z, prior))
     return max(0.0, min(base_cap_usdt + f * max(0.0, equity - bankroll), max(base_cap_usdt, max_frac * equity)))
+
+
+def streak_scaled_notional(base_notional, cum_pnl, streak, confluence, stop_frac, k=5.0, min_streak=2, n_max=3,
+                           house_frac=0.5) -> float:
+    """Notional of the next trade under win-streak compounding with the principal shielded (2026-11-14 CCX-1).
+
+        scaled = base_notional x (1 + k x cum_pnl)   only when streak >= min_streak, confluence >= n_max, cum_pnl > 0
+    and the EXTRA loss at the stop, (scaled - base_notional) x stop_frac, never exceeds house_frac x cum_pnl: the
+    step-up is paid out of accumulated profit, so the money put in carries the base lot's stop and nothing more. One
+    loss resets the caller's streak and with it the step-up. `stop_frac` is the stop distance as a fraction of the
+    notional (0.005 = 50 bps). A streak is not evidence of an edge (see fractional_kelly_risk): this only moves size
+    among trades already allowed, it never makes a losing rule profitable. Opt-in arithmetic with no engine call
+    site; a non-finite or non-positive input returns base_notional, or 0.0 when the base itself is invalid."""
+    if not (isinstance(base_notional, (int, float)) and math.isfinite(base_notional) and base_notional > 0):
+        return 0.0
+    vals = (cum_pnl, streak, confluence, stop_frac, k, house_frac)
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in vals):
+        return float(base_notional)
+    if cum_pnl <= 0 or streak < min_streak or confluence < n_max or stop_frac <= 0 or k <= 0 or house_frac <= 0:
+        return float(base_notional)
+    scaled = base_notional * (1.0 + k * cum_pnl)
+    shield = base_notional + house_frac * cum_pnl / stop_frac
+    return float(max(base_notional, min(scaled, shield)))

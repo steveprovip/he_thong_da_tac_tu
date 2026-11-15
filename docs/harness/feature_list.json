@@ -579,6 +579,22 @@
       "dependencies": [],
       "status": "done",
       "evidence": "2026-11-14. tests/test_watchdog_recorder.py 19 passed, tests/test_liquidation_recorder.py 17 passed (3 new). Live smoke on public streams in a scratch folder: WMI launch, no job object, hard kill -> restart in 5 s, heartbeat every 10.1 s, clean stop, hour files complete across the kill (gap 11 s). The recorder was not started on data/recordings (owner decision)."
+    },
+    {
+      "id": "ccx1-carry-convex-10u-20261114",
+      "name": "CCX-1: 10 U carry account, Binance-only XS carry, funding snipe, growth simulation",
+      "description": "research/carry_convex_study.py (events / klines / run / addendum): venue floors, XV HEDGE|H28|k2 as one slot on a two-venue 10 U account with per-venue balances, transfers and the lane guard; XS carry with both legs on Binance; funding snipe on all 659 USDT perpetuals (2 entries x 4 exits, signals P / O, clustered SE, deflated Sharpe over 8 trials, fee schedules, tiers, drift); growth of 10 U (flat / streak / risk fraction, liquidation at zero, optional capacity cap). tools/fetch_funding_universe.py, tools/snipe_tick_check.py. Pre-registered in plan_carry_convex_10u_2026_11.md; report CONVEX_10U_REPORT_2026_11.md.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-14. tests/test_carry_convex.py 36 passed. T3 M|X0 HOLDOUT +18.84 +- 1.37 bps (n 13785): EDGE by the frozen rule at 1 m resolution, not confirmed as tradable (exit one minute late -12.04 +- 1.26; trade-level path -34.0 bps at 500 ms, n 66). T2 XS NO EDGE. XV account at 2x with free transfers +0.356 U in 675 days. Nothing wired."
+    },
+    {
+      "id": "ccx1-streak-scaled-notional-20261114",
+      "name": "core.position_sizer.streak_scaled_notional: win-streak step-up paid out of accumulated profit",
+      "description": "Pure function, opt-in, no engine call site: base x (1 + k x cumulative PnL) after >= 2 consecutive wins at confluence 3 / 3 with cumulative PnL > 0; the extra loss at the stop is capped at house_frac x cumulative PnL. No cap, Profile default or gate changed.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-14. tests/test_carry_convex.py: 3 sizer tests (gates, 500 random cases of the shield bound, no call site in core/). On the ledger source the step-up never fires (no cumulative profit)."
     }
   ]
 }

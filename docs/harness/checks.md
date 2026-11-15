@@ -1,5 +1,22 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-14 (h) — CCX-1: 10 U carry account, XS carry, funding snipe, growth (pre-registered)
+| # | Command | Result |
+|---|---|---|
+| 1 | `python -m pytest -q --deselect <plan freeze test>` (baseline with the new module and sizer, before the freeze) | 2432 passed, 1 deselected, 268.5 s |
+| 2 | `python tools/fetch_funding_universe.py` (public REST, one request per 0.65 s) | 659 symbols, 661 files, 46 MB; crashed once on five non-ASCII symbol names (URL not quoted), fixed and resumed |
+| 3 | `python -m research.carry_convex_study events` then the freeze script, `sha256sum docs/research_upgrade/plan_carry_convex_10u_2026_11.md` | `9e6bfedc...34ec` = trial_log row `ccx1-prereg`; frozen with no file in `data/snipe_klines` and no result file; setup counts in the plan are lower bounds (294 of 659 symbols) |
+| 4 | `python -m research.carry_convex_study klines --workers 8` / `--workers 16` | 16 454 + 21 164 = 37 618 one-minute windows, 562 symbols, 220 MB; 129 events without complete bars |
+| 5 | `python -m research.carry_convex_study run` (98 s; run twice, sections A-D identical, growth changed by erratum E1) | XV account L2 free +0.356 U / 24 rounds, L2 with 1 U transfers 0 rounds -1.000 U, L3 free +0.432 U, L3 with transfers -2.925 U; T2 XS HOLDOUT +859.6 bps (month CI -423..+2 632): NO EDGE; T3 M\|X0 HOLDOUT +18.84 +- 1.37 bps (n 13 785, LCB95 +16.59, DSR 1.00), FRESH +26.62: EDGE by the frozen rule |
+| 6 | `python -m research.carry_convex_study addendum` (A2, outside the grid) | exit at the open of T + 1 min: P\|M\|D1 HOLDOUT -12.04 +- 1.26 (TRAIN -12.28, FRESH +3.30 +- 3.31), O\|M\|D1 -11.54; growth one minute late: flat 10 U median 2.12 U, ruin 42.4 % |
+| 7 | `python tools/snipe_tick_check.py --refresh-funding` (A1; aggTrades by time are served for 2 days only) | 66 settlements, 9 symbols, funding 40.3 bps; price for the receiver -1.4 (first print), -8.9 (150 ms), -3.5 (250 ms), -34.0 +- 5.0 (500 ms), -33.8 (1 s) |
+| 8 | `python -m pytest -q tests/test_carry_convex.py` | 36 passed |
+| 9 | `python -m pytest -q` (final) | 2436 passed, 0 failed, 265.9 s (2400 + 36 new) |
+
+Not run: Demo / live engine, any order, the recorder. Not measured: the bid / ask and the sub-second path on more than 66 settlements,
+the time an account is credited with the funding, spreads of the event symbols, Hyperliquid order floor and transfer fees (third-party
+sources only).
+
 ## 2026-11-14 (g) — NDG-1 two-sided quoting under the ATLAS low-volatility gate (pre-registered) + recorder watchdog
 | # | Command | Result |
 |---|---|---|
