@@ -1,5 +1,22 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-15 — HWK-1: binned Hawkes volume-shock momentum on top movers, 10 U base (pre-registered)
+| # | Command | Result |
+|---|---|---|
+| 1 | freeze: `sha256` of `docs/research_upgrade/plan_hawkes_momentum_10u_2026_11.md` (LF) written to trial_log row `hwk1-prereg` before the `klines` stage | `59725a43...93c2`; `data/hawkes/klines_1m` did not exist at the freeze |
+| 2 | `python -m research.hawkes_momentum_study daily` (public REST, 652 calls) | 652 symbols, 474 725 daily bars; stopped once on HTTP 400 (GAIBUSDT serves no klines), 400 now treated as not served, resumed |
+| 3 | `python -m research.hawkes_momentum_study universe` | 1 017 days (TRAIN 700, HOLDOUT 273, FRESH 44), 10 170 pairs, 23 974 files, 628 symbols |
+| 4 | `python -m research.hawkes_momentum_study klines` (16 workers, then 48, then 4 shards x 12) | 23 962 day zips, 1.33 GB, every file equal to the archive's SHA-256; 12 not published (10 of 2026-11-14), still missing on one retry |
+| 5 | `python -m research.hawkes_momentum_study matrix` | 10 169 pairs kept, 1 dropped (no file), 11 without D+1; `data/hawkes/matrix.npz` 1.23 GB |
+| 6 | `python -m research.hawkes_momentum_study run` (49 s; second run 24 s, identical apart from addendum A1) | T1 `BAR` 600 / 240 BOTH: HOLDOUT +4.74 +- 8.29 bps (n 2 163, LCB95 -8.90, DSR 0.136), FRESH -42.87 +- 17.10 (n 454): NO EDGE. T2 search final: HOLDOUT +4.59 +- 7.64 (n 2 444, DSR 0.057 over 38 trials), FRESH -24.86 +- 17.82: NO EDGE. Growth from 10 U: FLAT 1 U median 0.84 U, ruin 75.9 % |
+| 7 | `python -m pytest -q tests/test_hawkes_momentum.py` | 36 passed |
+| 8 | `python -m pytest -q` (baseline with the new module, before the run) | 2471 passed, 280.7 s |
+| 9 | `python -m pytest -q` (final) | 2472 passed, 0 failed, 272.1 s (2436 + 36 new) |
+
+Not run: Demo / live engine, any order, the recorder. Not measured: bid / ask and intrabar fills on the triggered symbol-days (slip 3 bps
+assumed; 10 bps turns HOLDOUT to -7.19), a marked buy / sell Hawkes model (needs the trade tape), stops wider than 240 bps (outside the
+registered grid), contracts delisted before 2026-11-14.
+
 ## 2026-11-14 (h) — CCX-1: 10 U carry account, XS carry, funding snipe, growth (pre-registered)
 | # | Command | Result |
 |---|---|---|

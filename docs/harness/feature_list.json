@@ -595,6 +595,22 @@
       "dependencies": [],
       "status": "done",
       "evidence": "2026-11-14. tests/test_carry_convex.py: 3 sizer tests (gates, 500 random cases of the shield bound, no call site in core/). On the ledger source the step-up never fires (no cumulative profit)."
+    },
+    {
+      "id": "hwk1-hawkes-momentum-20261115",
+      "name": "HWK-1: binned Hawkes volume-shock momentum on top movers, 10 U base",
+      "description": "research/hawkes_momentum_study.py (daily / universe / klines / matrix / run): point-in-time top 5 gainers and losers of D-1, checksum-verified 1 m day zips (sharded download, manifest), 4 320-minute pair matrix, binned Hawkes intensity by conditional least squares on D-1, hourly volume ratio, PRICE / CVD / BOTH direction, bracket simulator on 1 m bars (stop first, gap at the open, ratchet on completed bars), funding from cached prints, day-clustered SE, deflated Sharpe, 12 pre-registered cells (T1), 30-round TRAIN-only search (T2), accuracy and excursion descriptives (T3), fade / random-side / random-time controls, 5 cost schedules, one-slot day-block growth simulation. Pre-registered in plan_hawkes_momentum_10u_2026_11.md; report HAWKES_MOMENTUM_REPORT_2026_11.md.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-15. tests/test_hawkes_momentum.py 36 passed. T1 BAR 600 / 240 BOTH: HOLDOUT +4.74 +- 8.29 bps (n 2 163, LCB95 -8.90, DSR 0.136), FRESH -42.87 +- 17.10: NO EDGE. T2 search final: HOLDOUT +4.59 +- 7.64 (DSR 0.057 over 38 trials), FRESH -24.86 +- 17.82: NO EDGE. Branching ratio 0.92-0.93; lambda >= 3 mu in 90-94 % of minutes; 600 bps reached in favour 59.7 % vs against 59.0 %. Nothing wired."
+    },
+    {
+      "id": "hwk1-profit-stack-risk-20261115",
+      "name": "core.position_sizer.profit_stack_risk: base risk plus a share of profit after wins, optional ratcheting account stop",
+      "description": "Pure function, opt-in, no engine call site: risk = base_risk (1.0 U default, a simulation scenario above the standing 0.05 U cap) + stack_frac x (equity - principal) after min_streak wins; with ratchet the account stop moves to the principal once the peak is >= principal + base_risk and the risk never exceeds equity - stop (0.0 = halt). Unknown or non-finite inputs return 0.0.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "2026-11-15. tests/test_hawkes_momentum.py: 2 sizer tests + 3 growth tests. On the HWK-1 books: FLAT 1 U ruin 75.9 %, STACK 50 % ruin 98.7 %, with the ratchet median 9.93 U and no path above 10.12 U; at the 0.05 U cap the bracket cannot be posted (2.1 U < 5 U minimum)."
     }
   ]
 }

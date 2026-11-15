@@ -120,3 +120,6 @@ data/klines/
 # CCX-1 public data caches (2026-11-14)
 data/funding_universe/
 data/snipe_klines/
+
+# HWK-1 public data caches: daily bars, 1 m day zips, matrix (2026-11-15)
+data/hawkes/

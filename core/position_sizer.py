@@ -377,3 +377,31 @@ def streak_scaled_notional(base_notional, cum_pnl, streak, confluence, stop_frac
     scaled = base_notional * (1.0 + k * cum_pnl)
     shield = base_notional + house_frac * cum_pnl / stop_frac
     return float(max(base_notional, min(scaled, shield)))
+
+
+def profit_stack_risk(equity, principal=10.0, base_risk=1.0, stack_frac=0.5, streak=0, peak=None, min_streak=1,
+                      ratchet=False) -> float:
+    """USDT to lose at the stop under profit stacking, with an optional ratcheting account stop (2026-11-15 HWK-1).
+
+        risk = base_risk + stack_frac x max(0, equity - principal)    the second term only after `min_streak` wins in a row
+    The principal always carries `base_risk`, so the first loss does impair it: "risk 1.0 U" and "the initial capital
+    cannot be impaired" hold together only from the moment profit exists. `ratchet` makes that explicit: the account
+    stop is 0 until the equity peak reaches principal + base_risk and `principal` from then on, the risk never
+    exceeds equity - stop, and 0.0 means halt (the account is back at the money put in). Without the ratchet the risk
+    is capped at the equity. A streak is not evidence of an edge: this moves size among trades already allowed and
+    cannot make a losing rule profitable. The 1.0 U default is 20x the standing 0.05 U micro cap: opt-in arithmetic
+    for simulation with no engine call site. Unknown, non-finite or non-positive inputs return 0.0 (never sized)."""
+    vals = (equity, principal, base_risk, stack_frac, streak, min_streak) + (() if peak is None else (peak,))
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in vals):
+        return 0.0
+    if equity <= 0 or principal <= 0 or base_risk <= 0 or stack_frac < 0:
+        return 0.0
+    top = max(equity, peak) if peak is not None else equity
+    stop = principal if (ratchet and top >= principal + base_risk) else 0.0
+    room = equity - stop
+    if room <= 0:
+        return 0.0
+    risk = base_risk
+    if streak >= min_streak and equity > principal:
+        risk += stack_frac * (equity - principal)
+    return float(max(0.0, min(risk, room)))
