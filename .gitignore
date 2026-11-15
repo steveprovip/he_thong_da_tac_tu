@@ -126,3 +126,6 @@ data/hawkes/
 
 # AF-1 public data caches: Kalshi trade windows, market results, Hyperliquid meta (2026-11-15)
 data/af/
+
+# ODH-1 public data caches: Binance perp / spot 4 h klines, Bybit funding and klines (2026-11-15)
+data/odh/

@@ -1,5 +1,21 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-15 (c) — ODH-1: capital for 1 USD per hour from funding rotation, Binance-Bybit funding, pairs (pre-registered)
+| # | Command | Result |
+|---|---|---|
+| 1 | freeze: SHA-256 (LF) of `docs/research_upgrade/plan_one_dollar_hour_breakthrough_2026_11.md` -> trial_log row `odh1-prereg` (written by the previous session before `data/odh` existed); re-verified | `dae22cd1...8eede`, 8 660 bytes, unchanged |
+| 2 | addendum A1 (rolling Engle-Granger pairs M3R + implementation notes) -> trial_log row `odh1-addendum`; the freeze script refuses when `data/one_dollar_hour_study.json` exists | `b14a262e...9a0d8`, registered before any mechanism ran on market data |
+| 3 | `python -m research.one_dollar_hour_study fetch --workers 6` (public REST, started by the previous session, 46 min) | 2 038 files, 387 MB: 655 perps (GAIB empty), 453 spot (13 delisted empty), 465 Bybit funding (1 empty) + klines (2 empty); no kline file misses its end bar; Bybit bars aligned to the 4 h grid |
+| 4 | `python -m research.one_dollar_hour_study run` (run 1, 49 s) | M1 / M2 0 rounds in every cell (bug: `trailing_sum` carried a leading NaN to every later index); M3 NO EDGE, M3R NO EDGE; kept as `data/odh/run1_*` |
+| 5 | fix + regression test (late listing and spot / Bybit from 2024-12-20 in the end-to-end fixture), `run` again (run 2, 49 s) | M1 NO EDGE (HOLDOUT +1.45 +- 0.64 bps/day, 24 rounds, DSR 0.71), M2 NO EDGE (-11.09 +- 7.48), M3 NO EDGE (-6.12 +- 6.82), M3R NO EDGE (-2.18 +- 2.85); M3 and M3R identical to run 1 |
+| 6 | post-hoc reads (scratch script, `data/odh/posthoc.json`; not pre-registered) | funding persistence (M1 38-44 %, M2 9-14 % of the entry print), all-days Monte Carlo, capital for a 5th-percentile hourly profit of 1 USD (XV 793 k USD over 30 days) |
+| 7 | `python -m pytest -q tests/test_one_dollar_hour.py` | 42 passed |
+| 8 | `python -m pytest -q` (baseline with the new module, before the run) | 2534 passed, 276.4 s |
+| 9 | `python -m pytest -q` (final) | 2534 passed, 0 failed, 270.9 s (2492 + 42 new) |
+
+Not run: any order, account, engine, recorder. Not measured: sub-4 h entry timing around settlements, mark-price liquidation,
+intra-round marks of the XV reference, Bybit fees from the venue (repo constant), the owner's eligibility on Bybit / Hyperliquid.
+
 ## 2026-11-15 (b) — AF-1: maker conversion, CEX-DEX arithmetic, Kalshi longshot takers (pre-registered)
 | # | Command | Result |
 |---|---|---|

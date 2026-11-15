@@ -619,6 +619,16 @@
       "dependencies": ["hwk1-hawkes-momentum-20261115"],
       "status": "done",
       "evidence": "2026-11-15. tests/test_asymmetric_frontier.py 20 passed. T-A k10 ttl15 under Hyperliquid tier 0: HOLDOUT +5.76 +- 8.35 bps (n 2 140, DSR 0.059), FRESH -34.03 +- 17.11: NO EDGE; with the directive -3.0 bps rebate HOLDOUT +11.57 +- 8.42, FRESH -28.42. T-C Kalshi 2 cent takers: HOLDOUT -0.674 +- 0.183 per unit staked (n 17 100), FRESH -0.241 +- 0.399: NO EDGE. B not tested (arithmetic). Nothing wired. Full suite 2492 passed, 0 failed, 266.1 s."
+    },
+    {
+      "id": "odh1-one-dollar-hour-20261115",
+      "name": "ODH-1: capital for 1 USD per hour from funding rotation, Binance-Bybit funding and pairs",
+      "description": "research/one_dollar_hour_study.py (fetch / run): Binance perp and spot 4 h klines of 655 perps, Bybit linear funding and klines (public REST, resumable); 4 h grid with hole-aware funding steps and NaN-safe 24 h volume; K-slot carry engine (spot-perp rotation M1, Binance vs Bybit M2) with per-step liquidation at 2x; pairs with the module's Kalman tracker unchanged (M3) and a rolling Engle-Granger rule (M3R, addendum A1); Newey-West daily statistics, deflated Sharpe, TRAIN-best cell read once; XV reference from the funding replay; capital matrix C*, tiers 50 .. 500 000 USD, 2 000-path block Monte Carlo, capacity. Pre-registered in plan_one_dollar_hour_breakthrough_2026_11.md + plan_one_dollar_hour_addendum_a1_2026_11.md; report ONE_DOLLAR_HOUR_REPORT_2026_11.md.",
+      "dependencies": [
+        "af1-asymmetric-frontier-20261115"
+      ],
+      "status": "done",
+      "evidence": "2026-11-15. tests/test_one_dollar_hour.py 42 passed. M1 HOLDOUT +1.45 +- 0.64 bps/day (24 rounds, DSR 0.71): NO EDGE; M2 -11.09 +- 7.48: NO EDGE; M3 -6.12 +- 6.82: NO EDGE; M3R -2.18 +- 2.85: NO EDGE. XV reference 1.96 %/yr on capital: C* 447 k USD (527 k at LCB95). Run 1 discarded for M1 / M2 (trailing_sum NaN bug, fixed and tested). Nothing wired. Full suite 2534 passed, 0 failed, 270.9 s."
     }
   ]
 }

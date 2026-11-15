@@ -1473,3 +1473,44 @@ Branch `feat/janas-autoresearch-smc`, HEAD `f2233c9` (HWK-1 committed by Antigra
 - Not verified: Hyperliquid price paths and queue position (Binance bars are the proxy), Kalshi's fee PDF (repo constant), venue eligibility, every parameter of B.
 - Rejected: treating the directive's rebate as the venue's; querying Polymarket; reporting the positive HOLDOUT point estimates (+5.76, +11.57) or the Hyperliquid-listed subset (+26.7 +- 22.5, n 288, look-ahead listing) as an edge; any git operation.
 - Rollback: delete the four new files, `data/af/`, `data/asymmetric_frontier_study.json`; `git checkout -- .gitignore docs/ CLAUDE.md`.
+
+## Handoff 6C — 2026-11-15 (c) (ODH-1: capital for 1 USD per hour from non-directional lanes: spot-perp funding rotation, Binance-Bybit funding, module Kalman pairs, Engle-Granger pairs all NO EDGE; XV reference needs about 0.45 M USD; nothing wired, no git operation)
+
+### 1. Mục tiêu (Goal)
+Owner directive (pasted, "one dollar per hour", 2026-11-15 v2): stop directional tests and use the repository's carry and stat-arb modules for a non-directional cashflow of at least 1.00 USD per hour with ruin under 1 %; compute the minimum capital C* of each mechanism and a capital matrix (50 to 5 000+ USD, 2 000 paths x 30 / 90 days, deflated Sharpe, LCB95, hourly profit distribution). Five phases: pre-registration with the hash in `trial_log.jsonl`, runner and tests, Monte Carlo, the full suite (>= 2492), `docs/research_upgrade/ONE_DOLLAR_HOUR_REPORT_2026_11.md`, this entry and CLAUDE.md. Done = the frozen verdicts read once, tests green, files left for Antigravity to commit.
+
+### 2. Ràng buộc (Constraints)
+Offline research on public data only: no order, no account, no engine start, no live, no cap, gate, lock or Profile default changed (0.05 U at the stop, 0.15 U daily kill, I6 untouched). Git policy of the directive and of memory: no `git add`, `git commit` or `git push` by this session; none was run. Both plan files are frozen and were not edited after their freeze. Network: Binance USD-M and spot klines, Bybit v5 instruments, funding history and klines (public). A previous session under the same directive wrote the plan, froze it at 18:28 and started the fetch; this session re-verified the freeze, reviewed the runner against the plan and continued.
+
+### 3. Trạng thái thực tế (Real State)
+Branch `feat/janas-autoresearch-smc`, HEAD `b8b7b83` (AF-1 committed by Antigravity), all work of this entry uncommitted. New: `research/one_dollar_hour_study.py`, `tests/test_one_dollar_hour.py`, `docs/research_upgrade/plan_one_dollar_hour_breakthrough_2026_11.md`, `docs/research_upgrade/plan_one_dollar_hour_addendum_a1_2026_11.md`, `docs/research_upgrade/ONE_DOLLAR_HOUR_REPORT_2026_11.md`. Changed: `.gitignore` (+`data/odh/`), `docs/research_upgrade/trial_log.jsonl` (+1 `odh1-prereg`, +1 `odh1-addendum`, +6 `odh1-result`, +1 `odh1-note`), `docs/research_upgrade/experiment_register.md` (+6 rows), `docs/harness/feature_list.json` (+1 entry), `docs/harness/checks.md`, `docs/harness/session-handoff.md`, `CLAUDE.md`. No file under `core/` or `tools/` changed. Data (git-ignored): `data/odh/` (387 MB: klines, Bybit funding, meta, run logs, run 1 output, `posthoc.json`), `data/one_dollar_hour_study.json`.
+
+### 4. Bằng chứng (Evidence)
+- Freeze: plan SHA-256 (LF) `dae22cd189c71c310d61eb1e2dfdafd05540a294a81bcabf998d6af907e8eede` = row `odh1-prereg` (re-verified, 8 660 bytes); addendum A1 `b14a262ea1af251bf5ad9eabae47ad1aee180b8f72c5632031a2999effe9a0d8` = row `odh1-addendum`, written while the Bybit fetch was still running and before any mechanism ran on market data; both pinned by tests.
+- `python -m research.one_dollar_hour_study fetch --workers 6`: 2 038 files (655 perps, 453 spot, 465 Bybit funding and klines), 387 MB, 46 min; no kline file misses its end bar; Bybit bars on the 4 h grid.
+- Run 1 (49 s): M1 and M2 opened 0 rounds in every cell (bug below), M3 and M3R read. Run 2 after the fix (`python -m research.one_dollar_hour_study run`, 49 s), M3 and M3R identical:
+  - M1 spot-perp rotation, chosen th20 out0.5: TRAIN -4.95 bps/day (all 6 cells -4.95 to -10.32); HOLDOUT +1.450 +- 0.637 (LCB95 +0.402, p 0.011, deflated Sharpe 0.713, 24 rounds), FRESH +0.436 (1 round): NO EDGE.
+  - M2 Binance vs Bybit, chosen th5 out0: TRAIN +0.16; HOLDOUT -11.094 +- 7.480 (1 020 rounds, 65 legs liquidated), FRESH -8.504: NO EDGE.
+  - M3 module tracker, chosen 1 d z2.5: TRAIN +7.34; HOLDOUT -6.123 +- 6.818 (137 rounds), FRESH +5.374: NO EDGE.
+  - M3R Engle-Granger, chosen 1 d z2.1: TRAIN +0.63; HOLDOUT -2.176 +- 2.851 (130 rounds, 81 stops), FRESH +4.852: NO EDGE.
+  - XV reference (Binance vs Hyperliquid, 28-day rounds): HOLDOUT +0.538 +- 0.050 bps/day, 1.96 %/yr on capital, C* 447 372 USD (527 390 at LCB95).
+  - Capital matrix, 30-day median USD/h at 5 000 USD: M1 +0.0087, M2 -0.19, M3 -0.04, M3R -0.04, XV +0.0080; at 500 000 USD: M1 +0.87 (P >= 1 USD/h 0.45), XV +1.08 (P 0.62, ruin 0); M3 90-day ruin 4.9 %.
+- Post-hoc (`data/odh/posthoc.json`, not pre-registered): M1 received 38-44 % of its entry print while held, M2 9-14 %; XV needs 793 k USD for a 5th-percentile 30-day hourly profit of 1 USD (594 k over 90 days); M1 with TRAIN in the bootstrap -1.36 bps/day on capital, worst day -8.4 % of capital.
+- `python -m pytest -q tests/test_one_dollar_hour.py`: 42 passed. `python -m pytest -q`: baseline 2534 passed (276.4 s); final 2534 passed, 0 failed, 270.9 s (2492 + 42 new).
+- `check_handoff.py docs/harness/session-handoff.md --entry "Handoff 6C — 2026-11-15 (c)"`: exit 0.
+
+### 5. Bước tiếp theo (Next Steps)
+1. Antigravity: stage and commit the five new files and the seven changed ones listed in section 3.
+2. Owner decision: keep or delete `data/odh/` (387 MB, rebuilt by `fetch`), and the older `data/hawkes/` (2.5 GB) and `data/af/` (73 MB).
+3. ODH-1 closes the M1, M2, M3 and M3R cell families on these partitions. A refinement (a squeeze filter for M1, entry timing around settlements for M2) needs unseen months or sub-second settlement data and a new pre-registration.
+4. Owner decision outside research: whether the XV lane's scale (about 0.45-0.8 M USD for 1 USD/h) and its venue questions (Hyperliquid eligibility, two margin accounts, transfers) are worth pursuing; the Demo carry sim already writes a marked-to-market book to `data/carry_sim.jsonl`.
+
+### 6. Quyết định & Bài học (Decisions & Lessons)
+- The target is a yield statement: 1 USD per hour is 8 760 USD a year, so C* = 8 760 / net yield; from 5 000 USD it needs 175 % a year net. The measured non-directional lanes give -39 % to +3 % a year.
+- Delta-neutral funding capture fails on its price leg: the coins that print 20 bps per 8 h are squeezing (ALPACA -7 855 bps perp over spot in 12 h before its spot delisting), and the print decays to about 40 % while held. Across venues the spread keeps about 10 % and the dislocation goes on (-41 bps of price a round); two venues are two margin accounts (6.4 % of rounds lost a leg).
+- Addendum A1 was registered because the module tracker opened nothing on synthetic pairs; on market data it traded (28-472 TRAIN rounds per cell). Lesson: check a module on the real input class before writing a premise about it. M3R stays a valid second mechanism with its own 24-trial deflation.
+- Run 1's zero rounds were a bug, not a result: a plain cumulative sum carries one NaN to every later index, and the end-to-end fixture had full-length data on every leg, so it could not see it. Fixtures now reproduce the ragged starts of the real data (spot and Bybit from 2024-12-20, a late listing). The fix changes no rule; M1 and M2 HOLDOUT were first read in run 2.
+- The XV reference's FRESH is truncated by its cache (capital from HOLDOUT only), and its accrual booking hides intra-round marks.
+- Not verified: Bybit fees on the venue (repo constant), mark-price liquidation and cumulative moves since entry, execution inside the 4 h bar, venue eligibility.
+- Rejected: reporting M1's positive HOLDOUT (+1.45 bps/day on 24 rounds, DSR 0.71) as an edge; changing a frozen rule after run 1; any git operation.
+- Rollback: delete the five new files, `data/odh/`, `data/one_dollar_hour_study.json`; `git checkout -- .gitignore docs/ CLAUDE.md`.
