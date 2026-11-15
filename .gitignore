@@ -123,3 +123,6 @@ data/snipe_klines/
 
 # HWK-1 public data caches: daily bars, 1 m day zips, matrix (2026-11-15)
 data/hawkes/
+
+# AF-1 public data caches: Kalshi trade windows, market results, Hyperliquid meta (2026-11-15)
+data/af/

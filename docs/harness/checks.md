@@ -1,5 +1,18 @@
 # checks.md — verification log (newest first)
 
+## 2026-11-15 (b) — AF-1: maker conversion, CEX-DEX arithmetic, Kalshi longshot takers (pre-registered)
+| # | Command | Result |
+|---|---|---|
+| 1 | venue fee pages read (Hyperliquid, Polymarket; Kalshi help page) | Hyperliquid tier 0 taker 4.5 / maker +1.5 bps, rebates -0.1 / -0.2 / -0.3 bps at > 0.5 / 1.5 / 3.0 % of maker volume; Polymarket fee = C x rate x p x (1 - p), rate 0.04-0.07; Kalshi page defers to the fee PDF |
+| 2 | freeze: SHA-256 (LF) of `docs/research_upgrade/plan_asymmetric_frontier_10u_2026_11.md` -> trial_log row `af1-prereg` | `ede2c17f...278f`; the freeze script refuses when `data/af` or a result file exists |
+| 3 | `python -m research.asymmetric_frontier_study kalshi-fetch` (public REST; trades with 4 workers, results with 3-6 workers and 40-120 tickers per call) | 235 windows, 2 964 821 trades, 550 207 kept (taker price <= 10 c), 0 windows cut; 173 750 tickers, 172 190 resolved; a 250-ticker lookup is refused (HTTP 414) |
+| 4 | `python -m research.asymmetric_frontier_study run` (13 s; T-A and T-C each also run once alone before it, identical) | T-A k10 ttl15, Hyperliquid tier 0: HOLDOUT +5.76 +- 8.35 bps (n 2 140, LCB95 -7.98, DSR 0.059), FRESH -34.03 +- 17.11: NO EDGE. T-C 1.5-2.5 c, < 24 h: HOLDOUT -0.674 +- 0.183 per unit staked (n 17 100), FRESH -0.241 +- 0.399: NO EDGE |
+| 5 | `python -m pytest -q tests/test_asymmetric_frontier.py` | 20 passed |
+| 6 | `python -m pytest -q` (final) | 2492 passed, 0 failed, 266.1 s (2472 + 20 new) |
+
+Not run: any order, account, engine, recorder; Polymarket (repo note: blocked in Vietnam). Not measured: Hyperliquid's own price paths
+and queue position, block-level CEX-DEX gaps, the owner's venue eligibility, a maker stop.
+
 ## 2026-11-15 — HWK-1: binned Hawkes volume-shock momentum on top movers, 10 U base (pre-registered)
 | # | Command | Result |
 |---|---|---|

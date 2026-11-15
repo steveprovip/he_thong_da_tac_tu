@@ -611,6 +611,14 @@
       "dependencies": [],
       "status": "done",
       "evidence": "2026-11-15. tests/test_hawkes_momentum.py: 2 sizer tests + 3 growth tests. On the HWK-1 books: FLAT 1 U ruin 75.9 %, STACK 50 % ruin 98.7 %, with the ratchet median 9.93 U and no path above 10.12 U; at the 0.05 U cap the bracket cannot be posted (2.1 U < 5 U minimum)."
+    },
+    {
+      "id": "af1-asymmetric-frontier-20261115",
+      "name": "AF-1: maker conversion of the HWK-1 entries, CEX-DEX arithmetic, Kalshi longshot takers, growth of 10 U",
+      "description": "research/asymmetric_frontier_study.py (kalshi-fetch / run): maker entry simulator on 1 m bars (post-only limit behind the trigger close, trade-through fill, no target credit in the fill bar), per-schedule costs (Hyperliquid tier 0 and best tier, Binance VIP0, the directive rebates as hypothetical), break-even maker fee, taker counterfactual on the same triggers, Hyperliquid-listed subset; CEX-DEX round and break-even gap arithmetic; Kalshi sampler (235 frozen 300 s windows, historical and live trade endpoints, batched market results), taker returns with the cent-rounded fee, 9 cells, calibration, combo class, seller side; growth of 10 U under venue minimums. Pre-registered in plan_asymmetric_frontier_10u_2026_11.md; report ASYMMETRIC_FRONTIER_REPORT_2026_11.md.",
+      "dependencies": ["hwk1-hawkes-momentum-20261115"],
+      "status": "done",
+      "evidence": "2026-11-15. tests/test_asymmetric_frontier.py 20 passed. T-A k10 ttl15 under Hyperliquid tier 0: HOLDOUT +5.76 +- 8.35 bps (n 2 140, DSR 0.059), FRESH -34.03 +- 17.11: NO EDGE; with the directive -3.0 bps rebate HOLDOUT +11.57 +- 8.42, FRESH -28.42. T-C Kalshi 2 cent takers: HOLDOUT -0.674 +- 0.183 per unit staked (n 17 100), FRESH -0.241 +- 0.399: NO EDGE. B not tested (arithmetic). Nothing wired. Full suite 2492 passed, 0 failed, 266.1 s."
     }
   ]
 }
